@@ -100,11 +100,11 @@ function overlayTab(app) {
         h('td', {}, check(`enable${key}Animation`)),
         h('td', {}, bench ? check(bench) : h('span', { class: 'muted' }, '–')))))),
     h('div', { class: 'slider-stack' },
-      slider({ label: 'Banner stays for', value: settings.toastSeconds, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ toastSeconds: v }) }),
-      slider({ label: 'Effect stays for', value: settings.animationSeconds, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ animationSeconds: v }) })));
+      slider({ label: 'Banner stays for', value: settings.toastSeconds ?? 2, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ toastSeconds: v }) }),
+      slider({ label: 'Effect stays for', value: settings.animationSeconds ?? 3, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ animationSeconds: v }) })));
 
   const picture = section('Picture',
-    slider({ label: 'Overlay opacity', value: settings.overlayOpacity, min: 0, max: 100, step: 5, format: (v) => `${v}%`, onChange: (v) => update({ overlayOpacity: v }) }),
+    slider({ label: 'Overlay opacity', value: settings.overlayOpacity ?? 100, min: 0, max: 100, step: 5, format: (v) => `${v}%`, onChange: (v) => update({ overlayOpacity: v }) }),
     switchControl('Scale the overlay to fit the browser source', settings.autoScale !== false, (on) => update({ autoScale: on }),
       { hint: 'Turn off only if the browser source is exactly 1920 × 1080' }));
 
@@ -114,14 +114,13 @@ function overlayTab(app) {
 // --------------------------------------------------------------------------------------- sounds
 
 function soundsTab(app) {
-  const sound = app.state.settings.sound;
   const update = (patch) => app.act('action:settings', { action: 'update', sound: patch });
   const body = h('div', { class: 'settings-stack' });
   let custom = {};
 
   const play = (cue) => {
     // Auditioning uses the cue's own volume and works even while sound is switched off
-    app.sfx.play(cue, app.state.settings.sound, true);
+    app.sfx.play(cue, app.state.settings.sound || SOUND.DEFAULTS, true);
   };
 
   const refreshCustom = async () => {
@@ -151,14 +150,14 @@ function soundsTab(app) {
   };
 
   const draw = () => {
-    const current = app.state.settings.sound;
+    const current = app.state.settings.sound || SOUND.DEFAULTS;
     replace(body,
       section('Sound effects',
         note('Sounds play from the overlay, so OBS picks them up as browser source audio (switch on "Control audio via OBS" if you want them on their own audio track). They stay off until you turn them on here.'),
         switchControl('Play sound effects', current.enabled, async (on) => { await update({ enabled: on }); draw(); }),
         slider({ label: 'Master volume', value: current.volume, min: 0, max: 100, step: 5, format: (v) => `${v}%`, onChange: (v) => update({ volume: v }) })),
       SOUND.GROUPS.map((group) => section(group.label, h('div', { class: 'cue-list' }, group.cues.map((cue) => {
-        const event = current.events[cue.key];
+        const event = (current.events && current.events[cue.key]) || SOUND.DEFAULTS.events[cue.key];
         const sound = custom[cue.key];
         // a sound may come from the design on the overlay; the producer's own upload replaces it
         const mine = sound && sound.source !== 'design';

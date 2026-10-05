@@ -52,8 +52,9 @@ module.exports = (services) => {
 
   // ------------------------------------------------------------------ public
 
+  // `instance` tells this copy of OTO apart from any other program on the same port (see port-check.js)
   publicRouter.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: Date.now() });
+    res.json({ status: 'ok', timestamp: Date.now(), instance: services.instanceId });
   });
 
   publicRouter.get('/auth/status', (req, res) => {

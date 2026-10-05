@@ -25,6 +25,7 @@ const { PackageService } = require('./services/package');
 const { Session, PRODUCERS } = require('./session');
 const { getLanAddresses, isShared } = require('./services/network');
 const { DEFAULT_PORT } = require('./config');
+const { checkPort } = require('./services/port-check');
 
 const PUBLIC_DIR = path.join(__dirname, '../public');
 
@@ -94,6 +95,8 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || DEFAULT_PORT;
+// Different on every run: it tells this server apart from any other program answering on the same port
+const INSTANCE_ID = require('node:crypto').randomBytes(8).toString('hex');
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Middleware
@@ -210,7 +213,7 @@ async function initialize() {
   };
 
   const { publicRouter, protectedRouter } = require('./api/routes')({
-    db, cache, pokemonTCG, gameState, session, auth, themes, sounds, catalog, packages, io
+    db, cache, pokemonTCG, gameState, session, auth, themes, sounds, catalog, packages, io, instanceId: INSTANCE_ID
   });
   app.use('/api', publicRouter);
   app.use('/api', gate, protectedRouter);
@@ -223,8 +226,13 @@ async function initialize() {
   // redirect: false so /overlay and /login are served directly rather than bounced to a trailing slash
   app.use(express.static(PUBLIC_DIR, { index: false, redirect: false }));
 
-  // The project logo lives at the project root (it is also the README picture)
-  app.get('/logo.gif', (req, res) => res.sendFile(path.join(__dirname, '..', 'logo.gif')));
+  // The project logo and the energy icons live in the assets folder at the project root
+  // (the logo is also the README picture). The tab icon is asked for by every page, and browsers
+  // ask for /favicon.ico by themselves.
+  const ASSETS_DIR = path.join(__dirname, '..', 'assets');
+  app.get('/logo.gif', (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.gif')));
+  app.get(['/logo.ico', '/favicon.ico'], (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.ico')));
+  app.use('/assets/energy', express.static(path.join(ASSETS_DIR, 'energy'), { index: false }));
 
   // Card pictures: saved on this computer the first time they are needed, then served from disk.
   // Open like the overlay itself, since OBS loads them without signing in.
@@ -302,6 +310,10 @@ function shutdown() {
   }
 }
 
+// Resolves once OTO has asked its own port who answers: { ok: true }, or what is wrong (the desktop app shows it)
+let resolvePortCheck;
+const portCheck = new Promise((resolve) => { resolvePortCheck = resolve; });
+
 // Start listening only once everything is ready, so no request can slip past the password gate
 initialize()
   .then(() => {
@@ -313,6 +325,10 @@ initialize()
         host: HOST,
         controlPanel: hosts.map((h) => `http://${h}:${PORT}/control`),
         overlay: `http://localhost:${PORT}/overlay`
+      });
+      checkPort({ port: PORT, host: HOST, instanceId: INSTANCE_ID }).then((result) => {
+        if (!result.ok) getLogger().warn('Port check', { port: PORT, reason: result.reason, message: result.message });
+        resolvePortCheck(result);
       });
     });
   })
@@ -329,4 +345,4 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-module.exports = { app, server, io, getGameState: () => gameState, shutdown };
+module.exports = { app, server, io, getGameState: () => gameState, shutdown, portCheck };

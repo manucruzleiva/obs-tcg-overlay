@@ -2,7 +2,7 @@
  * One trainer's column in the control panel. The structure is built once and updated in place, so a
  * text box you are typing in is never rebuilt under you when another producer makes a change.
  */
-import { h, icon, replace } from './dom.js';
+import { h, icon, replace, energyStyle } from './dom.js';
 
 const GAME = window.OTO_GAME;
 const ENERGY = Object.fromEntries(GAME.ENERGY_TYPES.map((type) => [type.key, type]));
@@ -62,6 +62,7 @@ export class TrainerView {
 
     // prizes
     this.prizeCount = h('span', { class: 'prize-number', 'aria-live': 'polite' }, '6');
+    this.penaltyCount = h('output', { class: 'penalty-number', 'aria-label': 'Prize cards in red' }, '0');
     this.prizePips = Array.from({ length: 6 }, (_, index) =>
       h('button', { class: 'pip', type: 'button', 'aria-label': `Set prizes to ${index + 1}`, onclick: () => act('prizeSet', { count: index + 1 }) }));
     const prizes = h('section', { class: 'block prizes' },
@@ -72,8 +73,13 @@ export class TrainerView {
         h('button', { class: 'round-btn', type: 'button', 'aria-label': 'Give back a prize card', onclick: () => act('prizePlus') }, icon('plus')),
         h('div', { class: 'pips' }, this.prizePips)),
       h('div', { class: 'toggle-row' },
-        this.toggle('Hide prizes', (on) => act('togglePrizeHidden', { enabled: on }), (t) => { this.hiddenToggle = t; }),
-        this.toggle('Penalty', (on) => act('togglePrizePenalty', { enabled: on }), (t) => { this.penaltyToggle = t; })));
+        this.toggle('Hide prizes', (on) => act('togglePrizeHidden', { enabled: on }), (t) => { this.hiddenToggle = t; })),
+      // a penalty is a number of prize cards, shown in red on the overlay
+      h('div', { class: 'penalty-row' },
+        h('span', { class: 'penalty-label' }, 'Penalty', h('small', {}, 'prize cards in red')),
+        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'One prize card less in red', onclick: () => act('prizePenaltyMinus') }, icon('minus')),
+        this.penaltyCount,
+        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'One more prize card in red', onclick: () => act('prizePenaltyPlus') }, icon('plus'))));
 
     // once-per-turn tokens and locks
     const token = (label, kind) => h('button', { class: 'token-btn', type: 'button', onclick: () => this.stepToken(kind) },
@@ -166,9 +172,14 @@ export class TrainerView {
 
     // prizes
     this.prizeCount.textContent = trainer.prizes.count;
-    this.prizePips.forEach((pip, index) => pip.classList.toggle('on', index < trainer.prizes.count));
+    const penalty = Math.min(Number(trainer.prizes.penalty) || 0, trainer.prizes.count);
+    this.prizePips.forEach((pip, index) => {
+      pip.classList.toggle('on', index < trainer.prizes.count);
+      pip.classList.toggle('penalty', index < penalty);
+    });
     this.hiddenToggle.input.checked = Boolean(trainer.prizes.hidden);
-    this.penaltyToggle.input.checked = Boolean(trainer.prizes.penalty);
+    this.penaltyCount.textContent = String(Number(trainer.prizes.penalty) || 0);
+    this.penaltyCount.classList.toggle('on', Number(trainer.prizes.penalty) > 0);
     this.itemToggle.input.checked = Boolean(trainer.locks.itemLock);
     this.evoToggle.input.checked = Boolean(trainer.locks.evoLock);
 
@@ -233,7 +244,7 @@ export class TrainerView {
 
     const energies = (pokemon.energies || []).map((type, index) => h('button', {
       class: 'energy-chip', type: 'button', title: `${(ENERGY[type] || ENERGY.colorless).label} energy (click to remove)`,
-      style: { '--c': (ENERGY[type] || ENERGY.colorless).color },
+      style: energyStyle(ENERGY[type] || ENERGY.colorless),
       'aria-label': `Remove ${type} energy`, onclick: () => act('removeEnergy', { index })
     }));
 

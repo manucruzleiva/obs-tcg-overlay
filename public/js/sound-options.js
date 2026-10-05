@@ -27,7 +27,8 @@
         { key: 'turn', label: 'Pass the turn' },
         { key: 'energy', label: 'Attach energy' },
         { key: 'ability', label: 'Ability used' },
-        { key: 'stadium', label: 'Stadium played' }
+        { key: 'stadium', label: 'Stadium played' },
+        { key: 'supporter', label: 'Supporter used' }
       ]
     },
     {

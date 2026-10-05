@@ -217,6 +217,7 @@ html, body {
   border: 1px solid var(--border);
 }
 .prize {
+  position: relative;
   width: 40px;
   height: 56px;
   border-radius: 5px;
@@ -241,7 +242,20 @@ html, body {
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 2px 6px var(--shadow);
 }
-.prizes.is-penalty { border-color: var(--danger); box-shadow: 0 0 22px var(--danger); animation: pulse-penalty 1.2s ease-in-out infinite; }
+/* a penalty marks some of the prize cards red */
+.prize.penalty { border-color: var(--danger); box-shadow: 0 0 14px var(--danger); }
+.prize.penalty::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--danger);
+  opacity: 0.62;
+}
+.prizes.pulse .prize.penalty { animation: pulse-penalty 1.2s ease-in-out infinite; }
 .prize-flag {
   position: absolute;
   left: 50%;
@@ -350,28 +364,35 @@ html, body {
   text-shadow: 0 2px 10px var(--shadow);
 }
 
-/* energy */
+/* energy: the round type icons from assets/energy (plain colored discs if they are not there) */
 .energies { display: flex; flex-wrap: wrap; gap: 6px; }
 .trainer-b .energies { justify-content: flex-end; }
 .energy {
   width: 30px;
   height: 30px;
   border-radius: 50%;
+  background: transparent center / contain no-repeat;
+  filter: drop-shadow(0 2px 4px var(--shadow));
+}
+.energy-grass { --c: var(--energy-grass); background-image: url("/assets/energy/grass.png"); }
+.energy-fire { --c: var(--energy-fire); background-image: url("/assets/energy/fire.png"); }
+.energy-water { --c: var(--energy-water); background-image: url("/assets/energy/water.png"); }
+.energy-lightning { --c: var(--energy-lightning); background-image: url("/assets/energy/lightning.png"); }
+.energy-psychic { --c: var(--energy-psychic); background-image: url("/assets/energy/psychic.png"); }
+.energy-fighting { --c: var(--energy-fighting); background-image: url("/assets/energy/fighting.png"); }
+.energy-darkness { --c: var(--energy-darkness); background-image: url("/assets/energy/darkness.png"); }
+.energy-metal { --c: var(--energy-metal); background-image: url("/assets/energy/metal.png"); }
+.energy-dragon { --c: var(--energy-dragon); background-image: url("/assets/energy/dragon.png"); }
+.energy-fairy { --c: var(--energy-fairy); background-image: url("/assets/energy/fairy.png"); }
+.energy-colorless { --c: var(--energy-colorless); background-image: url("/assets/energy/colorless.png"); }
+/* set by overlay.js when the icon files cannot be loaded */
+.no-energy-icons .energy {
   border: 2px solid rgba(255, 255, 255, 0.8);
+  background-image: none;
   background-color: var(--c, var(--energy-colorless));
   box-shadow: 0 2px 8px var(--shadow);
+  filter: none;
 }
-.energy-grass { --c: var(--energy-grass); }
-.energy-fire { --c: var(--energy-fire); }
-.energy-water { --c: var(--energy-water); }
-.energy-lightning { --c: var(--energy-lightning); }
-.energy-psychic { --c: var(--energy-psychic); }
-.energy-fighting { --c: var(--energy-fighting); }
-.energy-darkness { --c: var(--energy-darkness); }
-.energy-metal { --c: var(--energy-metal); }
-.energy-dragon { --c: var(--energy-dragon); }
-.energy-fairy { --c: var(--energy-fairy); }
-.energy-colorless { --c: var(--energy-colorless); }
 .energy-more { align-self: center; font: 700 18px var(--font-display); color: var(--fg-secondary); }
 
 /* An uploaded icon strip (11 equal squares in the order Grass, Fire, Water, Lightning, Psychic,

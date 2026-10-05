@@ -249,6 +249,37 @@ describe('settings', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('.cue-row .custom-badge')?.textContent === 'From the design');
       assert.equal((await call('GET', '/api/sounds')).json.custom.damage.source, 'design');
     });
+
+    it('has a sound for the supporter being used, with its own switch, volume and test', async () => {
+      await openSettings('Sounds');
+      const row = page.locator('.cue-row', { hasText: 'Supporter used' });
+      await row.waitFor();
+      assert.equal(await row.locator('input[type="checkbox"]').isChecked(), true);
+      assert.equal(await row.locator('input[type="range"]').inputValue(), '100');
+      assert.equal(await row.locator('button', { hasText: 'Use my own' }).count(), 1);
+
+      // auditioning works even while sound is switched off
+      assert.equal((await call('GET', '/api/state')).json.settings.sound.enabled, false);
+      await row.locator('button', { hasText: 'Test' }).click();
+      await page.waitForFunction(() => window.oto.sfx.log.some((entry) => entry.cue === 'supporter' && entry.force));
+
+      // the switch is saved for that moment only
+      await row.locator('.switch').click();
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.sound.events.supporter.enabled === false);
+      assert.equal((await call('GET', '/api/state')).json.settings.sound.events.damage.enabled, true);
+    });
+
+    it('still shows the sound settings when the server has not sent any', async () => {
+      // an older server, or a damaged save: the screen must not stay empty
+      await page.evaluate(() => { delete window.oto.state.settings.sound; delete window.oto.state.settings.toastSeconds; });
+      await openSettings('Sounds');
+      await page.locator('.cue-row', { hasText: 'Supporter used' }).waitFor();
+      assert.ok(await page.locator('.cue-row').count() >= 15, 'every moment is listed');
+      assert.equal(await page.locator('.cue-row').first().locator('input[type="range"]').inputValue(), '100');
+      await page.locator('.tab', { hasText: 'Overlay' }).click();
+      assert.equal(await page.locator('.slider', { hasText: 'Banner stays for' }).locator('output').textContent(), '2 s', 'the usual two seconds');
+      assert.deepEqual(page.problems, []);
+    });
   });
 
   describe('.oto packages', () => {

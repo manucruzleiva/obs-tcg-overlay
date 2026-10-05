@@ -271,7 +271,7 @@ describe('the folder a design lives in', () => {
     });
 
     it('keeps a sound for any cue', () => {
-      assert.equal(SOUND.KEYS.length, 15);
+      assert.equal(SOUND.KEYS.length, 16);
       assert.equal(store.setSound('Store League', 'damage', S.MP3).sounds.damage, 'sounds/damage.mp3');
       assert.equal(store.setSound('Store League', 'damage', S.WAV).sounds.damage, 'sounds/damage.wav');
       store.setSound('Store League', 'ko', S.OGG);
@@ -290,7 +290,7 @@ describe('the folder a design lives in', () => {
       for (const cue of cues) {
         try { store.setSound('Store League', cue, S.bigWav(1.4 * 1024 * 1024)); } catch (error) { stoppedAt = cue; refuses(() => { throw error; }, /size limit \(40 MB\)/); break; }
       }
-      assert.ok(stoppedAt, 'it stopped before the 15 sounds were in');
+      assert.ok(stoppedAt, 'it stopped before all the sounds were in');
       // replacing something already there is fine: only what is added counts
       assert.ok(store.setImage('Store League', 'logoImage', S.bigPng(4.4 * 1024 * 1024)));
     });

@@ -39,6 +39,11 @@ export function clear(node) {
   return node;
 }
 
+// What an energy chip needs: the picture of the type, and the plain color drawn if the pictures are not there
+export function energyStyle(type) {
+  return { '--c': type.color, '--icon': `url(${type.icon})` };
+}
+
 export function replace(node, ...children) {
   clear(node);
   return append(node, ...children);

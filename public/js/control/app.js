@@ -11,6 +11,13 @@ import * as modals from './modals.js';
 import { openSettings } from './settings.js';
 import { openImportDialog } from './packages.js';
 
+// The energy icons are files in the assets folder. If they are not there (it can be deleted), plain colored discs are drawn.
+{
+  const probe = new Image();
+  probe.onerror = () => document.documentElement.classList.add('no-energy-icons');
+  probe.src = window.OTO_GAME.ENERGY_TYPES[0].icon;
+}
+
 const NATIONALITIES = ['USA', 'CAN', 'MEX', 'BRA', 'ARG', 'CHL', 'COL', 'PER', 'GBR', 'IRL', 'FRA', 'DEU', 'ESP', 'ITA', 'PRT', 'NLD', 'BEL', 'SWE', 'NOR', 'DNK', 'FIN', 'POL', 'AUT', 'CHE', 'JPN', 'KOR', 'CHN', 'TWN', 'HKG', 'SGP', 'MYS', 'THA', 'IDN', 'PHL', 'VNM', 'IND', 'AUS', 'NZL', 'ZAF'];
 
 // ------------------------------------------------------------------------------------ keyboard

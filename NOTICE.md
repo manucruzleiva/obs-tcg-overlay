@@ -6,7 +6,9 @@ This project is a fan-made tool for Pokémon TCG streaming and tournament produc
 
 Pokémon and all related names, characters and imagery are trademarks of their respective owners. The MIT license in [LICENSE](LICENSE) covers this project's source code only. It does not grant any rights to Pokémon trademarks, card artwork or card data.
 
-The project logo (`logo.gif`, `logo.ico`) is artwork chosen by the maintainer for this project. It is covered by the same disclaimer: nothing in the license grants rights to anyone else's trademarks or artwork that it may resemble.
+The project logo (`assets/logo.gif`, `assets/logo.ico`) is artwork chosen by the maintainer for this project. It is covered by the same disclaimer: nothing in the license grants rights to anyone else's trademarks or artwork that it may resemble.
+
+The energy type icons in `assets/energy/` are the round Pokémon TCG energy symbols (Grass, Fire, Water, Lightning, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless). They were supplied by the maintainer from another of their projects, with no license of their own, and the symbols are the property of their respective owners (see above). They are used here only to make the overlay recognizable to Pokémon TCG viewers, and **they are not covered by the MIT license**. If you redistribute OTO, check that you are allowed to ship them, or delete the folder: the overlay then falls back to plain colored discs.
 
 ## AI-generated content
 

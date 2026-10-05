@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.gif" alt="OTO logo" width="160">
+  <img src="assets/logo.gif" alt="OTO logo" width="160">
 </p>
 
 # OTO: a live overlay for Pokémon TCG streams
@@ -10,7 +10,7 @@
 **OTO** (OBS TCG Overlay) puts a live scoreboard on your Pokémon TCG stream. Prizes, active and benched Pokémon, HP, the stadium, the match score and the hype announcements show up on screen in OBS, while a producer runs everything from a control panel on a laptop, tablet or phone. Several producers can work at the same time without stepping on each other.
 
 <p align="center">
-  <img src="docs/images/overlay.png" alt="The overlay on a stream" width="720">
+  <img src="assets/screenshots/overlay.png" alt="The overlay on a stream" width="720">
 </p>
 
 > **Status:** early-stage but complete end to end: you can run a whole match, with several producers, a password, your own look and sounds, and an offline card library. Read [Known issues](#known-issues) first.
@@ -43,7 +43,7 @@ OTO runs quietly on one computer (usually the streaming PC) and gives you two we
 Whatever a producer does in the control panel appears on the overlay instantly. Nothing is uploaded anywhere: it all stays on your own network. (The only things that use the internet are looking up card data and pictures, which you can [keep on your computer](#card-library-and-working-offline), and checking for updates.)
 
 <p align="center">
-  <img src="docs/images/control-panel.png" alt="The control panel" width="820">
+  <img src="assets/screenshots/control-panel.png" alt="The control panel" width="820">
 </p>
 
 ## Get started (Windows)
@@ -157,10 +157,10 @@ The **Look** tab is where artists and organizers give OTO its own identity. A **
 Changes save by themselves, and if the design is on the overlay you see them on stream as you make them.
 
 <p align="center">
-  <img src="docs/images/designs.png" alt="The design editor" width="820">
+  <img src="assets/screenshots/designs.png" alt="The design editor" width="820">
 </p>
 <p align="center">
-  <img src="docs/images/overlay-design.png" alt="The overlay wearing a design" width="720">
+  <img src="assets/screenshots/overlay-design.png" alt="The overlay wearing a design" width="720">
 </p>
 
 ### Sharing a design: the `.oto` file
@@ -352,8 +352,8 @@ By default OTO is built for a trusted local network.
 ├── test-ui/                 # browser tests (Playwright driving Chrome or Edge)
 ├── test-desktop/            # Electron end-to-end tests
 ├── test-support/            # the test harness and sample files
-├── docs/                    # the .oto package format, screenshots
-└── logo.ico, logo.gif       # app icon and project logo
+├── docs/                    # the .oto package format
+└── assets/                  # logo, app icon, energy icons, README screenshots (see assets/README.md)
 ```
 
 ### Designs and `.oto` in the code

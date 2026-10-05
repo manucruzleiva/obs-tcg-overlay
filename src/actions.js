@@ -45,6 +45,8 @@ function imageUrl(value, name) {
   return url;
 }
 
+const penaltyText = (count) => (count === 0 ? 'none' : `${count} prize card${count === 1 ? '' : 's'} in red`);
+
 const pickSlot = (value) => integer(value, 'slot', -1, 7);
 const benchSlot = (value) => integer(value, 'slot', 0, 7);
 const amount = (value) => integer(value, 'amount', -9999, 9999);
@@ -91,8 +93,11 @@ function flagAction(name, apply) {
   };
 }
 
-function counterAction(kind, key, delta) {
+// A once-per-turn token: going up uses it, going down gives it back. Only the supporter token has a sound of its own:
+// attaching energy and playing a stadium already make theirs.
+function counterAction(kind, key, delta, cue) {
   return {
+    sfx: cue && delta > 0 ? () => cue : undefined,
     targets: (side) => [`${side}.${key}`],
     run: (gs, side) => gs.stepCounter(side, kind, delta),
     label: (gs, side) => `${who(gs, side)}: ${key} ${signed(delta)}`
@@ -151,8 +156,23 @@ const TRAINER = {
     run: (gs, side) => gs.setPrizes(side, 6),
     label: (gs, side) => `${who(gs, side)} prizes reset`
   },
-  togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizeFlag(side, 'hidden', value)),
-  togglePrizePenalty: flagAction('prize penalty', (gs, side, value) => gs.setPrizeFlag(side, 'penalty', value)),
+  togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizesHidden(side, value)),
+  // The penalty is a number of prize cards, shown in red on the overlay
+  prizePenaltyPlus: {
+    targets: (side) => [`${side}.penalty`],
+    run: (gs, side) => gs.adjustPrizePenalty(side, 1),
+    label: (gs, side) => `${who(gs, side)} penalty: ${penaltyText(gs.state[side].prizes.penalty)}`
+  },
+  prizePenaltyMinus: {
+    targets: (side) => [`${side}.penalty`],
+    run: (gs, side) => gs.adjustPrizePenalty(side, -1),
+    label: (gs, side) => `${who(gs, side)} penalty: ${penaltyText(gs.state[side].prizes.penalty)}`
+  },
+  prizePenaltySet: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setPrizePenalty(side, integer(p.count, 'count', 0, 6)),
+    label: (gs, side) => `${who(gs, side)} penalty: ${penaltyText(gs.state[side].prizes.penalty)}`
+  },
   toggleItemLock: flagAction('item lock', (gs, side, value) => gs.setLock(side, 'itemLock', value)),
   toggleEvoLock: flagAction('evolution lock', (gs, side, value) => gs.setLock(side, 'evoLock', value)),
 
@@ -171,7 +191,7 @@ const TRAINER = {
     label: (gs, side) => `${who(gs, side)} stadium counter reset`
   },
 
-  supporterPlus: counterAction('supporterPerTurn', 'supporter', 1),
+  supporterPlus: counterAction('supporterPerTurn', 'supporter', 1, 'supporter'),
   supporterMinus: counterAction('supporterPerTurn', 'supporter', -1),
   supporterReset: {
     targets: () => null,

@@ -6,19 +6,20 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.OTO_GAME = factory();
 }(typeof self !== 'undefined' ? self : this, function () {
-  // key is what is stored in the game state; color is the default tint for its icon
+  // key is what is stored in the game state; icon is the picture of the type (see assets/energy);
+  // color is the plain disc drawn instead if those pictures are not there
   const ENERGY_TYPES = [
-    { key: 'grass', label: 'Grass', color: '#4caf50' },
-    { key: 'fire', label: 'Fire', color: '#f4511e' },
-    { key: 'water', label: 'Water', color: '#29b6f6' },
-    { key: 'lightning', label: 'Lightning', color: '#fdd835' },
-    { key: 'psychic', label: 'Psychic', color: '#ab47bc' },
-    { key: 'fighting', label: 'Fighting', color: '#a1672f' },
-    { key: 'darkness', label: 'Darkness', color: '#37474f' },
-    { key: 'metal', label: 'Metal', color: '#90a4ae' },
-    { key: 'dragon', label: 'Dragon', color: '#c9a227' },
-    { key: 'fairy', label: 'Fairy', color: '#f48fb1' },
-    { key: 'colorless', label: 'Colorless', color: '#e0e0e0' }
+    { key: 'grass', label: 'Grass', color: '#4caf50', icon: '/assets/energy/grass.png' },
+    { key: 'fire', label: 'Fire', color: '#f4511e', icon: '/assets/energy/fire.png' },
+    { key: 'water', label: 'Water', color: '#29b6f6', icon: '/assets/energy/water.png' },
+    { key: 'lightning', label: 'Lightning', color: '#fdd835', icon: '/assets/energy/lightning.png' },
+    { key: 'psychic', label: 'Psychic', color: '#ab47bc', icon: '/assets/energy/psychic.png' },
+    { key: 'fighting', label: 'Fighting', color: '#a1672f', icon: '/assets/energy/fighting.png' },
+    { key: 'darkness', label: 'Darkness', color: '#37474f', icon: '/assets/energy/darkness.png' },
+    { key: 'metal', label: 'Metal', color: '#90a4ae', icon: '/assets/energy/metal.png' },
+    { key: 'dragon', label: 'Dragon', color: '#c9a227', icon: '/assets/energy/dragon.png' },
+    { key: 'fairy', label: 'Fairy', color: '#f48fb1', icon: '/assets/energy/fairy.png' },
+    { key: 'colorless', label: 'Colorless', color: '#e0e0e0', icon: '/assets/energy/colorless.png' }
   ];
 
   const ENERGY_KEYS = ENERGY_TYPES.map((type) => type.key);

@@ -114,6 +114,12 @@
       [220, 277, 330].forEach((freq) => p.tone({ freq, dur: 0.9, gain: 0.18, attack: 0.12 }));
       p.noise({ dur: 0.5, gain: 0.08, filter: ['lowpass', 800, 200], attack: 0.15 });
     },
+    supporter(p) {
+      // a card laid on the table, then two rising notes: different from the ability chime and the stadium swell
+      p.noise({ dur: 0.1, gain: 0.2, filter: ['highpass', 1800, 3600] });
+      p.tone({ type: 'triangle', freq: 523, start: 0.06, dur: 0.22, gain: 0.26 });
+      p.tone({ type: 'triangle', freq: 784, start: 0.15, dur: 0.36, gain: 0.26 });
+    },
     prize(p) {
       p.noise({ dur: 0.12, gain: 0.25, filter: ['highpass', 2500, 4500] });
       p.tone({ freq: 1200, start: 0.1, dur: 0.12, gain: 0.2 });

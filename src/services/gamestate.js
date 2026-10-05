@@ -87,7 +87,7 @@ class GameStateService {
         sound: structuredClone(SOUND.DEFAULTS),
 
         // How long announcements stay on screen, in seconds (see MIN_SECONDS / MAX_SECONDS)
-        toastSeconds: 4,
+        toastSeconds: 2,
         animationSeconds: 3,
 
         // Announcement enable flags (toast = small banner, animation = full-screen effect)
@@ -126,7 +126,8 @@ class GameStateService {
       name,
       nationality: '',
       record: { wins: 0, losses: 0, ties: 0 },
-      prizes: { count: MAX_PRIZES, hidden: false, penalty: false },
+      // penalty: how many prize cards are marked red (0 to 6)
+      prizes: { count: MAX_PRIZES, hidden: false, penalty: 0 },
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
@@ -148,6 +149,13 @@ class GameStateService {
       delete merged[key];
     }
     if (!Number.isInteger(merged.revision) || merged.revision < 0) merged.revision = 0;
+    // The penalty used to be an on/off flag: it is a number of prize cards now
+    for (const side of ['trainerA', 'trainerB']) {
+      const prizes = merged[side].prizes;
+      if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
+      else if (!Number.isInteger(prizes.penalty)) prizes.penalty = 0;
+      prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, prizes.penalty));
+    }
     return merged;
   }
 
@@ -223,10 +231,19 @@ class GameStateService {
     this.state[side].prizes.count = Math.max(0, Math.min(MAX_PRIZES, count));
   }
 
-  // flag is 'hidden' or 'penalty'; omit value to toggle
-  setPrizeFlag(side, flag, value) {
+  // Hide the prize cards (the overlay shows them face down with a question mark); omit value to toggle
+  setPrizesHidden(side, value) {
     const prizes = this.state[side].prizes;
-    prizes[flag] = value === undefined ? !prizes[flag] : value;
+    prizes.hidden = value === undefined ? !prizes.hidden : value;
+  }
+
+  // How many prize cards are marked red as a penalty
+  setPrizePenalty(side, count) {
+    this.state[side].prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, Math.trunc(count)));
+  }
+
+  adjustPrizePenalty(side, delta) {
+    this.setPrizePenalty(side, this.state[side].prizes.penalty + delta);
   }
 
   // lock is 'itemLock' or 'evoLock'; omit value to toggle
@@ -383,8 +400,10 @@ class GameStateService {
 
   startGame() {
     this.matchStartTime = Date.now();
-    this.state.trainerA.prizes.count = MAX_PRIZES;
-    this.state.trainerB.prizes.count = MAX_PRIZES;
+    for (const side of ['trainerA', 'trainerB']) {
+      this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.penalty = 0;
+    }
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
     this.resetAbilities('trainerA', { includeGame: true });
     this.resetAbilities('trainerB', { includeGame: true });

@@ -24,15 +24,16 @@
       "src/**/*",
       "public/**/*",
       "electron/**/*",
-      "logo.ico",
-      "logo.gif",
+      "assets/logo.ico",
+      "assets/logo.gif",
+      "assets/energy/**/*",
       "package.json",
       "README.md",
       "LICENSE",
       "NOTICE.md"
     ],
     "win": {
-      "icon": "logo.ico",
+      "icon": "assets/logo.ico",
       "target": [
         {
           "target": "nsis",
@@ -67,7 +68,7 @@
         "ext": "oto",
         "name": "OTO package",
         "description": "OTO design and settings package",
-        "icon": "logo.ico"
+        "icon": "assets/logo.ico"
       }
     ],
     "publish": {

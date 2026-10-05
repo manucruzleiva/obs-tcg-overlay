@@ -118,6 +118,14 @@ describe('which sound each action makes', () => {
     assert.deepEqual(cues('action:trainerA', { action: 'setAbilityUsed', slot: -1, index: 0, used: false }), []);
   });
 
+  it('makes a sound when the supporter is used, and none when it is given back', () => {
+    assert.deepEqual(cues('action:trainerA', { action: 'supporterPlus' }), ['supporter']);
+    assert.deepEqual(cues('action:trainerB', { action: 'supporterPlus' }), ['supporter']);
+    assert.deepEqual(cues('action:trainerA', { action: 'supporterMinus' }), []);
+    assert.deepEqual(cues('action:trainerA', { action: 'supporterReset' }), []);
+    assert.ok(SOUND.KEYS.includes('supporter'), 'it can be switched on and off and given its own sound like any other');
+  });
+
   it('picks the cue from the card target', () => {
     assert.deepEqual(cues('action:card', { action: 'select', target: 'trainerA-active' }), ['deploy']);
     assert.deepEqual(cues('action:card', { action: 'select', target: 'trainerB-bench-2' }), ['bench']);

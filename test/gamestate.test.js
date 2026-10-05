@@ -41,7 +41,7 @@ describe('GameStateService', () => {
     assert.equal(state.trainerA.bench.length, 8);
     assert.equal(state.trainerA.benchSize, 5);
     assert.equal(state.settings.display.nationality, true);
-    assert.equal(state.settings.toastSeconds, 4);
+    assert.equal(state.settings.toastSeconds, 2, 'banners stay for two seconds unless the producer says otherwise');
   });
 
   it('gives the turn to trainer A first, then alternates, refreshing the starting trainer\'s limits', () => {
@@ -85,8 +85,43 @@ describe('GameStateService', () => {
     gs.setLock('trainerA', 'itemLock', false);
     assert.equal(gs.state.trainerA.locks.itemLock, false);
 
-    gs.setPrizeFlag('trainerB', 'hidden');
+    gs.setPrizesHidden('trainerB');
     assert.equal(gs.state.trainerB.prizes.hidden, true);
+    gs.setPrizesHidden('trainerB');
+    assert.equal(gs.state.trainerB.prizes.hidden, false, 'with no value it toggles');
+  });
+
+  it('keeps a penalty as a number of prize cards, from none to all six', () => {
+    assert.equal(gs.state.trainerA.prizes.penalty, 0);
+    gs.setPrizePenalty('trainerA', 2);
+    assert.equal(gs.state.trainerA.prizes.penalty, 2);
+    gs.adjustPrizePenalty('trainerA', 1);
+    assert.equal(gs.state.trainerA.prizes.penalty, 3);
+    gs.adjustPrizePenalty('trainerA', 99);
+    assert.equal(gs.state.trainerA.prizes.penalty, 6, 'never more than the six prize cards');
+    gs.adjustPrizePenalty('trainerA', -99);
+    assert.equal(gs.state.trainerA.prizes.penalty, 0, 'never below none');
+    gs.setPrizePenalty('trainerB', 2.9);
+    assert.equal(gs.state.trainerB.prizes.penalty, 2, 'whole cards only');
+    assert.equal(gs.state.trainerA.prizes.penalty, 0, 'the other trainer is not affected');
+  });
+
+  it('starts every game without a penalty', () => {
+    gs.setPrizePenalty('trainerA', 3);
+    gs.setPrizePenalty('trainerB', 1);
+    gs.startGame();
+    assert.equal(gs.state.trainerA.prizes.penalty, 0);
+    assert.equal(gs.state.trainerB.prizes.penalty, 0);
+  });
+
+  it('understands a saved penalty from when it was only on or off', () => {
+    const old = (penalty) => makeGame({ saved: { trainerA: { prizes: { count: 4, hidden: false, penalty } }, trainerB: { prizes: { penalty: 'yes' } } } });
+    assert.equal(old(true).state.trainerA.prizes.penalty, 1, 'on becomes one prize card');
+    assert.equal(old(false).state.trainerA.prizes.penalty, 0);
+    assert.equal(old(4).state.trainerA.prizes.penalty, 4);
+    assert.equal(old(40).state.trainerA.prizes.penalty, 6, 'out of range is brought back');
+    assert.equal(old(true).state.trainerB.prizes.penalty, 0, 'anything else is no penalty');
+    assert.equal(old(true).state.trainerA.prizes.count, 4, 'the rest of the prizes is kept');
   });
 
   it('keeps HP inside 0..max when damaging and healing', () => {
@@ -311,6 +346,7 @@ describe('actions', () => {
   it('describes which part of the game each action touches', () => {
     assert.deepEqual(run('action:trainerA', { action: 'prizeMinus' }).targets, ['trainerA.prizes']);
     assert.deepEqual(run('action:trainerB', { action: 'energyPlus' }).targets, ['trainerB.energy']);
+    assert.deepEqual(run('action:trainerA', { action: 'prizePenaltyPlus' }).targets, ['trainerA.penalty']);
     assert.deepEqual(actions.resolve('action:trainerA', { action: 'benchDamage', slot: 2, amount: 10 }).targets(), ['trainerA.bench.2.hp']);
     assert.deepEqual(actions.resolve('action:trainerA', { action: 'clearSlot', slot: -1 }).targets(), ['trainerA.active']);
     assert.deepEqual(actions.resolve('action:card', { action: 'select', target: 'trainerB-bench-3' }).targets(), ['trainerB.bench.3']);
@@ -345,6 +381,9 @@ describe('actions', () => {
       ['action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'plasma' }],
       ['action:trainerA', { action: 'setActive', cardId: 'x', name: 'x', image: 'ftp://x' }],
       ['action:trainerA', { action: 'prizeSet', count: 9 }],
+      ['action:trainerA', { action: 'prizePenaltySet', count: 7 }],
+      ['action:trainerA', { action: 'prizePenaltySet', count: 'all' }],
+      ['action:trainerA', { action: 'prizePenaltySet', count: -1 }],
       ['action:trainerA', { action: 'knockOut', slot: 5, prizes: 1 }],
       ['action:match', { action: 'setBestOf', bestOf: 4 }],
       ['action:match', { action: 'endGame', winner: 'x' }],
@@ -396,7 +435,7 @@ describe('announcements', () => {
     const topDeck = announcements.build(gs.state, 'topdeck', { target: 'trainerB' });
     assert.equal(topDeck.side, 'trainerB');
     assert.match(topDeck.subtitle, /Gary/);
-    assert.equal(topDeck.toastMs, 4000);
+    assert.equal(topDeck.toastMs, 2000, 'a banner stays two seconds by default');
     assert.equal(topDeck.animationMs, 3000);
 
     gs.state.settings.toastSeconds = 9;

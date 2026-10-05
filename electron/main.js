@@ -27,7 +27,7 @@ const pendingPackages = [];
 const startupFiles = [];
 let pageListening = false;
 
-const APP_ICON = path.join(__dirname, '../logo.ico');
+const APP_ICON = path.join(__dirname, '../assets/logo.ico');
 
 // OTO_PORT is for running a second copy next to the first (tests, a second stream)
 const SERVER_PORT = Number(process.env.OTO_PORT) || DEFAULT_PORT;
@@ -440,6 +440,12 @@ takeTheLock().then((owned) => {
     await startServer();
     createTray();
     createMainWindow();
+    // If another program answers on OTO's port, the window and OBS would talk to it instead of to OTO: say so
+    if (serverModule && serverModule.portCheck) {
+      serverModule.portCheck.then((result) => {
+        if (result.reason === 'other') new Notification({ title: 'OTO: another program is using its port', body: result.message }).show();
+      });
+    }
     const opened = packageIn(process.argv);
     for (const file of [...(opened ? [opened] : []), ...startupFiles.splice(0)]) openPackage(file);
 

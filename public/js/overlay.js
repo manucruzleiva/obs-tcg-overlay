@@ -162,6 +162,7 @@
 
       this.build();
       this.fit();
+      this.checkEnergyIcons();
       window.addEventListener('resize', () => this.fit());
 
       // role "preview" is the small copy inside the control panel: it is not counted as a screen
@@ -182,6 +183,13 @@
         this.socket.on('sounds:changed', () => this.loadSounds());
         this.loadSounds();
       }
+    }
+
+    // The energy icons are files in the assets folder. If they are not there (it can be deleted), draw plain colored discs.
+    checkEnergyIcons() {
+      const probe = new Image();
+      probe.onerror = () => document.documentElement.classList.add('no-energy-icons');
+      probe.src = GAME.ENERGY_TYPES[0].icon;
     }
 
     // Learn which cues have an uploaded sound and fetch them
@@ -362,11 +370,15 @@
       refs.root.classList.toggle('is-turn', hasTurn);
       refs.turnTag.hidden = !hasTurn;
 
-      // prizes
-      refs.prizeNodes.forEach((node, index) => node.classList.toggle('taken', index >= trainer.prizes.count));
+      // prizes: the ones taken fade out, and a penalty marks that many of the ones still there in red
+      const penalty = Math.min(Number(trainer.prizes.penalty) || 0, trainer.prizes.count);
+      refs.prizeNodes.forEach((node, index) => {
+        node.classList.toggle('taken', index >= trainer.prizes.count);
+        node.classList.toggle('penalty', index < penalty);
+      });
       refs.prizes.classList.toggle('is-hidden', Boolean(trainer.prizes.hidden));
-      refs.prizes.classList.toggle('is-penalty', Boolean(trainer.prizes.penalty));
-      refs.prizeFlag.textContent = trainer.prizes.penalty ? 'PENALTY' : '';
+      refs.prizes.classList.toggle('pulse', penalty > 0 && state.settings.showPenaltyAnimation !== false);
+      refs.prizeFlag.textContent = penalty > 0 ? 'PENALTY' : '';
 
       // once-per-turn tokens
       [['energy', 'energyPerTurn'], ['stadiumUse', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn']].forEach(([key, resource]) => {

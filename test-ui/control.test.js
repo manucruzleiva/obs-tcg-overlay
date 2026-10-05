@@ -105,6 +105,54 @@ describe('control panel', { skip }, () => {
     assert.deepEqual(page.problems, []);
   });
 
+  it('sets a penalty with the stepper next to the prize cards, shown in red on the prize pips', async () => {
+    const stepper = page.locator('.trainer-panel.side-a .penalty-row');
+    const number = () => stepper.locator('.penalty-number');
+    const redPips = () => page.locator('.trainer-panel.side-a .pip.penalty').count();
+    assert.equal((await number().textContent()).trim(), '0');
+    assert.equal(await redPips(), 0);
+
+    await stepper.getByRole('button', { name: 'One more prize card in red' }).click();
+    await expectLive((state) => state.trainerA.prizes.penalty, 1);
+    await stepper.getByRole('button', { name: 'One more prize card in red' }).click();
+    await stepper.getByRole('button', { name: 'One more prize card in red' }).click();
+    await expectLive((state) => state.trainerA.prizes.penalty, 3);
+    assert.equal((await number().textContent()).trim(), '3');
+    assert.equal(await redPips(), 3, 'the first three of the prize cards are red');
+    assert.match(await number().getAttribute('class'), /\bon\b/);
+    assert.equal(await page.locator('.trainer-panel.side-b .pip.penalty').count(), 0, 'the other trainer is not marked');
+
+    await stepper.getByRole('button', { name: 'One prize card less in red' }).click();
+    await expectLive((state) => state.trainerA.prizes.penalty, 2);
+
+    // never below none and never above six
+    for (let i = 0; i < 4; i++) await stepper.getByRole('button', { name: 'One prize card less in red' }).click();
+    await expectLive((state) => state.trainerA.prizes.penalty, 0);
+    assert.doesNotMatch(await number().getAttribute('class'), /\bon\b/);
+    for (let i = 0; i < 8; i++) await stepper.getByRole('button', { name: 'One more prize card in red' }).click();
+    await expectLive((state) => state.trainerA.prizes.penalty, 6);
+
+    // a prize card that has been taken cannot be red
+    await producer.act('action:trainerA', { action: 'prizeSet', count: 2 });
+    await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.penalty').length === 2);
+  });
+
+  it('shows the energy icons on a Pokémon and in the energy editor', async () => {
+    await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'psychic', count: 2 });
+    await page.waitForSelector('.trainer-panel.side-a .energy-chip');
+    const chip = await page.$eval('.trainer-panel.side-a .energy-chip', (node) => ({ image: getComputedStyle(node).backgroundImage, border: getComputedStyle(node).borderTopWidth }));
+    assert.match(chip.image, /\/assets\/energy\/psychic\.png/);
+    assert.equal(chip.border, '0px');
+
+    await press('e');
+    await modal().waitFor();
+    const dots = await page.$$eval('.energy-pick .energy-dot', (nodes) => nodes.map((node) => getComputedStyle(node).backgroundImage));
+    assert.equal(dots.length, 11);
+    assert.ok(dots.every((image) => /\/assets\/energy\/[a-z]+\.png/.test(image)), 'a picture for every type');
+    assert.equal(new Set(dots).size, 11, 'each its own');
+    assert.deepEqual(page.problems, []);
+  });
+
   it('shows who else is producing and what they do', async () => {
     await producer.act('action:trainerB', { action: 'prizeMinus' });
     await page.waitForFunction(() => document.querySelector('.feed').textContent.includes('(5 left)'));

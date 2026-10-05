@@ -2,7 +2,7 @@
  * The dialogs behind the keyboard shortcuts: pick a card, knock out, damage and heal, energy, bench,
  * abilities, attack announcement, help, overlay preview and draft conflicts.
  */
-import { h, icon, replace, debounce } from './dom.js';
+import { h, icon, replace, debounce, energyStyle } from './dom.js';
 import { openModal, closeModal } from './ui.js';
 
 const GAME = window.OTO_GAME;
@@ -335,14 +335,14 @@ export function openEnergy(app, side, slot) {
     const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 
     const grid = h('div', { class: 'energy-grid' }, GAME.ENERGY_TYPES.map((type) => h('button', {
-      class: `energy-pick${counts[type.key] ? ' on' : ''}`, type: 'button', style: { '--c': type.color },
+      class: `energy-pick${counts[type.key] ? ' on' : ''}`, type: 'button', style: energyStyle(type),
       onclick: () => { counts[type.key] = (counts[type.key] || 0) + 1; draw(); },
       oncontextmenu: (event) => { event.preventDefault(); counts[type.key] = Math.max(0, (counts[type.key] || 0) - 1); draw(); }
     }, h('span', { class: 'energy-dot' }), type.label, counts[type.key] ? h('span', { class: 'energy-count' }, `×${counts[type.key]}`) : null)));
 
     const attachedNow = pokemon && (pokemon.energies || []).length
       ? h('div', { class: 'chips energies' }, pokemon.energies.map((type, index) => h('button', {
-        class: 'energy-chip', type: 'button', title: `Remove ${type} energy`, style: { '--c': (GAME.ENERGY_TYPES.find((t) => t.key === type) || GAME.ENERGY_TYPES[10]).color },
+        class: 'energy-chip', type: 'button', title: `Remove ${type} energy`, style: energyStyle(GAME.ENERGY_TYPES.find((t) => t.key === type) || GAME.ENERGY_TYPES[10]),
         onclick: async () => { await app.act(`action:${current}`, { action: 'removeEnergy', slot: target, index }); draw(); }
       })))
       : h('p', { class: 'empty' }, 'No energy attached yet.');
