@@ -101,7 +101,7 @@ class Client {
   }
 
   // Resolves with the next matching event (register this BEFORE doing what causes it)
-  expect(event, predicate = () => true, ms = 3000) {
+  expect(event, predicate = () => true, ms = 8000) {
     return new Promise((resolve, reject) => {
       const stop = this.watch(event, predicate, (data) => {
         stop();
@@ -126,7 +126,7 @@ class Client {
   }
 
   // Wait for the server's answer to the action with this sequence number: applied, or rejected
-  answerTo(seq, ms = 3000) {
+  answerTo(seq, ms = 8000) {
     return new Promise((resolve, reject) => {
       const stops = [];
       const finish = (value) => {

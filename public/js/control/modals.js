@@ -70,10 +70,13 @@ const FILTERS = [
   { label: 'Energy', value: 'Energy' }
 ];
 
+// What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution, or a Special Energy
+// card for a Pokémon (`countsAsTurn` and `onDone` belong to that one: whether it uses up the turn's energy
+// attachment, and what to do when a card has been attached).
 export function openPicker(app, purpose) {
-  const { kind, side, slot } = purpose;
+  const { kind, side, slot, countsAsTurn, onDone } = purpose;
   const state = app.state;
-  const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'active' || kind === 'bench' || kind === 'evolve' ? 'Pokémon' : '';
+  const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'special-energy' ? 'Energy' : kind === 'active' || kind === 'bench' || kind === 'evolve' ? 'Pokémon' : '';
   let filter = fixedFilter;
   let evolvesFrom = '';
   let token = 0;
@@ -83,10 +86,11 @@ export function openPicker(app, purpose) {
     bench: `Bench slot ${slot + 1} · ${side && trainerName(state, side)}`,
     stadium: 'Stadium',
     feature: 'Feature a card',
-    evolve: 'Evolve'
+    evolve: 'Evolve',
+    'special-energy': `Special Energy · ${side && trainerName(state, side)}`
   };
 
-  const input = h('input', { type: 'search', class: 'search-input', placeholder: kind === 'stadium' ? 'Search stadium cards…' : 'Search by card name…', 'aria-label': 'Card name', 'data-autofocus': true, autocomplete: 'off' });
+  const input = h('input', { type: 'search', class: 'search-input', placeholder: kind === 'stadium' ? 'Search stadium cards…' : kind === 'special-energy' ? 'Search Special Energy cards, for example Double Turbo…' : 'Search by card name…', 'aria-label': 'Card name', 'data-autofocus': true, autocomplete: 'off' });
   const results = h('div', { class: 'card-grid', 'aria-live': 'polite' });
   const note = kind === 'feature' ? h('input', { type: 'text', maxlength: 200, placeholder: 'Note for the casters (optional)', 'aria-label': 'Note' }) : null;
   const status = h('p', { class: 'picker-status' }, 'Type a card name to search.');
@@ -104,11 +108,19 @@ export function openPicker(app, purpose) {
       result = await app.act('action:card', { action: 'addFeatureCard', cardId: card.id, name: card.name, image: (card.images && (card.images.large || card.images.small)) || '', note: note.value });
     } else if (kind === 'stadium') {
       result = await app.act('action:card', { action: 'select', target: 'stadium', cardId: card.id, cardData });
+    } else if (kind === 'special-energy') {
+      result = await app.act(`action:${side}`, {
+        action: 'attachSpecialEnergy', slot, cardId: card.id, name: card.name,
+        image: (card.images && (card.images.large || card.images.small)) || '', countsAsTurn: countsAsTurn !== false
+      });
     } else {
       const target = `${side}-${slot === undefined || slot === -1 ? 'active' : `bench-${slot}`}`;
       result = await app.act('action:card', { action: 'select', target, cardId: card.id, cardData, evolve: kind === 'evolve' });
     }
-    if (result.ok) closeModal();
+    if (result.ok) {
+      closeModal();
+      if (onDone) onDone();
+    }
   };
 
   const render = (cards) => {
@@ -135,6 +147,7 @@ export function openPicker(app, purpose) {
     if (text) params.set('q', text);
     // The card API groups cards as Pokémon, Trainer or Energy; a Stadium is a kind of Trainer
     if (kind === 'stadium') { params.set('supertype', 'Trainer'); params.set('subtype', 'Stadium'); }
+    else if (kind === 'special-energy') { params.set('supertype', 'Energy'); params.set('subtype', 'Special'); }
     else if (filter) params.set('supertype', filter);
     if (evolvesFrom) params.set('evolvesFrom', evolvesFrom);
     try {
@@ -187,7 +200,7 @@ export function openPicker(app, purpose) {
     }, pokemon.image && h('img', { src: pokemon.image, alt: '' }), h('span', { class: 'choice-text' }, h('strong', {}, pokemon.name), h('span', {}, `Bench ${benchSlot + 1} · ${hpText(pokemon)}`))))));
 
   openModal({
-    title: titles[kind], size: 'lg', name: 'picker',
+    title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy', // over the energy editor that asked for it
     body: [fromBench, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, note && h('div', { class: 'note-row' }, note), status, results, h('div', { class: 'more-row' }, moreButton)]
   });
   if (evolvesFrom) search();
@@ -340,11 +353,17 @@ export function openEnergy(app, side, slot) {
       oncontextmenu: (event) => { event.preventDefault(); counts[type.key] = Math.max(0, (counts[type.key] || 0) - 1); draw(); }
     }, h('span', { class: 'energy-dot' }), type.label, counts[type.key] ? h('span', { class: 'energy-count' }, `×${counts[type.key]}`) : null)));
 
-    const attachedNow = pokemon && (pokemon.energies || []).length
-      ? h('div', { class: 'chips energies' }, pokemon.energies.map((type, index) => h('button', {
-        class: 'energy-chip', type: 'button', title: `Remove ${type} energy`, style: energyStyle(GAME.ENERGY_TYPES.find((t) => t.key === type) || GAME.ENERGY_TYPES[10]),
-        onclick: async () => { await app.act(`action:${current}`, { action: 'removeEnergy', slot: target, index }); draw(); }
-      })))
+    const specials = pokemon ? pokemon.specialEnergies || [] : [];
+    const attachedNow = pokemon && ((pokemon.energies || []).length || specials.length)
+      ? h('div', { class: 'chips energies' },
+        (pokemon.energies || []).map((type, index) => h('button', {
+          class: 'energy-chip', type: 'button', title: `Remove ${type} energy`, style: energyStyle(GAME.ENERGY_TYPES.find((t) => t.key === type) || GAME.ENERGY_TYPES[10]),
+          onclick: async () => { await app.act(`action:${current}`, { action: 'removeEnergy', slot: target, index }); draw(); }
+        })),
+        specials.map((card, index) => h('button', {
+          class: 'energy-chip special', type: 'button', title: `Remove ${card.name}`, 'aria-label': `Remove ${card.name}`,
+          onclick: async () => { await app.act(`action:${current}`, { action: 'removeSpecialEnergy', slot: target, index }); draw(); }
+        }, card.image && h('img', { src: card.image, alt: '' }))))
       : h('p', { class: 'empty' }, 'No energy attached yet.');
 
     replace(body,
@@ -353,6 +372,11 @@ export function openEnergy(app, side, slot) {
       pokemonChoices(state, current, target, (value) => { target = value; draw(); }),
       h('div', { class: 'section-label' }, 'Energy to attach', h('span', { class: 'hint' }, 'Click to add, right-click to take one back')),
       grid,
+      h('div', { class: 'section-label' }, 'Special Energy cards', h('span', { class: 'hint' }, 'Shown as a circle cut out of the card')),
+      h('div', { class: 'button-row' }, h('button', {
+        class: 'btn', type: 'button', disabled: target === undefined || undefined,
+        onclick: () => openPicker(app, { kind: 'special-energy', side: current, slot: target, countsAsTurn, onDone: draw })
+      }, icon('plus', 16), 'Add a Special Energy card…')),
       h('label', { class: 'switch inline' }, (() => {
         const box = h('input', { type: 'checkbox', checked: countsAsTurn });
         box.addEventListener('change', () => { countsAsTurn = box.checked; draw(); });

@@ -248,6 +248,12 @@ export class TrainerView {
       'aria-label': `Remove ${type} energy`, onclick: () => act('removeEnergy', { index })
     }));
 
+    // Special Energy cards: a circle cut out of each card
+    const specials = (pokemon.specialEnergies || []).map((card, index) => h('button', {
+      class: 'energy-chip special', type: 'button', title: `${card.name} (click to remove)`,
+      'aria-label': `Remove ${card.name}`, onclick: () => act('removeSpecialEnergy', { index })
+    }, card.image && h('img', { src: card.image, alt: '', loading: 'lazy' })));
+
     const abilities = (pokemon.abilities || []).map((ability, index) => h('button', {
       class: `ability-chip${ability.used ? ' used' : ''}`, type: 'button',
       title: `${ability.name}${ability.scope === 'game' ? ' (once per game)' : ' (once per turn)'}: click to mark ${ability.used ? 'ready' : 'used'}`,
@@ -277,7 +283,7 @@ export class TrainerView {
       h('div', { class: 'mon-info' },
         h('div', { class: 'mon-name' }, pokemon.name),
         h('div', { class: 'hp-line' }, hpValue, h('div', { class: `hp-bar${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, h('div', { style: { width: `${percent}%` } }))),
-        energies.length > 0 && h('div', { class: 'chips energies' }, energies),
+        (energies.length > 0 || specials.length > 0) && h('div', { class: 'chips energies' }, [...energies, ...specials]),
         abilities.length > 0 && h('div', { class: 'chips abilities' }, abilities),
         h('div', { class: 'mon-actions' }, buttons)));
   }

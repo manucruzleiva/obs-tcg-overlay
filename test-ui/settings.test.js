@@ -132,9 +132,17 @@ describe('settings', { skip }, () => {
 
   const saved = () => page.waitForFunction(() => document.querySelector('.save-status')?.textContent.startsWith('Saved'));
 
+  // "Create a design" asks for a name in a dialog of the app (the desktop app has no window.prompt),
+  // then opens the editor on it. These tests are about the settings screen behind it, so the editor is closed again.
   async function makeDesign(name) {
-    page.once('dialog', (dialog) => dialog.accept(name));
     await page.locator('button', { hasText: 'Create a design' }).click();
+    const ask = page.locator('.modal[aria-label="Create a design"]');
+    await ask.locator('input').fill(name);
+    await ask.getByRole('button', { name: 'Create', exact: true }).click();
+    const editor = page.locator(`.modal[aria-label="Design: ${name}"]`);
+    await editor.waitFor();
+    await editor.locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+    await editor.waitFor({ state: 'detached' });
     await page.waitForSelector(`.theme-head h3:has-text("${name}")`);
   }
 
@@ -341,7 +349,7 @@ describe('settings', { skip }, () => {
 
       // change the settings, so applying the package is visible
       const producer = await freshProducer();
-      await producer.act('action:settings', { action: 'update', toastSeconds: 4, display: { nationality: true } });
+      await producer.act('action:settings', { action: 'update', toastSeconds: 2, display: { nationality: true } });
 
       await page.waitForSelector('.modal', { state: 'detached' });
       await openSettings('General');
@@ -371,7 +379,7 @@ describe('settings', { skip }, () => {
       await page.keyboard.press('Escape');
       await page.waitForSelector('.modal', { state: 'detached' });
       await page.keyboard.press('Control+z');
-      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.toastSeconds === 4);
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.toastSeconds === 2);
       settings = (await call('GET', '/api/state')).json.settings;
       assert.equal(settings.display.nationality, true);
       producer.close();
@@ -396,7 +404,7 @@ describe('settings', { skip }, () => {
         'Muted sounds: Damage'
       ]);
       assert.equal(await dialog.locator('text=Design').count(), 0, 'there is no design in it');
-      assert.equal((await call('GET', '/api/state')).json.settings.toastSeconds, 4, 'nothing has changed yet');
+      assert.equal((await call('GET', '/api/state')).json.settings.toastSeconds, 2, 'nothing has changed yet');
 
       await dialog.locator('button', { hasText: 'Install' }).click();
       await page.waitForSelector('.toast-success');

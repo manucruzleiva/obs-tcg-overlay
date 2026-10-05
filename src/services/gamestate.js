@@ -11,6 +11,7 @@ const SOUND = require('../../public/js/sound-options');
 
 const MAX_ENERGIES_PER_POKEMON = 20;
 const MAX_ABILITIES = 4;
+const MAX_SPECIAL_ENERGIES = 4;
 const MIN_SECONDS = 1;
 const MAX_SECONDS = 30;
 
@@ -37,6 +38,8 @@ const emptyPokemon = (slot) => ({
   image: '',
   hp: { max: 0, current: 0 },
   energies: [],
+  // Special Energy cards: { cardId, name, image }. They are cards, not one of the basic types, so the overlay shows a circle cut out of each.
+  specialEnergies: [],
   tools: [],
   status: [],
   // Ability tokens: { name, used, scope } where scope 'turn' refreshes every turn and 'game' never does
@@ -149,8 +152,10 @@ class GameStateService {
       delete merged[key];
     }
     if (!Number.isInteger(merged.revision) || merged.revision < 0) merged.revision = 0;
-    // The penalty used to be an on/off flag: it is a number of prize cards now
     for (const side of ['trainerA', 'trainerB']) {
+      // Pokémon saved before Special Energy existed hold none
+      for (const pokemon of [merged[side].active, ...merged[side].bench]) if (pokemon && !Array.isArray(pokemon.specialEnergies)) pokemon.specialEnergies = [];
+      // The penalty used to be an on/off flag: it is a number of prize cards now
       const prizes = merged[side].prizes;
       if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
       else if (!Number.isInteger(prizes.penalty)) prizes.penalty = 0;
@@ -309,6 +314,7 @@ class GameStateService {
     Object.assign(pokemon, { cardId, name, image });
     if (!keep) {
       pokemon.energies = [];
+      pokemon.specialEnergies = [];
       pokemon.tools = [];
       pokemon.status = [];
     }
@@ -332,6 +338,21 @@ class GameStateService {
   removeEnergy(side, slot, index) {
     const pokemon = this.pokemonAt(side, slot);
     if (pokemon && index >= 0 && index < pokemon.energies.length) pokemon.energies.splice(index, 1);
+  }
+
+  // Attach a Special Energy card ({ cardId, name, image }). Returns false when the Pokémon holds as many as it may.
+  attachSpecialEnergy(side, slot, card) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon) return false;
+    if (!Array.isArray(pokemon.specialEnergies)) pokemon.specialEnergies = []; // a save from before they existed
+    if (pokemon.specialEnergies.length >= MAX_SPECIAL_ENERGIES) return false;
+    pokemon.specialEnergies.push({ cardId: card.cardId, name: card.name, image: card.image });
+    return true;
+  }
+
+  removeSpecialEnergy(side, slot, index) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (pokemon && Array.isArray(pokemon.specialEnergies) && index >= 0 && index < pokemon.specialEnergies.length) pokemon.specialEnergies.splice(index, 1);
   }
 
   setAbilityUsed(side, slot, index, used) {

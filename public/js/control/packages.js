@@ -86,7 +86,8 @@ export async function openImportDialog(app, source, { onInstalled } = {}) {
   }
 
   const design = info.design;
-  const installDesign = design && choice('Install the design', true, `${plural(design.images.length, 'picture')}${design.font ? ', a font' : ''}${design.sounds.length ? `, ${plural(design.sounds.length, 'sound')}` : ''}`);
+  const installDesign = design && choice('Install the design', true, [plural(design.images.length, 'picture'), design.font && 'a font', design.sounds.length && plural(design.sounds.length, 'sound'),
+    design.layout > 0 && `its own layout (${plural(design.layout, 'piece')} moved)`, design.crop.length > 0 && 'card crop'].filter(Boolean).join(', '));
   const activate = design && choice('Put it on the overlay now', true);
   const useControls = info.controls && choice('Use its control settings', true, 'You can undo this afterwards with Ctrl+Z');
 

@@ -1,0 +1,286 @@
+/**
+ * The design editor: the overlay on a canvas you can zoom and drag pieces around, a crop selector for the
+ * Pokémon cards, and the design as code. It edits one design and saves it back, so the overlay (if this
+ * design is on air) follows.
+ */
+import { h, icon } from './dom.js';
+import { openModal, closeModal, confirmDialog } from './ui.js';
+import { EditorModel } from './editor-model.js';
+import { EditorCanvas } from './editor-canvas.js';
+import { CropSelector } from './editor-crop.js';
+import { CodePanel } from './editor-code.js';
+import { sampleState, cardArt, specialEnergyArt } from './editor-sample.js';
+
+const THEME = window.OTO_THEME;
+
+async function getJson(url) {
+  const response = await fetch(url);
+  let data = null;
+  try { data = await response.json(); } catch (error) { /* an empty answer */ }
+  if (!response.ok) throw new Error((data && data.error) || `Something went wrong (${response.status})`);
+  return data;
+}
+
+// ----------------------------------------------------------------------------- the layout panel
+
+function layoutPanel({ model, canvas }) {
+  const buttons = new Map();
+  const list = h('div', { class: 'block-list', role: 'group', 'aria-label': 'Pieces of the overlay' },
+    THEME.BLOCKS.map((block) => {
+      const button = h('button', {
+        class: 'block-item', type: 'button', dataset: { key: block.key }, 'aria-pressed': 'false',
+        onclick: () => {
+          canvas.select(canvas.selected === block.key ? null : block.key);
+          canvas.element.focus({ preventScroll: true }); // so the arrow keys move it
+        }
+      }, h('span', { class: 'block-dot' }), h('span', { class: 'block-name' }, block.label));
+      buttons.set(block.key, button);
+      return button;
+    }));
+
+  const number = (label, step, min, max) => {
+    const input = h('input', { type: 'number', step, min, max, 'aria-label': label });
+    return { input, node: h('label', { class: 'crop-field' }, h('span', {}, label), input) };
+  };
+  const x = number('Across', 1, -1920, 1920);
+  const y = number('Down', 1, -1920, 1920);
+  const scale = number('Size', 0.05, 0.2, 4);
+  const commit = () => {
+    const key = canvas.selected;
+    if (!key) return;
+    const value = (field, fallback) => (field.input.value === '' || Number.isNaN(Number(field.input.value)) ? fallback : Number(field.input.value));
+    const limit = THEME.LAYOUT_LIMITS;
+    const entry = model.layoutOf(key);
+    model.setLayout(key, {
+      x: Math.round(Math.max(-limit.offset, Math.min(limit.offset, value(x, entry.x)))),
+      y: Math.round(Math.max(-limit.offset, Math.min(limit.offset, value(y, entry.y)))),
+      scale: Math.round(Math.max(limit.minScale, Math.min(limit.maxScale, value(scale, entry.scale))) * 100) / 100
+    }, { source: 'fields' });
+  };
+  for (const field of [x, y, scale]) field.input.addEventListener('change', commit);
+
+  const resetOne = h('button', { class: 'btn tiny', type: 'button', onclick: () => canvas.selected && model.setLayout(canvas.selected, {}, { source: 'fields' }) }, 'Put it back');
+  const resetAll = h('button', { class: 'btn tiny', type: 'button', onclick: () => model.update({ layout: {} }, { source: 'fields' }) }, 'Put everything back');
+  const name = h('strong', { class: 'block-selected' });
+  const fields = h('div', { class: 'block-fields' }, name, h('div', { class: 'crop-fields' }, x.node, y.node, scale.node), h('div', { class: 'button-row' }, resetOne));
+
+  const element = h('div', { class: 'layout-panel' },
+    h('p', { class: 'settings-note' }, 'Click a piece on the overlay, or choose one from the list. Drag it to move it, and drag a corner of the box around it to resize it. The arrow keys move it by a pixel (Shift: ten). Scroll or pinch to zoom, hold Space and drag to pan.'),
+    list, fields, h('div', { class: 'button-row' }, resetAll));
+
+  function refresh() {
+    const selected = canvas.selected;
+    for (const [key, button] of buttons) {
+      button.classList.toggle('moved', model.isMoved(key));
+      button.classList.toggle('on', key === selected);
+      button.classList.toggle('away', !canvas.rects[key]);
+      button.setAttribute('aria-pressed', String(key === selected));
+      button.title = canvas.rects[key] ? '' : 'Not showing right now (it is empty)';
+    }
+    fields.hidden = !selected;
+    if (selected) {
+      const entry = model.layoutOf(selected);
+      const block = THEME.BLOCKS.find((item) => item.key === selected);
+      name.textContent = block ? block.label : selected;
+      if (document.activeElement !== x.input) x.input.value = String(entry.x);
+      if (document.activeElement !== y.input) y.input.value = String(entry.y);
+      if (document.activeElement !== scale.input) scale.input.value = String(entry.scale);
+      resetOne.disabled = !model.isMoved(selected);
+    }
+    resetAll.disabled = Object.keys(model.draft.layout).length === 0;
+  }
+  return { element, refresh };
+}
+
+// ------------------------------------------------------------------------------------ the editor
+
+// Open the editor for a design. `onClose` runs when it is closed (the screen behind it can refresh then).
+export async function openDesignEditor(app, name, { onClose } = {}) {
+  let design;
+  let active;
+  try {
+    design = await getJson(`/api/themes/${encodeURIComponent(name)}`);
+    active = (await getJson('/api/themes')).active;
+  } catch (error) {
+    app.toast(error.message, 'error');
+    return null;
+  }
+
+  const model = new EditorModel(design);
+  const assetUrl = (ref) => `/api/themes/${encodeURIComponent(model.name)}/assets/${ref}?v=${model.version}`;
+  let matchMode = 'sample'; // or "live"
+
+  const liveState = () => {
+    const state = structuredClone(app.conn.live || app.state);
+    state.settings.autoScale = false;
+    return state;
+  };
+  const sample = () => (matchMode === 'live' ? liveState() : sampleState(app.conn.live || app.state));
+
+  // ---- the parts
+  const toolbar = {};
+  const canvas = new EditorCanvas({
+    model, sample, assetUrl,
+    onView: (view) => { if (toolbar.zoom) toolbar.zoom.textContent = `${Math.round(view.zoom * 100)}%`; },
+    onSelect: () => layout.refresh()
+  });
+  const layout = layoutPanel({ model, canvas });
+  const cropSelector = new CropSelector({
+    model,
+    // the cards a crop can be shown on: a made-up one, and the ones on the table
+    cards: (which) => {
+      const live = app.conn.live;
+      const trainers = [['trainerA', live && live.trainerA], ['trainerB', live && live.trainerB]];
+      if (which === 'energy') {
+        const cards = [{ label: 'A sample Special Energy card', url: specialEnergyArt() }];
+        for (const [side, trainer] of trainers) {
+          for (const mon of trainer ? [trainer.active, ...trainer.bench] : []) {
+            for (const card of (mon && mon.specialEnergies) || []) if (card.image) cards.push({ label: `${trainer.name || side}: ${card.name}`, url: card.image });
+          }
+        }
+        return cards;
+      }
+      const cards = [{ label: 'A sample card', url: cardArt('Sample', 50) }];
+      for (const [side, trainer] of trainers) {
+        if (trainer && trainer.active && trainer.active.image) cards.push({ label: `${trainer.name || side}: ${trainer.active.name}`, url: trainer.active.image });
+      }
+      return cards;
+    }
+  });
+  const code = new CodePanel({ model });
+
+  // ---- the toolbar above the canvas
+  const iconButton = (label, glyph, onclick) => h('button', { class: 'icon-btn', type: 'button', title: label, 'aria-label': label, onclick }, icon(glyph));
+  toolbar.undo = iconButton('Undo (Ctrl+Z)', 'undo', () => model.undo());
+  toolbar.redo = iconButton('Redo (Ctrl+Y)', 'redo', () => model.redo());
+  toolbar.zoom = h('output', { class: 'zoom-readout', 'aria-label': 'Zoom' }, '50%');
+  const snap = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Snap to lines' });
+  snap.addEventListener('change', () => { canvas.snap = snap.checked; });
+  const banner = h('input', { type: 'checkbox', 'aria-label': 'Show an announcement banner' });
+  banner.addEventListener('change', () => canvas.showBanner(banner.checked));
+  const match = h('select', { 'aria-label': 'The match to draw', onchange: () => { matchMode = match.value; canvas.draw(); } },
+    h('option', { value: 'sample' }, 'A sample match'), h('option', { value: 'live' }, 'The live match'));
+  const switchOf = (input, label) => h('label', { class: 'switch inline' }, input, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, label));
+
+  const bar = h('div', { class: 'editor-toolbar' },
+    h('div', { class: 'toolbar-group' }, toolbar.undo, toolbar.redo),
+    h('div', { class: 'toolbar-group' },
+      iconButton('Zoom out (-)', 'minus', () => canvas.zoomBy(1 / 1.2)), toolbar.zoom, iconButton('Zoom in (+)', 'plus', () => canvas.zoomBy(1.2)),
+      h('button', { class: 'btn tiny', type: 'button', title: 'Show the whole overlay (0)', onclick: () => canvas.fit() }, 'Fit'),
+      h('button', { class: 'btn tiny', type: 'button', title: 'One pixel is one pixel (1)', onclick: () => canvas.actualSize() }, '100%')),
+    h('div', { class: 'toolbar-group' }, switchOf(snap, 'Snap to lines'), switchOf(banner, 'Banner')),
+    h('div', { class: 'toolbar-group' }, match),
+    h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));
+
+  // ---- the side panel
+  const panels = { layout: layout.element, crop: cropSelector.element, code: code.element };
+  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['code', 'Code']];
+  const tabButtons = new Map();
+  const sideBody = h('div', { class: 'editor-side-body' });
+  let current = 'layout';
+  const showTab = (id) => {
+    current = id;
+    for (const [key, button] of tabButtons) {
+      button.classList.toggle('on', key === id);
+      button.setAttribute('aria-selected', String(key === id));
+    }
+    sideBody.textContent = '';
+    sideBody.appendChild(panels[id]);
+  };
+  const side = h('aside', { class: 'editor-side' },
+    h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, label]) => {
+      const button = h('button', { class: 'tab', type: 'button', role: 'tab', dataset: { tab: id }, onclick: () => showTab(id) }, label);
+      tabButtons.set(id, button);
+      return button;
+    })),
+    sideBody);
+  showTab('layout');
+
+  // ---- saving
+  const status = h('span', { class: 'save-status editor-status', role: 'status' });
+  const saveButton = h('button', { class: 'btn primary', type: 'button', 'data-autofocus': true }, 'Save');
+  const revertButton = h('button', { class: 'btn', type: 'button', onclick: () => model.revert() }, 'Undo all changes');
+  let saving = false;
+
+  const refreshStatus = () => {
+    const dirty = model.dirty;
+    status.textContent = saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved';
+    status.classList.toggle('unsaved', dirty);
+    saveButton.disabled = !dirty || saving;
+    revertButton.disabled = !dirty;
+    toolbar.undo.disabled = !model.canUndo;
+    toolbar.redo.disabled = !model.canRedo;
+  };
+
+  const save = async () => {
+    if (saving || !model.dirty) return true;
+    saving = true;
+    refreshStatus();
+    try {
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'The design could not be saved');
+      model.markSaved(data);
+      let onAir = false;
+      try { onAir = (await getJson('/api/themes')).active === model.name; } catch (error) { /* then it just says Saved */ }
+      app.toast(onAir ? `Saved. "${model.name}" is on the overlay, so you see it on stream.` : 'Saved', 'success');
+      return true;
+    } catch (error) {
+      app.toast(error.message, 'error');
+      return false;
+    } finally {
+      saving = false;
+      refreshStatus();
+    }
+  };
+  saveButton.addEventListener('click', save);
+
+  model.on((change) => {
+    if (change.kind !== 'saved') canvas.redesign();
+    layout.refresh();
+    refreshStatus();
+  });
+
+  // The keyboard: Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S saves (unless a box is being typed in: it has its own undo)
+  const onKey = (event) => {
+    if (!(event.ctrlKey || event.metaKey) || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) { model.undo(); event.preventDefault(); } else if (key === 'y' || (key === 'z' && event.shiftKey)) { model.redo(); event.preventDefault(); } else if (key === 's') { save(); event.preventDefault(); }
+  };
+
+  const live = app.conn.on('state', () => { if (matchMode === 'live') canvas.draw(); });
+
+  const body = h('div', { class: 'editor' }, bar, h('div', { class: 'editor-main' }, h('div', { class: 'editor-canvas' }, canvas.element), side));
+  body.addEventListener('keydown', onKey);
+  canvas.element.addEventListener('measured', () => layout.refresh());
+
+  const editor = { model, canvas, save, showTab: (id) => showTab(id), get tab() { return current; } };
+  app.designEditor = editor;
+  const dialog = openModal({
+    title: `Design: ${model.name}`, subtitle: name === active ? 'This design is on the overlay: saving shows on stream' : undefined,
+    size: 'full', name: 'design-editor', stacked: true, body,
+    footer: [status, revertButton, h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Close'), saveButton],
+    // closing with changes that were not saved asks first
+    beforeClose: () => {
+      if (!model.dirty) return true;
+      confirmDialog({ title: 'Close without saving?', message: 'This design has changes that are not saved.', confirmLabel: 'Close without saving', danger: true })
+        .then((yes) => { if (yes) closeModal({ force: true }); });
+      return false;
+    },
+    onClose: () => {
+      live();
+      canvas.destroy();
+      if (app.designEditor === editor) app.designEditor = null;
+      if (onClose) onClose(model);
+    }
+  });
+
+  // the canvas needs its real size before it can fit the overlay in it
+  requestAnimationFrame(() => { canvas.fit(); canvas.element.focus({ preventScroll: true }); });
+  refreshStatus();
+  editor.dialog = dialog;
+  return editor;
+}

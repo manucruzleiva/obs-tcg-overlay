@@ -288,6 +288,9 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .energy-chip { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--icon, none) center / contain no-repeat; }
 .no-energy-icons .energy-chip { border: 2px solid rgba(255, 255, 255, 0.75); background: var(--c, #ccc); }
+/* a Special Energy card: the usual circle cut out of it (the same as the overlay's, without a design's changes) */
+.energy-chip.special { position: relative; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.75); background: #1b2238; }
+.energy-chip.special img { position: absolute; max-width: none; width: 186.6%; left: -43.3%; top: -29.9%; pointer-events: none; }
 .energy-chip:hover { transform: scale(1.15); }
 .ability-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; font-size: 13px; font-weight: 600; }
 .ability-chip .diamond { width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }

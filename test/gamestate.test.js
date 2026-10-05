@@ -124,6 +124,33 @@ describe('GameStateService', () => {
     assert.equal(old(true).state.trainerA.prizes.count, 4, 'the rest of the prizes is kept');
   });
 
+  it('holds up to four Special Energy cards on a Pokémon, and loses them with the card', () => {
+    put(gs, 'trainerA', -1);
+    const card = (n) => ({ cardId: `e-${n}`, name: `Energy ${n}`, image: IMG });
+    assert.deepEqual(gs.state.trainerA.active.specialEnergies, []);
+    for (let n = 1; n <= 4; n++) assert.equal(gs.attachSpecialEnergy('trainerA', -1, card(n)), true);
+    assert.equal(gs.attachSpecialEnergy('trainerA', -1, card(5)), false, 'no more than four');
+
+    gs.removeSpecialEnergy('trainerA', -1, 1);
+    gs.removeSpecialEnergy('trainerA', -1, 9);
+    gs.removeSpecialEnergy('trainerA', -1, -1);
+    assert.deepEqual(gs.state.trainerA.active.specialEnergies.map((energy) => energy.cardId), ['e-1', 'e-3', 'e-4']);
+
+    // an evolution keeps its attachments; a different card does not
+    gs.setPokemon('trainerA', -1, { cardId: 'evo', name: 'Raichu', image: IMG, hp: 120 }, { keep: true });
+    assert.equal(gs.state.trainerA.active.specialEnergies.length, 3);
+    gs.setPokemon('trainerA', -1, { cardId: 'new', name: 'Mew', image: IMG, hp: 40 });
+    assert.deepEqual(gs.state.trainerA.active.specialEnergies, []);
+  });
+
+  it('reads a save from before Special Energy existed', () => {
+    const old = makeGame({ saved: { trainerA: { active: { slot: -1, cardId: 'p', name: 'Pikachu', energies: ['fire'], hp: { max: 60, current: 60 } }, bench: [{ slot: 0, cardId: 'e', name: 'Eevee', energies: [], hp: { max: 50, current: 50 } }] } } });
+    assert.deepEqual(old.state.trainerA.active.specialEnergies, []);
+    assert.deepEqual(old.state.trainerA.bench[0].specialEnergies, []);
+    assert.equal(old.attachSpecialEnergy('trainerA', -1, { cardId: 'e-1', name: 'Energy', image: IMG }), true);
+    assert.deepEqual(old.state.trainerA.active.energies, ['fire'], 'the basic ones are as they were');
+  });
+
   it('keeps HP inside 0..max when damaging and healing', () => {
     put(gs, 'trainerA', -1);
     gs.damage('trainerA', -1, 25);
@@ -347,6 +374,9 @@ describe('actions', () => {
     assert.deepEqual(run('action:trainerA', { action: 'prizeMinus' }).targets, ['trainerA.prizes']);
     assert.deepEqual(run('action:trainerB', { action: 'energyPlus' }).targets, ['trainerB.energy']);
     assert.deepEqual(run('action:trainerA', { action: 'prizePenaltyPlus' }).targets, ['trainerA.penalty']);
+    assert.deepEqual(actions.resolve('action:trainerA', { action: 'attachSpecialEnergy', slot: -1, cardId: 'e', name: 'E' }).targets(), ['trainerA.active', 'trainerA.energy']);
+    assert.deepEqual(actions.resolve('action:trainerA', { action: 'attachSpecialEnergy', slot: 0, cardId: 'e', name: 'E', countsAsTurn: false }).targets(), ['trainerA.bench.0']);
+    assert.deepEqual(actions.resolve('action:trainerB', { action: 'removeSpecialEnergy', slot: -1, index: 0 }).targets(), ['trainerB.active']);
     assert.deepEqual(actions.resolve('action:trainerA', { action: 'benchDamage', slot: 2, amount: 10 }).targets(), ['trainerA.bench.2.hp']);
     assert.deepEqual(actions.resolve('action:trainerA', { action: 'clearSlot', slot: -1 }).targets(), ['trainerA.active']);
     assert.deepEqual(actions.resolve('action:card', { action: 'select', target: 'trainerB-bench-3' }).targets(), ['trainerB.bench.3']);

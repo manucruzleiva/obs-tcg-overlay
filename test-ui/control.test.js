@@ -22,11 +22,12 @@ describe('control panel', { skip }, () => {
 
   before(async () => {
     const pokemon = { id: 'sv-1', name: 'Pikachu ex', supertype: 'Pokémon', subtypes: ['Basic'], hp: '200', number: '1', rarity: 'Rare', types: ['Lightning'], set: { id: 'sv', name: 'Test' }, images: { small: ART('pikachu-ex'), large: ART('pikachu-ex') } };
+    const special = { id: 'sv-3', name: 'Double Turbo Energy', supertype: 'Energy', subtypes: ['Special'], number: '3', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('double-turbo'), large: ART('double-turbo') } };
     const stadium = { id: 'sv-2', name: 'Area Zero', supertype: 'Trainer', subtypes: ['Stadium'], number: '2', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('area-zero'), large: ART('area-zero') } };
     api = await startMockCardApi({
       '/cards/sv-1': { data: { ...pokemon, abilities: [{ name: 'Resolute Heart' }] } },
-      // a Stadium search answers with a Stadium, anything else with the Pokémon
-      '/cards?': (url) => ({ data: [decodeURIComponent(url).includes('subtypes:"Stadium"') ? stadium : pokemon], totalCount: 1, page: 1, pageSize: 20 })
+      // a Stadium search answers with a Stadium, a Special Energy search with a Special Energy card, anything else with the Pokémon
+      '/cards?': (url) => ({ data: [decodeURIComponent(url).includes('subtypes:"Stadium"') ? stadium : decodeURIComponent(url).includes('subtypes:"Special"') ? special : pokemon], totalCount: 1, page: 1, pageSize: 20 })
     });
     server = await startServer({ label: 'ui-control', env: { POKEMONTCG_API_URL: api.url } });
     producer = server.client({ clientId: 'ui-other-producer', name: 'Maya' });
@@ -151,6 +152,58 @@ describe('control panel', { skip }, () => {
     assert.ok(dots.every((image) => /\/assets\/energy\/[a-z]+\.png/.test(image)), 'a picture for every type');
     assert.equal(new Set(dots).size, 11, 'each its own');
     assert.deepEqual(page.problems, []);
+  });
+
+  it('attaches a Special Energy card from the energy editor, found by search, shown as a circle of the card', async () => {
+    await press('e');
+    await modal().waitFor();
+    assert.match(await modal().textContent(), /Special Energy cards.*Shown as a circle cut out of the card/);
+    await page.getByRole('button', { name: 'Add a Special Energy card…' }).click();
+    const picker = page.locator('.modal[aria-label^="Special Energy"]');
+    await picker.waitFor();
+    assert.match(await picker.getAttribute('aria-label'), /Special Energy · Ash/);
+    assert.equal(await page.locator('.modal').count(), 2, 'it opens over the energy editor, which stays');
+
+    await picker.locator('input[type="search"]').fill('turbo');
+    await picker.locator('.card-pick').first().waitFor();
+    assert.match(await picker.locator('.card-name').first().textContent(), /Double Turbo Energy/);
+    assert.equal(await picker.locator('.filter-chips').count(), 0, 'only Special Energy cards are searched, so no choice of kind');
+    const asked = api.requests.map((url) => decodeURIComponent(url)).filter((url) => url.includes('Special'));
+    assert.ok(asked.length > 0 && asked.every((url) => /supertype:"Energy"/.test(url) && /subtypes:"Special"/.test(url)), asked.join(' | '));
+
+    await picker.locator('.card-pick').first().click();
+    await expectLive((state) => state.trainerA.active.specialEnergies.map((card) => [card.cardId, card.name, card.image]), [['sv-3', 'Double Turbo Energy', ART('double-turbo')]]);
+    await expectLive((state) => state.trainerA.resources.energyPerTurn.used, 1, 'it used the turn\'s attachment');
+    await page.waitForFunction(() => document.querySelectorAll('.modal').length === 1);
+    assert.equal(await modal().locator('.energy-chip.special').count(), 1, 'the energy editor shows it as attached');
+    assert.equal(await page.locator('.trainer-panel.side-a .mon-card .energy-chip.special img').count(), 1, 'and so does the Pokémon');
+    const geometry = await page.$eval('.trainer-panel.side-a .mon-card .energy-chip.special', (chip) => ({ w: chip.offsetWidth, overflow: getComputedStyle(chip).overflow, radius: getComputedStyle(chip).borderTopLeftRadius }));
+    assert.deepEqual(geometry, { w: 24, overflow: 'hidden', radius: '50%' });
+
+    // a special attachment does not use the turn's attachment up again, and a card is taken off by clicking it
+    await modal().locator('.switch', { hasText: "Counts as this turn's energy attachment" }).click();
+    await page.getByRole('button', { name: 'Add a Special Energy card…' }).click();
+    await page.locator('.modal[aria-label^="Special Energy"] input[type="search"]').fill('turbo');
+    await page.locator('.modal[aria-label^="Special Energy"] .card-pick').first().click();
+    await expectLive((state) => state.trainerA.active.specialEnergies.length, 2);
+    await expectLive((state) => state.trainerA.resources.energyPerTurn.used, 1, 'a special attachment leaves it alone');
+
+    await modal().locator('.energy-chip.special').first().click();
+    await expectLive((state) => state.trainerA.active.specialEnergies.length, 1);
+    await press('Escape'); // the panel behind the dialog is out of reach while it is open
+    await dialogClosed();
+    await page.locator('.trainer-panel.side-a .mon-card .energy-chip.special').click();
+    await expectLive((state) => state.trainerA.active.specialEnergies.length, 0);
+    assert.deepEqual(page.problems, []);
+  });
+
+  it('keeps the Special Energy button for a Pokémon that is there', async () => {
+    await press('2'); // Gary's Charizard is out; take it away, and then there is nothing to attach to
+    await producer.act('action:trainerB', { action: 'clearSlot', slot: -1 });
+    await page.waitForFunction(() => !document.querySelector('.trainer-panel.side-b .mon-card'));
+    await press('e');
+    await modal().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Add a Special Energy card…' }).isDisabled(), true);
   });
 
   it('shows who else is producing and what they do', async () => {

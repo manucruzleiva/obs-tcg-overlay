@@ -16,8 +16,13 @@
  *     "colors": { "--accent": "#ff4d6d", "--bg-panel": "rgba(10,10,20,0.8)" },
  *     "images": { "logoImage": "images/logoImage.png" },
  *     "font": "fonts/font.woff2",
- *     "sounds": { "damage": "sounds/damage.mp3" }
+ *     "sounds": { "damage": "sounds/damage.mp3" },
+ *     "layout": { "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } },
+ *     "crop": { "active": { "x": 0.07, "y": 0.115, "w": 0.86, "h": 0.385 } }
  *   }
+ *
+ * "layout" moves and resizes pieces of the overlay (see BLOCKS in public/js/theme-options.js); "crop"
+ * shows only part of the card picture for the Active Pokémon and the bench.
  *
  * Everything a design uses is a file inside its folder: nothing is fetched from the web while it is on
  * air, so it works offline, and a shared design can never make an overlay contact someone's server.
@@ -79,19 +84,28 @@ function folderName(name) {
 
 const cleanText = (value, max) => (typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
-// ------------------------------------------------------------------------------------- colors
+// ---------------------------------------------------------------------------- colors, layout and crop
 
-function sanitizeColors(input) {
-  const colors = {};
-  for (const [key, value] of Object.entries(input && typeof input === 'object' ? input : {})) {
-    if (!COLOR_KEYS.includes(key)) continue; // unknown variables are ignored
-    if (typeof value !== 'string' || value.length > MAX_VALUE || /[;{}<>\\]/.test(value)) {
-      throw new ThemeError(`Invalid value for ${key}`);
-    }
-    if (value.trim()) colors[key] = value.trim();
+// The rules live in one file shared with the design editor (public/js/theme-rules.js); a complaint
+// from them is a ThemeError here, so the API answers with it.
+const rules = require('../../public/js/theme-rules');
+
+function asThemeError(work) {
+  try {
+    return work();
+  } catch (error) {
+    throw error instanceof rules.RuleError ? new ThemeError(error.message) : error;
   }
-  return colors;
 }
+
+// The colors of a design: one bad value is refused
+const sanitizeColors = (input) => asThemeError(() => rules.sanitizeColors(input));
+
+// Where each piece of the overlay is moved to. With `strict` a bad entry is refused; otherwise it is dropped.
+const sanitizeLayout = (input, options) => asThemeError(() => rules.sanitizeLayout(input, options));
+
+// Which part of the card shows for the Active Pokémon and the bench
+const sanitizeCrop = (input, options) => asThemeError(() => rules.sanitizeCrop(input, options));
 
 // ------------------------------------------------------------------------------------- files
 
@@ -151,6 +165,25 @@ function checkSound(buffer, label = 'The sound') {
   if (!kind) throw new ThemeError(`${label} is not a supported audio file (use MP3, WAV, OGG, M4A or WebM)`);
   return kind;
 }
+
+// Windows can keep a folder busy for a moment after it was deleted or while something (a virus scanner, the search
+// indexer, a picture still being sent) has a file of it open. Moving a folder into place is tried again briefly.
+const BUSY = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
+function pause(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function moveFolder(from, to) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      if (!BUSY.has(error.code) || attempt >= 10) throw error;
+      pause(30 * attempt);
+    }
+  }
+}
+const REMOVE_FOLDER = { recursive: true, force: true, maxRetries: 8, retryDelay: 40 };
 
 function writeAtomic(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -237,6 +270,10 @@ class ThemeStore {
     const description = cleanText(raw.description, MAX_DESCRIPTION);
     if (author) design.author = author;
     if (description) design.description = description;
+    const layout = sanitizeLayout(raw.layout);
+    const crop = sanitizeCrop(raw.crop);
+    if (Object.keys(layout).length) design.layout = layout;
+    if (Object.keys(crop).length) design.crop = crop;
 
     for (const key of IMAGE_KEYS) {
       const ref = raw.images && raw.images[key];
@@ -265,7 +302,7 @@ class ThemeStore {
     return this.get(design.name);
   }
 
-  // Make a design, or change its colors, author and description. Pictures, font and sounds have their own calls.
+  // Make a design, or change its colors, author, description, layout and crop. Pictures, font and sounds have their own calls.
   save(name, input = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ThemeError('A design must be an object');
     const clean = cleanName(name ?? input.name);
@@ -274,15 +311,19 @@ class ThemeStore {
     if ('colors' in input) design.colors = sanitizeColors(input.colors);
     if ('author' in input) design.author = cleanText(input.author, MAX_AUTHOR) || undefined;
     if ('description' in input) design.description = cleanText(input.description, MAX_DESCRIPTION) || undefined;
+    if ('layout' in input) design.layout = sanitizeLayout(input.layout, { strict: true });
+    if ('crop' in input) design.crop = sanitizeCrop(input.crop, { strict: true });
     if (!design.author) delete design.author;
     if (!design.description) delete design.description;
+    if (design.layout && !Object.keys(design.layout).length) delete design.layout;
+    if (design.crop && !Object.keys(design.crop).length) delete design.crop;
     return this.store(design);
   }
 
   remove(name) {
     const folder = this.folderFor(name);
     const existed = fs.existsSync(folder);
-    if (existed) fs.rmSync(folder, { recursive: true, force: true });
+    if (existed) fs.rmSync(folder, REMOVE_FOLDER);
     if (this.isActive(name)) this.setActive(null);
     return existed;
   }
@@ -399,6 +440,8 @@ class ThemeStore {
     if (!design) return null;
     const url = (ref) => `/api/theme/assets/${ref}?v=${design.version}`;
     const resolved = { name: design.name, colors: design.colors, images: {}, sounds: Object.keys(design.sounds) };
+    if (design.layout) resolved.layout = design.layout;
+    if (design.crop) resolved.crop = design.crop;
     for (const [key, ref] of Object.entries(design.images)) resolved.images[key] = url(ref);
     if (design.font) resolved.font = url(design.font);
     return resolved;
@@ -464,6 +507,10 @@ class ThemeStore {
       const description = cleanText(parts.description, MAX_DESCRIPTION);
       if (author) design.author = author;
       if (description) design.description = description;
+      const layout = sanitizeLayout(parts.layout);
+      const crop = sanitizeCrop(parts.crop);
+      if (Object.keys(layout).length) design.layout = layout;
+      if (Object.keys(crop).length) design.crop = crop;
 
       let total = 0;
       const put = (ref, buffer) => {
@@ -491,11 +538,11 @@ class ThemeStore {
       writeAtomic(path.join(stage, 'design.json'), JSON.stringify(design, null, 2));
 
       const target = this.folderFor(finalName);
-      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
-      fs.renameSync(stage, target);
+      if (fs.existsSync(target)) fs.rmSync(target, REMOVE_FOLDER);
+      moveFolder(stage, target);
       return this.get(finalName);
     } catch (error) {
-      fs.rmSync(stage, { recursive: true, force: true });
+      fs.rmSync(stage, REMOVE_FOLDER);
       throw error;
     }
   }
@@ -519,5 +566,5 @@ class ThemeStore {
 
 module.exports = {
   ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, MIME,
-  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, cleanName, cleanText, folderName
+  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, cleanName, cleanText, folderName
 };

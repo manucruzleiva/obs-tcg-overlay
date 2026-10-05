@@ -345,13 +345,20 @@ describe('the package service', () => {
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
-      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1 });
+      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [] });
       assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)']);
       assert.equal(info.controls.toastSeconds, 6);
       assert.deepEqual(info.ignored, []);
       assert.deepEqual(themes.list(), ['Store League']);
       assert.deepEqual(commits, []);
       assert.deepEqual(events, []);
+    });
+
+    it('says when a design has its own layout or crop', () => {
+      themes.save('Store League', { layout: { scoreboard: { x: 0, y: 30, scale: 1 }, logo: { x: 5, y: 0, scale: 1 } }, crop: { active: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
+      const info = service.inspect(exported());
+      assert.equal(info.design.layout, 2, 'two pieces moved');
+      assert.deepEqual(info.design.crop, ['active']);
     });
 
     it('knows whether the design is new here', () => {

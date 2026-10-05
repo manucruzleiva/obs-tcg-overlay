@@ -185,6 +185,62 @@ describe('server', () => {
     assert.deepEqual(state.trainerA.active.energies, ['fire', 'fire']);
   });
 
+  it('attaches Special Energy cards, shown as part of the card, up to four, and takes them off again', async () => {
+    await trainer('trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 60 });
+    const card = (n) => ({ cardId: `sv-e${n}`, name: `Special ${n}`, image: IMG });
+
+    // like basic energy, it counts as the turn's attachment unless told it does not
+    let { state } = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, ...card(1) });
+    assert.deepEqual(state.trainerA.active.specialEnergies, [card(1)]);
+    assert.equal(state.trainerA.resources.energyPerTurn.used, 1);
+    assert.deepEqual(state.trainerA.active.energies, [], 'it is not one of the basic types');
+
+    ({ state } = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, countsAsTurn: false, ...card(2) }));
+    assert.equal(state.trainerA.resources.energyPerTurn.used, 1, 'a special attachment leaves the turn\'s attachment alone');
+    await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, countsAsTurn: false, ...card(3) });
+    ({ state } = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, countsAsTurn: false, ...card(4) }));
+    assert.equal(state.trainerA.active.specialEnergies.length, 4);
+
+    const full = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, countsAsTurn: false, ...card(5) });
+    assert.equal(full.ok, false);
+    assert.match(full.rejected.message, /as many Special Energy cards as it can show/);
+    assert.equal((await (await fetch(`${server.base}/api/state`)).json()).trainerA.active.specialEnergies.length, 4);
+
+    ({ state } = await trainer('trainerA', { action: 'removeSpecialEnergy', slot: -1, index: 1 }));
+    assert.deepEqual(state.trainerA.active.specialEnergies.map((e) => e.cardId), ['sv-e1', 'sv-e3', 'sv-e4']);
+    ({ state } = await trainer('trainerA', { action: 'removeSpecialEnergy', slot: -1, index: 7 }));
+    assert.equal(state.trainerA.active.specialEnergies.length, 3, 'one that is not there is nothing to take off');
+
+    // the Pokémon keeps them when it is switched with one on the bench
+    await trainer('trainerA', { action: 'setBench', slot: 0, cardId: 'b-1', name: 'Eevee', image: IMG, hp: 50 });
+    ({ state } = await trainer('trainerA', { action: 'swapWithActive', slot: 0 }));
+    assert.equal(state.trainerA.bench[0].specialEnergies.length, 3);
+    assert.deepEqual(state.trainerA.active.specialEnergies, []);
+
+    // and loses them when the card in the slot is replaced
+    ({ state } = await trainer('trainerA', { action: 'setBench', slot: 0, cardId: 'c-1', name: 'Mew', image: IMG, hp: 40 }));
+    assert.deepEqual(state.trainerA.bench[0].specialEnergies, []);
+  });
+
+  it('refuses a Special Energy with nothing to attach it to, no name, or a picture that is not a web address', async () => {
+    const card = { cardId: 'sv-e1', name: 'Special 1', image: IMG };
+    const empty = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: 3, ...card });
+    assert.equal(empty.ok, false);
+    assert.equal(empty.rejected.reason, 'invalid');
+
+    await trainer('trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 60 });
+    for (const bad of [{ ...card, name: '' }, { ...card, cardId: '' }, { ...card, image: 'ftp://x/y.png' }, { cardId: 'a' }]) {
+      const result = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, ...bad });
+      assert.equal(result.ok, false, JSON.stringify(bad));
+    }
+    assert.deepEqual((await (await fetch(`${server.base}/api/state`)).json()).trainerA.active.specialEnergies, []);
+    const long = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, countsAsTurn: false, ...card, name: 'x'.repeat(200) });
+    assert.equal(long.state.trainerA.active.specialEnergies[0].name.length, 80, 'a name that is too long is cut, like every other name');
+    await trainer('trainerA', { action: 'removeSpecialEnergy', slot: -1, index: 0 });
+    const none = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, cardId: 'sv-e1', name: 'No picture' });
+    assert.equal(none.ok, true, 'a card with no picture is fine: the overlay draws a plain disc');
+  });
+
   it('refuses to attach energy to an empty slot or an unknown type', async () => {
     const empty = await trainer('trainerA', { action: 'attachEnergy', slot: 2, energyType: 'water' });
     assert.equal(empty.ok, false);

@@ -12,6 +12,7 @@
 
   const GAME = window.OTO_GAME;
   const DISPLAY = window.OTO_DISPLAY;
+  const THEME = window.OTO_THEME;
 
   const STAGE_WIDTH = 1920;
   const STAGE_HEIGHT = 1080;
@@ -98,8 +99,9 @@
     return { root, count };
   }
 
-  function renderEnergies(container, energies) {
+  function renderEnergies(container, energies, specials) {
     const list = energies || [];
+    const cards = specials || [];
     container.textContent = '';
     list.slice(0, MAX_ENERGY_SHOWN).forEach((type) => {
       const icon = el('span', `energy energy-${type}`);
@@ -108,7 +110,21 @@
       container.appendChild(icon);
     });
     if (list.length > MAX_ENERGY_SHOWN) container.appendChild(el('span', 'energy-more', `+${list.length - MAX_ENERGY_SHOWN}`));
-    container.hidden = list.length === 0;
+
+    // A Special Energy card is a circle cut out of the card, so it can be told apart at a glance
+    cards.forEach((card) => {
+      const chip = el('span', 'energy energy-special');
+      chip.title = card.name || 'Special Energy';
+      if (card.image) {
+        const img = el('img', 'energy-special-img');
+        img.decoding = 'async';
+        img.alt = card.name || '';
+        img.setAttribute('src', card.image);
+        chip.appendChild(img);
+      }
+      container.appendChild(chip);
+    });
+    container.hidden = list.length === 0 && cards.length === 0;
   }
 
   function renderAbilities(container, abilities) {
@@ -140,7 +156,7 @@
     mon.fill.style.width = `${percent}%`;
     mon.hpText.textContent = max ? `${current}/${max}` : '';
 
-    renderEnergies(mon.energies, pokemon.energies);
+    renderEnergies(mon.energies, pokemon.energies, pokemon.specialEnergies);
     renderAbilities(mon.abilities, pokemon.abilities);
 
     const status = pokemon.status || [];
@@ -156,17 +172,26 @@
       this.stage = document.getElementById('stage');
       this.state = null;
       this.themeProps = [];
+      this.layoutNodes = []; // the pieces a design has moved
       this.themeFont = null;
       this.toastTimers = {};
       this.effectNodes = [];
+
+      // "editor" is the copy inside the design editor: it draws what the editor sends and talks to no server
+      const params = new URLSearchParams(window.location.search);
+      this.editor = params.has('editor');
 
       this.build();
       this.fit();
       this.checkEnergyIcons();
       window.addEventListener('resize', () => this.fit());
+      if (this.editor) {
+        this.listenToEditor();
+        return;
+      }
 
       // role "preview" is the small copy inside the control panel: it is not counted as a screen
-      const role = new URLSearchParams(window.location.search).has('preview') ? 'preview' : 'overlay';
+      const role = params.has('preview') ? 'preview' : 'overlay';
       this.socket = window.io({ auth: { role } });
       this.socket.on('state:full', (state) => this.update(state));
       this.socket.on('state:update', (state) => this.update(state));
@@ -222,6 +247,11 @@
       this.fx = el('div', 'fx-layer');
       stage.appendChild(this.toasts);
       stage.appendChild(this.fx);
+
+      // a design can move and resize these pieces (see public/js/theme-options.js)
+      THEME.BLOCKS.forEach((block) => {
+        stage.querySelectorAll(block.selector).forEach((node) => node.setAttribute('data-block', block.key));
+      });
     }
 
     buildScoreboard() {
@@ -318,7 +348,8 @@
     // ---- scaling
 
     fit() {
-      const auto = !this.state || this.state.settings.autoScale !== false;
+      // the editor shows the stage at its real size (the editor zooms the whole picture)
+      const auto = !this.editor && (!this.state || this.state.settings.autoScale !== false);
       const scale = auto ? Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT) : 1;
       const x = auto ? (window.innerWidth - STAGE_WIDTH * scale) / 2 : 0;
       const y = auto ? (window.innerHeight - STAGE_HEIGHT * scale) / 2 : 0;
@@ -503,6 +534,48 @@
       this.schedule(fx, announcement.animationMs, () => fx.remove());
     }
 
+    // ---- the design editor
+
+    // The editor sends the design being edited, a made-up match and whether to show a banner
+    listenToEditor() {
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent || event.origin !== window.location.origin) return;
+        const message = event.data || {};
+        if (message.kind === 'design') this.applyTheme(message.theme || null);
+        else if (message.kind === 'state') this.update(message.state);
+        else if (message.kind === 'banner') this.editorBanner(Boolean(message.show));
+        else return;
+        // so the editor can measure the pieces now that they are where they are going to be
+        window.parent.postMessage({ kind: 'drawn' }, window.location.origin);
+      });
+      window.parent.postMessage({ kind: 'ready' }, window.location.origin);
+    }
+
+    // A banner that stays, so its place can be chosen
+    editorBanner(show) {
+      if (show) this.showToast({ type: 'attack', side: 'trainerA', title: 'Thunderbolt', subtitle: 'Ash attacks for 120', toastMs: 24 * 60 * 60 * 1000 });
+      else this.clearAnnouncements(this.toasts);
+    }
+
+    // Where each piece of the stage is right now, in stage pixels (the editor draws its handles there).
+    // A piece that is not showing (switched off, or empty) is null.
+    blockRects() {
+      const rects = {};
+      THEME.BLOCKS.forEach((block) => {
+        let box = null;
+        this.stage.querySelectorAll(block.selector).forEach((node) => {
+          if (node.hidden || node.closest('[hidden]') || node.closest('.opt-off')) return;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return;
+          box = box
+            ? { left: Math.min(box.left, rect.left), top: Math.min(box.top, rect.top), right: Math.max(box.right, rect.right), bottom: Math.max(box.bottom, rect.bottom) }
+            : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+        });
+        rects[block.key] = box && { x: box.left, y: box.top, w: box.right - box.left, h: box.bottom - box.top };
+      });
+      return rects;
+    }
+
     // ---- themes
 
     async loadTheme() {
@@ -520,8 +593,15 @@
       this.themeProps.forEach((name) => root.style.removeProperty(name));
       this.themeProps = [];
 
-      const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-backdrop'];
+      const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-backdrop', 'has-crop-active', 'has-crop-bench'];
       rootClasses.forEach((name) => root.classList.remove(name));
+
+      // pieces the last design moved go back to where they belong
+      this.layoutNodes.forEach((node) => {
+        node.classList.remove('moved');
+        ['--lx', '--ly', '--ls'].forEach((name) => node.style.removeProperty(name));
+      });
+      this.layoutNodes = [];
 
       if (this.themeFont) {
         document.fonts.delete(this.themeFont);
@@ -537,6 +617,35 @@
       Object.keys(theme.colors || {}).forEach((name) => set(name, theme.colors[name]));
       const images = theme.images || {};
       Object.keys(images).forEach((key) => set(`--${key}`, cssUrl(images[key])));
+
+      // layout: move and resize pieces of the overlay
+      const layout = theme.layout || {};
+      THEME.BLOCKS.forEach((block) => {
+        const entry = layout[block.key];
+        if (!entry) return;
+        this.stage.querySelectorAll(block.selector).forEach((node) => {
+          node.style.setProperty('--lx', `${entry.x}px`);
+          node.style.setProperty('--ly', `${entry.y}px`);
+          node.style.setProperty('--ls', String(entry.scale));
+          node.classList.add('moved');
+          this.layoutNodes.push(node);
+        });
+      });
+
+      // crop: show only part of the card for the Active Pokémon (ca) and the bench (cb)
+      const crop = theme.crop || {};
+      [['active', 'ca'], ['bench', 'cb']].forEach(([which, prefix]) => {
+        const rect = crop[which];
+        if (!rect) return;
+        ['x', 'y', 'w', 'h'].forEach((side) => set(`--${prefix}-${side}`, String(rect[side])));
+        root.classList.add(`has-crop-${which}`);
+      });
+      // the circle cut out of a Special Energy card: where its middle is on the card, and how wide it is
+      if (crop.energy) {
+        set('--ex', String(crop.energy.x + crop.energy.w / 2));
+        set('--ey', String(crop.energy.y + crop.energy.h / 2));
+        set('--ed', String(crop.energy.w));
+      }
 
       if (images.logoImage) root.classList.add('has-logo');
       if (images.trainerAAvatar) root.classList.add('has-avatar-a');

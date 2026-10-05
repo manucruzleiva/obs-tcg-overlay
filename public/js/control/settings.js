@@ -3,7 +3,8 @@
  * general options.
  */
 import { h, icon, replace, debounce } from './dom.js';
-import { openModal, closeModal, confirmDialog } from './ui.js';
+import { openModal, closeModal, confirmDialog, promptDialog } from './ui.js';
+import { openDesignEditor } from './design-editor.js';
 import { libraryPanels } from './library.js';
 import { openImportDialog, openExportDialog } from './packages.js';
 
@@ -333,6 +334,7 @@ function themesTab(app) {
           h('h3', {}, theme.name), status,
           h('div', { class: 'button-row' },
             h('button', { class: 'btn primary', type: 'button', disabled: selected === active || undefined, onclick: async () => { await json('POST', '/api/theme/active', { name: selected }); app.toast(`"${selected}" is on the overlay`, 'success'); refresh(selected); } }, selected === active ? 'On the overlay' : 'Put on the overlay'),
+            h('button', { class: 'btn', type: 'button', onclick: () => openEditor(selected) }, icon('layout', 16), 'Layout and crop'),
             h('button', { class: 'btn', type: 'button', onclick: () => openExportDialog(app, { design: selected }) }, icon('share', 16), 'Save as .oto'),
             h('button', { class: 'btn danger-text', type: 'button', onclick: removeTheme }, icon('trash', 16), 'Delete'))),
         note('Changes save by themselves. If this design is on the overlay, you see them on stream as you make them. Leave a color empty to keep the built-in one.'),
@@ -350,12 +352,23 @@ function themesTab(app) {
     replace(root, list, editor);
   };
 
+  // The editor for a design opens over the settings; when it closes after saving, the design is read again
+  const openEditor = (designName) => openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
+
   const newTheme = async () => {
-    const name = window.prompt('Name for the new design:');
-    if (!name || !name.trim()) return;
+    const name = await promptDialog({
+      title: 'Create a design', label: 'Name of the design', placeholder: 'Store League', confirmLabel: 'Create', maxLength: 40,
+      message: 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
+      check: (value) => {
+        if (value && !/[a-z0-9]/i.test(value)) return 'A name needs at least one letter or digit';
+        return names.some((existing) => existing.toLowerCase() === value.toLowerCase()) ? 'You already have a design with that name' : '';
+      }
+    });
+    if (!name) return;
     try {
-      const saved = await json('PUT', `/api/themes/${encodeURIComponent(name.trim())}`, { colors: {} });
+      const saved = await json('PUT', `/api/themes/${encodeURIComponent(name)}`, { colors: {} });
       await refresh(saved.name);
+      openEditor(saved.name);
     } catch (error) { app.toast(error.message, 'error'); }
   };
 

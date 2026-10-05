@@ -107,6 +107,8 @@ describe('which sound each action makes', () => {
     assert.deepEqual(cues('action:trainerA', { action: 'swapWithActive', slot: 0 }), ['deploy']);
     assert.deepEqual(cues('action:trainerA', { action: 'setBench', slot: 0, cardId: 'x', name: 'x' }), ['bench']);
     assert.deepEqual(cues('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'fire' }), ['energy']);
+    assert.deepEqual(cues('action:trainerA', { action: 'attachSpecialEnergy', slot: -1, cardId: 'e', name: 'E' }), ['energy']);
+    assert.deepEqual(cues('action:trainerA', { action: 'removeSpecialEnergy', slot: -1, index: 0 }), []);
     assert.deepEqual(cues('action:trainerA', { action: 'prizeMinus' }), ['prize']);
     assert.deepEqual(cues('action:trainerA', { action: 'knockOut', slot: -1 }), ['ko']);
     assert.deepEqual(cues('action:match', { action: 'toggleTurn' }), ['turn']);

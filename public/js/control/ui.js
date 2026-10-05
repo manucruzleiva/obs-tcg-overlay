@@ -23,7 +23,10 @@ export function toast(message, kind = 'info', ms = 4200) {
 // Open dialogs, topmost last. A confirmation opens on top of the dialog that asked for it.
 const stack = [];
 
-function closeTop() {
+function closeTop({ force = false } = {}) {
+  const top = stack[stack.length - 1];
+  // A dialog can refuse to close, for instance to ask first. It then closes itself with { force: true }.
+  if (top && top.beforeClose && !force && top.beforeClose() === false) return;
   const entry = stack.pop();
   if (!entry) return;
   entry.root.remove();
@@ -33,22 +36,22 @@ function closeTop() {
 }
 
 // Close the topmost dialog
-export function closeModal() {
-  closeTop();
+export function closeModal(options) {
+  closeTop(options);
 }
 
 export function closeAllModals() {
-  while (stack.length) closeTop();
+  while (stack.length) closeTop({ force: true });
 }
 
 export const isModalOpen = () => stack.length > 0;
 
 // Open a dialog. `body` and `footer` are nodes (or arrays of nodes). Returns { root, close }.
 // Opening one normally replaces whatever is open; `stacked` puts it on top instead.
-export function openModal({ title, subtitle, body, footer, size = 'md', onClose, name, stacked = false }) {
+export function openModal({ title, subtitle, body, footer, size = 'md', onClose, beforeClose, name, stacked = false }) {
   if (!stacked) closeAllModals();
 
-  const closeButton = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', onclick: closeModal }, icon('close'));
+  const closeButton = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', onclick: () => closeModal() }, icon('close'));
   const root = h('div', { class: `modal-backdrop${stack.length ? ' stacked' : ''}`, dataset: { modal: name || title } },
     h('div', { class: `modal modal-${size}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       h('header', { class: 'modal-head' },
@@ -62,13 +65,13 @@ export function openModal({ title, subtitle, body, footer, size = 'md', onClose,
     if (event.target === root && stack[stack.length - 1] && stack[stack.length - 1].root === root) closeModal();
   });
 
-  stack.push({ root, onClose, previouslyFocused: document.activeElement });
+  stack.push({ root, onClose, beforeClose, previouslyFocused: document.activeElement });
   document.body.appendChild(root);
   document.body.classList.add('modal-open');
 
   const firstField = root.querySelector('[data-autofocus], input:not([type=hidden]), button.primary');
   if (firstField) firstField.focus();
-  return { root, close: closeModal };
+  return { root, close: (options) => closeModal(options) };
 }
 
 // A yes/no question, shown on top of whatever is open. Resolves true or false.
@@ -77,7 +80,7 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
     let answered = false;
     const answer = (value) => {
       answered = true;
-      closeModal();
+      closeModal({ force: true });
       resolve(value);
     };
     openModal({
@@ -91,5 +94,40 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
       ],
       onClose: () => { if (!answered) resolve(false); }
     });
+  });
+}
+
+// A question with a text answer, shown on top of whatever is open. Resolves with the text, or null when cancelled.
+// (The desktop app has no window.prompt, so every question that needs typing goes through here.)
+// `check` may return a complaint to show under the box; the answer is refused until it returns nothing.
+export function promptDialog({ title, label, message, value = '', placeholder = '', confirmLabel = 'OK', maxLength = 60, check = () => '' }) {
+  return new Promise((resolve) => {
+    let answered = false;
+    const input = h('input', { type: 'text', value, placeholder, maxlength: maxLength, 'aria-label': label || title, 'data-autofocus': true, autocomplete: 'off' });
+    const complaint = h('p', { class: 'prompt-complaint', role: 'alert', hidden: true });
+    const ok = h('button', { class: 'btn primary', type: 'button' }, confirmLabel);
+    const refresh = () => {
+      const text = check(input.value.trim());
+      complaint.textContent = text || '';
+      complaint.hidden = !text;
+      ok.disabled = !input.value.trim() || Boolean(text);
+    };
+    const answer = (result) => {
+      answered = true;
+      closeModal({ force: true });
+      resolve(result);
+    };
+    const submit = () => { if (!ok.disabled) answer(input.value.trim()); };
+    input.addEventListener('input', refresh);
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } });
+    ok.addEventListener('click', submit);
+    refresh();
+    openModal({
+      title, size: 'sm', stacked: true, name: 'prompt',
+      body: h('div', { class: 'prompt-body' }, message && h('p', { class: 'confirm-text' }, message), h('label', { class: 'field' }, label && h('span', {}, label), input), complaint),
+      footer: [h('button', { class: 'btn', type: 'button', onclick: () => answer(null) }, 'Cancel'), ok],
+      onClose: () => { if (!answered) resolve(null); }
+    });
+    input.select();
   });
 }

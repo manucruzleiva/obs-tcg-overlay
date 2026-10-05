@@ -224,6 +224,35 @@ const TRAINER = {
     label: (gs, side, p, ctx) =>
       `${slotName(gs, side, p.slot)} +${ctx.count} ${ctx.type} energy${p.countsAsTurn === false ? ' (special attachment)' : ''}`
   },
+  // Attach a Special Energy card (a card, not one of the basic types). It counts as the turn's energy attachment
+  // unless countsAsTurn is false.
+  attachSpecialEnergy: {
+    sfx: () => 'energy',
+    targets: (side, p) => {
+      const keys = [slotKey(side, p.slot)];
+      if (p.countsAsTurn !== false) keys.push(`${side}.energy`);
+      return keys;
+    },
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const cardId = text(p.cardId, 'cardId', 64);
+      const name = text(p.name, 'name', 80);
+      if (!cardId || !name) throw new ActionError('a Special Energy card needs an id and a name');
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+      if (!gs.attachSpecialEnergy(side, slot, { cardId, name, image: imageUrl(p.image, 'image') })) {
+        throw new ActionError('that Pokémon already has as many Special Energy cards as it can show');
+      }
+      if (p.countsAsTurn !== false) gs.stepCounter(side, 'energyPerTurn', 1);
+      ctx.name = name;
+    },
+    label: (gs, side, p, ctx) => `${slotName(gs, side, p.slot)} +${ctx.name}${p.countsAsTurn === false ? ' (special attachment)' : ''}`
+  },
+  removeSpecialEnergy: {
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p) => gs.removeSpecialEnergy(side, pickSlot(p.slot), integer(p.index, 'index', 0, 9)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} lost a Special Energy`
+  },
   removeEnergy: {
     targets: (side, p) => [slotKey(side, p.slot)],
     run: (gs, side, p) => gs.removeEnergy(side, pickSlot(p.slot), integer(p.index, 'index', 0, 99)),
