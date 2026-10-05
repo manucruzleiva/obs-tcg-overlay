@@ -94,6 +94,8 @@ export function openPicker(app, purpose) {
   const results = h('div', { class: 'card-grid', 'aria-live': 'polite' });
   const note = kind === 'feature' ? h('input', { type: 'text', maxlength: 200, placeholder: 'Note for the casters (optional)', 'aria-label': 'Note' }) : null;
   const status = h('p', { class: 'picker-status' }, 'Type a card name to search.');
+  // What the list shows: 'start' (the most used and the saved cards, before anything is typed), 'search' or nothing
+  let showing = '';
 
   if (kind === 'evolve') {
     const mon = app.state[side][slot === -1 ? 'active' : 'bench'];
@@ -118,6 +120,8 @@ export function openPicker(app, purpose) {
       result = await app.act('action:card', { action: 'select', target, cardId: card.id, cardData, evolve: kind === 'evolve' });
     }
     if (result.ok) {
+      // counted, so it is offered first next time (nobody waits for this)
+      fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
       closeModal();
       if (onDone) onDone();
     }
@@ -141,8 +145,9 @@ export function openPicker(app, purpose) {
   const load = async (pageNumber) => {
     const text = input.value.trim();
     const mine = ++token;
-    if (!text && !evolvesFrom) { listed = []; replace(results); moreButton.hidden = true; status.textContent = 'Type a card name to search.'; return; }
-    status.textContent = 'Searching…';
+    // Nothing typed: start from the cards used most, then the ones already saved on this computer
+    const starting = !text && !evolvesFrom;
+    status.textContent = starting ? 'Looking at the cards on this computer…' : 'Searching…';
     const params = new URLSearchParams({ page: String(pageNumber) });
     if (text) params.set('q', text);
     // The card API groups cards as Pokémon, Trainer or Energy; a Stadium is a kind of Trainer
@@ -151,15 +156,23 @@ export function openPicker(app, purpose) {
     else if (filter) params.set('supertype', filter);
     if (evolvesFrom) params.set('evolvesFrom', evolvesFrom);
     try {
-      const response = await fetch(`/api/cards/search?${params}`);
+      const response = await fetch(starting ? `/api/cards/popular?${params}` : `/api/cards/search?${params}`);
       const data = await response.json();
       if (mine !== token) return;
       if (!response.ok) throw new Error(data.error || 'Search failed');
       listed = pageNumber === 1 ? data.cards : listed.concat(data.cards);
-      const where = data.source === 'library' ? ` in your ${data.library} library` : '';
-      status.textContent = listed.length
-        ? `${data.totalCount} cards found${where}${data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}`
-        : data.offline ? `Nothing in your ${data.library} library matches, and the online search cannot be reached.` : `No cards found${where}.`;
+      showing = starting ? 'start' : 'search';
+      if (starting) {
+        const what = { used: 'Your most used cards', mixed: 'Your most used cards, then others saved on this computer', cache: 'Cards saved on this computer' }[data.source];
+        status.textContent = listed.length
+          ? `${what} (${data.totalCount > listed.length ? `showing ${listed.length} of ${data.totalCount}` : data.totalCount}). Type a card name to search for others.`
+          : 'Type a card name to search. The cards you use are listed here next time.';
+      } else {
+        const where = data.source === 'library' ? ` in your ${data.library} library` : '';
+        status.textContent = listed.length
+          ? `${data.totalCount} cards found${where}${data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}`
+          : data.offline ? `Nothing in your ${data.library} library matches, and the online search cannot be reached.` : `No cards found${where}.`;
+      }
       render(listed);
       moreButton.hidden = listed.length >= data.totalCount || data.cards.length === 0;
       moreButton.onclick = () => load(pageNumber + 1);
@@ -172,9 +185,26 @@ export function openPicker(app, purpose) {
   };
   const search = () => load(1);
   const searchSoon = debounce(search, 280);
-  input.addEventListener('input', searchSoon);
+  input.addEventListener('input', () => {
+    // The first letters replace the starting list at once, or the answer for it that is still on its way (it is dropped):
+    // Enter cannot choose a card the person did not mean
+    if (input.value.trim() && showing !== 'search') {
+      token++;
+      showing = '';
+      listed = [];
+      replace(results);
+      moreButton.hidden = true;
+      status.textContent = 'Searching…';
+    }
+    searchSoon();
+  });
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') { event.preventDefault(); const first = results.querySelector('.card-pick'); if (first) first.click(); else search(); }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    // with nothing typed the list is a suggestion, not an answer: Enter does not choose from it
+    if (!input.value.trim() && !evolvesFrom) return;
+    const first = results.querySelector('.card-pick');
+    if (first) first.click(); else search();
   });
 
   const chips = !fixedFilter
@@ -203,7 +233,7 @@ export function openPicker(app, purpose) {
     title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy', // over the energy editor that asked for it
     body: [fromBench, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, note && h('div', { class: 'note-row' }, note), status, results, h('div', { class: 'more-row' }, moreButton)]
   });
-  if (evolvesFrom) search();
+  search();
 }
 
 // ------------------------------------------------------------------------------------ knock out
@@ -274,7 +304,7 @@ export function openDamage(app, mode, side, slot) {
   const preview = h('div', { class: 'preview-list' });
 
   const updatePreview = () => {
-    amount = Math.max(0, parseInt(amountInput.value, 10) || 0);
+    amount = tens(amountInput.value);
     replace(preview, targets.map((target) => {
       const pokemon = target === -1 ? state[current].active : state[current].bench[target];
       if (!hasPokemon(pokemon)) return null;
@@ -285,6 +315,8 @@ export function openDamage(app, mode, side, slot) {
     }));
   };
   amountInput.addEventListener('input', updatePreview);
+  // a number typed in is brought to the nearest ten when the box is left: damage and healing come in tens
+  amountInput.addEventListener('change', () => { amountInput.value = String(tens(amountInput.value)); updatePreview(); });
 
   const quick = (n) => h('button', { class: 'btn quick', type: 'button', onclick: () => { amountInput.value = String((parseInt(amountInput.value, 10) || 0) + n); updatePreview(); } }, `+${n}`);
 
@@ -296,7 +328,7 @@ export function openDamage(app, mode, side, slot) {
       sideTabs(app, current, (next) => { current = next; targets = [-1]; draw(); }),
       h('div', { class: 'section-label' }, 'Targets (choose one or more)'),
       pokemonChoices(state, current, targets, (value) => { targets = value; updatePreview(); }, { multiple: true }),
-      h('div', { class: 'section-label' }, 'Amount'),
+      h('div', { class: 'section-label' }, 'Amount', h('span', { class: 'hint' }, 'In tens: 10, 20, 30...')),
       h('div', { class: 'amount-row' }, amountInput, [10, 20, 30, 50, 100].map(quick),
         h('button', { class: 'btn quick', type: 'button', onclick: () => { amountInput.value = '0'; updatePreview(); } }, 'Clear')),
       preview);
@@ -500,34 +532,165 @@ export function openAbilities(app, side) {
 
 // ---------------------------------------------------------------------------------------- attack
 
+// Damage comes in tens, like the damage counters of the game: a number is brought to the nearest ten
+const tens = (value) => Math.max(0, Math.min(9999, Math.round((parseInt(value, 10) || 0) / 10) * 10));
+
+// What the card says an attack does: "60", "50+" (more with some conditions), "20×" (times something) or "—"
+const damageText = (attack) => (attack.damage ? `${attack.damage}${attack.mod || ''}` : attack.mod || '—');
+const MODIFIER_HINT = { '+': 'and more with some conditions', '×': 'times something', '-': 'less with some conditions' };
+
+// Announce an attack or an ability. The Active Pokémon's attacks and the abilities of the Pokémon in play are listed from
+// their cards: pick one (or press its number) and the name and the base damage are filled in, ready to be changed.
 export function openAttack(app) {
-  const state = app.state;
-  const holder = state.trainerA.isTurn ? 'trainerA' : state.trainerB.isTurn ? 'trainerB' : app.focus;
-  const defender = otherSide(holder);
-  const name = h('input', { type: 'text', maxlength: 60, placeholder: 'Attack name (for example Thunderbolt)', 'aria-label': 'Attack name', 'data-autofocus': true });
-  const damage = h('input', { type: 'number', min: 0, max: 9999, step: 10, placeholder: '0', 'aria-label': 'Damage' });
-  const apply = h('input', { type: 'checkbox', checked: true });
+  const holder = app.state.trainerA.isTurn ? 'trainerA' : app.state.trainerB.isTurn ? 'trainerB' : app.focus;
+  let attacker = holder;
+  let chosen = null; // what was picked from a card: { kind: 'attack' | 'ability', slot, index, label, base, used }
+  let items = []; // what the number keys pick, in the order they are listed
+  let applyDamage = true;
+  let markUsed = true;
+
+  const body = h('div', {});
+  const name = h('input', { type: 'text', maxlength: 60, placeholder: 'Attack name (for example Thunderbolt)', 'aria-label': 'Attack name' });
+  const damage = h('input', { type: 'number', min: 0, max: 9999, step: 10, value: '0', class: 'amount-input', 'aria-label': 'Damage' });
+  const lessButton = h('button', { class: 'round-btn', type: 'button', 'aria-label': '10 less' }, icon('minus', 16));
+  const moreButton = h('button', { class: 'round-btn', type: 'button', 'aria-label': '10 more' }, icon('plus', 16));
+  const baseButton = h('button', { class: 'btn tiny', type: 'button', hidden: true });
+  const applyBox = h('input', { type: 'checkbox', checked: true });
+  const usedBox = h('input', { type: 'checkbox', checked: true });
+  const announce = h('button', { class: 'btn danger', type: 'button' });
+
+  const setDamage = (value) => {
+    damage.value = String(tens(value));
+    refresh();
+  };
+  // the stepper stops at 0, and "Base" brings back what the card says once the damage has been changed
+  function refresh() {
+    const now = tens(damage.value);
+    lessButton.disabled = now <= 0;
+    moreButton.disabled = now >= 9999;
+    const base = chosen && chosen.kind === 'attack' ? tens(chosen.base) : null;
+    baseButton.hidden = base === null || base === now || base === 0;
+    baseButton.textContent = `Base ${base}`;
+  }
+  lessButton.addEventListener('click', () => setDamage(tens(damage.value) - 10));
+  moreButton.addEventListener('click', () => setDamage(tens(damage.value) + 10));
+  baseButton.addEventListener('click', () => setDamage(chosen.base));
+  damage.addEventListener('input', refresh);
+  damage.addEventListener('change', () => setDamage(damage.value));
+  applyBox.addEventListener('change', () => { applyDamage = applyBox.checked; });
+  usedBox.addEventListener('change', () => { markUsed = usedBox.checked; });
+
+  const sameAsChosen = (entry) => chosen && chosen.kind === entry.kind && chosen.slot === entry.slot && chosen.index === entry.index;
+
+  const choose = (entry) => {
+    chosen = entry;
+    if (entry.kind === 'attack') {
+      name.value = entry.label;
+      damage.value = String(tens(entry.base));
+    } else {
+      markUsed = !entry.used; // an ability that is already used is announced again without marking it twice
+      usedBox.checked = markUsed;
+    }
+    draw();
+    if (entry.kind === 'attack') { damage.focus(); damage.select(); } else announce.focus();
+  };
+
+  const listed = (entry, content) => {
+    items.push(entry);
+    return h('button', {
+      class: `attack-pick${entry.kind === 'ability' ? ' ability' : ''}${sameAsChosen(entry) ? ' on' : ''}`, type: 'button',
+      'aria-pressed': String(Boolean(sameAsChosen(entry))), dataset: { kind: entry.kind, index: String(entry.index) },
+      'data-autofocus': items.length === 1 || undefined,
+      onclick: () => choose(entry)
+    }, h('kbd', {}, String(items.length)), content);
+  };
+
+  const draw = () => {
+    const state = app.state;
+    const defender = otherSide(attacker);
+    const active = state[attacker].active;
+    const attacks = hasPokemon(active) ? active.attacks || [] : [];
+    const owners = inPlay(state, attacker).filter(({ pokemon }) => (pokemon.abilities || []).length > 0);
+    items = [];
+
+    const attackList = attacks.map((attack, index) => listed(
+      { kind: 'attack', slot: -1, index, label: attack.name, base: attack.damage },
+      [h('span', { class: 'attack-name' }, attack.name),
+        h('span', { class: 'attack-damage', title: attack.mod ? `${attack.damage} ${MODIFIER_HINT[attack.mod] || ''}`.trim() : undefined }, damageText(attack))]));
+
+    const abilityList = owners.flatMap(({ slot, pokemon }) => pokemon.abilities.map((ability, index) => listed(
+      { kind: 'ability', slot, index, label: ability.name, used: Boolean(ability.used), owner: pokemon.name },
+      [h('span', { class: 'diamond' }), h('span', { class: 'attack-name' }, ability.name, h('small', {}, ` ${pokemon.name} · ${slotLabel(slot)}`)),
+        ability.used ? h('span', { class: 'used-tag' }, 'USED') : h('span', { class: 'attack-damage' }, ability.scope === 'game' ? 'game' : 'turn')])));
+
+    const usingAbility = chosen && chosen.kind === 'ability';
+    const card = chosen && chosen.kind === 'attack' && attacks[chosen.index] && attacks[chosen.index].mod ? attacks[chosen.index] : null;
+    const fields = usingAbility
+      ? [
+        h('p', { class: 'ability-line' }, h('span', { class: 'diamond' }), h('strong', {}, chosen.label), h('small', {}, ` ${chosen.owner}`)),
+        h('label', { class: 'switch inline' }, usedBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Mark ${chosen.label} as used`))
+      ]
+      : [
+        h('label', { class: 'field' }, h('span', {}, 'Attack'), name),
+        h('div', { class: 'field' }, h('span', {}, 'Damage', h('small', { class: 'tens-note' }, ' · in tens')),
+          h('div', { class: 'amount-row' }, lessButton, damage, moreButton, baseButton)),
+        card && h('p', { class: 'hint-line' }, `The card says ${damageText(card)}: ${MODIFIER_HINT[card.mod]}. Change the damage to what it really did.`),
+        h('label', { class: 'switch inline' }, applyBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Also apply the damage to ${trainerName(state, defender)}'s Active Pokémon`))
+      ];
+
+    replace(body,
+      sideTabs(app, attacker, (next) => { attacker = next; chosen = null; name.value = ''; damage.value = '0'; draw(); subtitle(); }),
+      h('div', { class: 'section-label' }, hasPokemon(active) ? `Attacks · ${active.name}` : 'Attacks', h('span', { class: 'hint' }, 'Pick one, or press its number')),
+      attackList.length > 0
+        ? h('div', { class: 'attack-list' }, attackList)
+        : h('p', { class: 'empty' }, hasPokemon(active) ? 'This card has no attacks on file. Type the attack below.' : `${trainerName(state, attacker)} has no Active Pokémon. Type the attack below.`),
+      abilityList.length > 0 && h('div', { class: 'section-label' }, 'Abilities', h('span', { class: 'hint' }, 'Announced like an attack')),
+      abilityList.length > 0 && h('div', { class: 'attack-list' }, abilityList),
+      h('div', { class: 'section-label' }, usingAbility ? 'Ability' : 'Attack'),
+      fields);
+    announce.textContent = usingAbility ? 'Announce ability' : 'Announce attack';
+    refresh();
+  };
 
   const go = async () => {
-    const amount = Math.max(0, parseInt(damage.value, 10) || 0);
-    const announced = await app.act('action:toast', { action: 'attack', attackName: name.value || undefined, damage: amount });
-    if (!announced.ok) return;
-    if (apply.checked && amount > 0 && hasPokemon(state[defender].active)) {
+    const defender = otherSide(attacker);
+    if (chosen && chosen.kind === 'ability') {
+      const said = await app.act('action:toast', { action: 'attack', attackName: chosen.label, ability: true, source: attacker });
+      if (!said.ok) return;
+      if (markUsed && !chosen.used) await app.act(`action:${attacker}`, { action: 'setAbilityUsed', slot: chosen.slot, index: chosen.index, used: true });
+      closeModal();
+      return;
+    }
+    const amount = tens(damage.value);
+    const said = await app.act('action:toast', { action: 'attack', attackName: name.value.trim() || undefined, damage: amount, source: attacker });
+    if (!said.ok) return;
+    if (applyDamage && amount > 0 && hasPokemon(app.state[defender].active)) {
       await app.act(`action:${defender}`, { action: 'activeDamage', amount });
     }
     closeModal();
   };
+  announce.addEventListener('click', go);
 
+  const whoAttacks = () => `${trainerName(app.state, attacker)} attacks ${trainerName(app.state, otherSide(attacker))}`;
   const modal = openModal({
-    title: 'Attack', subtitle: `${trainerName(state, holder)} attacks ${trainerName(state, defender)}`, size: 'sm', name: 'attack',
-    body: [
-      h('label', { class: 'field' }, h('span', {}, 'Attack'), name),
-      h('label', { class: 'field' }, h('span', {}, 'Damage'), damage),
-      h('label', { class: 'switch inline' }, apply, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Also apply the damage to ${trainerName(state, defender)}'s Active Pokémon`))
-    ],
-    footer: [h('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Cancel'), h('button', { class: 'btn danger', type: 'button', onclick: go }, 'Announce attack')]
+    title: 'Attack', subtitle: whoAttacks(), size: 'md', name: 'attack', body,
+    footer: [h('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Cancel'), announce]
   });
-  modal.root.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.tagName !== 'BUTTON') { event.preventDefault(); go(); } });
+  const subtitle = () => { modal.root.querySelector('.modal-sub').textContent = whoAttacks(); };
+  draw();
+  // the first attack has the focus (the number keys pick), or the name box when the card lists none
+  const first = body.querySelector('[data-autofocus]');
+  (first || name).focus();
+
+  modal.root.addEventListener('keydown', (event) => {
+    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type !== 'checkbox';
+    if (!typing && /^[1-9]$/.test(event.key) && items[Number(event.key) - 1]) {
+      event.preventDefault();
+      choose(items[Number(event.key) - 1]);
+      return;
+    }
+    if (event.key === 'Enter' && event.target.tagName !== 'BUTTON') { event.preventDefault(); go(); }
+  });
 }
 
 // ------------------------------------------------------------------------------------------ help

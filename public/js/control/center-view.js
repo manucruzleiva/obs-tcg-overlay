@@ -59,8 +59,6 @@ export class CenterView {
         hype('Attack', 'C', () => app.openAttack(), 'red'),
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
         hype('Pass turn', 'P', () => app.act('action:toast', { action: 'passTurn' }), 'blue'),
-        hype('Victory A', '', () => app.act('action:toast', { action: 'trainerAWin' }), 'green'),
-        hype('Victory B', '', () => app.act('action:toast', { action: 'trainerBWin' }), 'green'),
         hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), '')));
 
     // ---- table

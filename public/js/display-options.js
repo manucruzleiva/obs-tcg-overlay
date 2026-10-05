@@ -4,6 +4,7 @@
  * One source of truth, loaded by the browser (as OTO_DISPLAY) and by the server (via require):
  * the server uses DEFAULTS as the starting settings, the control panel builds its
  * "Overlay visibility" switches from GROUPS, and the overlay maps each key to a CSS class.
+ * Everything shows by default except the options marked `off: true`.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -31,6 +32,9 @@
         { key: 'prizes', label: 'Prize cards' },
         { key: 'energyCounter', label: 'Energy attachment counter' },
         { key: 'stadiumCounter', label: 'Stadium play counter' },
+        { key: 'supporterCounter', label: 'Supporter play counter' },
+        { key: 'gxMarker', label: 'GX attack marker (once per game)', off: true },
+        { key: 'vstarMarker', label: 'VSTAR Power marker (once per game)', off: true },
         { key: 'locks', label: 'Item / Evolution lock badges' }
       ]
     },
@@ -66,7 +70,7 @@
   ];
 
   const KEYS = GROUPS.flatMap((group) => group.options.map((option) => option.key));
-  const DEFAULTS = Object.fromEntries(KEYS.map((key) => [key, true]));
+  const DEFAULTS = Object.fromEntries(GROUPS.flatMap((group) => group.options).map((option) => [option.key, !option.off]));
 
   return { GROUPS, KEYS, DEFAULTS };
 }));

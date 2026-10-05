@@ -10,6 +10,7 @@
  */
 
 const announcements = require('./services/announcements');
+const { attacksOf, retreatOf } = require('./services/attacks');
 const GAME = require('../public/js/game-data');
 
 const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
@@ -49,7 +50,12 @@ const penaltyText = (count) => (count === 0 ? 'none' : `${count} prize card${cou
 
 const pickSlot = (value) => integer(value, 'slot', -1, 7);
 const benchSlot = (value) => integer(value, 'slot', 0, 7);
-const amount = (value) => integer(value, 'amount', -9999, 9999);
+// Damage and healing come in tens, like the damage counters of the game
+const inTens = (number, name) => {
+  if (number % 10 !== 0) throw new ActionError(`${name} comes in tens (10, 20, 30...)`);
+  return number;
+};
+const amount = (value) => inTens(integer(value, 'amount', -9999, 9999), 'damage and healing');
 
 // -------------------------------------------------------------------- helpers
 
@@ -80,7 +86,9 @@ function pokemonFields(p) {
     name: text(p.name ?? '', 'name', 80),
     image: imageUrl(p.image, 'image'),
     hp: Number.isFinite(hp) ? hp : 0,
-    abilities: abilityNames(p.abilities)
+    abilities: abilityNames(p.abilities),
+    attacks: attacksOf(p.attacks),
+    retreat: retreatOf({ retreat: p.retreat })
   };
 }
 
@@ -101,6 +109,16 @@ function counterAction(kind, key, delta, cue) {
     targets: (side) => [`${side}.${key}`],
     run: (gs, side) => gs.stepCounter(side, kind, delta),
     label: (gs, side) => `${who(gs, side)}: ${key} ${signed(delta)}`
+  };
+}
+
+// A once-per-game marker (the GX attack, the VSTAR Power): going up uses it, going down gives it back. The game
+// giving them back is done by the game state (see resetGameMarkers).
+function markerAction(kind, name, delta) {
+  return {
+    targets: (side) => [`${side}.${name}`],
+    run: (gs, side) => gs.stepCounter(side, kind, delta),
+    label: (gs, side) => `${who(gs, side)} ${delta > 0 ? `used the ${name}` : `has the ${name} again`}`
   };
 }
 
@@ -191,6 +209,21 @@ const TRAINER = {
     label: (gs, side) => `${who(gs, side)} stadium counter reset`
   },
 
+  gxPlus: markerAction('gxPerGame', 'GX attack', 1),
+  gxMinus: markerAction('gxPerGame', 'GX attack', -1),
+  gxReset: {
+    targets: () => null,
+    run: (gs, side) => gs.resetCounter(side, 'gxPerGame'),
+    label: (gs, side) => `${who(gs, side)} has the GX attack again`
+  },
+  vstarPlus: markerAction('vstarPerGame', 'VSTAR Power', 1),
+  vstarMinus: markerAction('vstarPerGame', 'VSTAR Power', -1),
+  vstarReset: {
+    targets: () => null,
+    run: (gs, side) => gs.resetCounter(side, 'vstarPerGame'),
+    label: (gs, side) => `${who(gs, side)} has the VSTAR Power again`
+  },
+
   supporterPlus: counterAction('supporterPerTurn', 'supporter', 1, 'supporter'),
   supporterMinus: counterAction('supporterPerTurn', 'supporter', -1),
   supporterReset: {
@@ -247,6 +280,30 @@ const TRAINER = {
       ctx.name = name;
     },
     label: (gs, side, p, ctx) => `${slotName(gs, side, p.slot)} +${ctx.name}${p.countsAsTurn === false ? ' (special attachment)' : ''}`
+  },
+  // Special conditions of the Active Pokémon (Asleep, Burned, Confused, Paralyzed, Poisoned). The sender says whether the
+  // condition is now on, so two producers clicking the same chip agree; without it the condition is toggled.
+  toggleStatus: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : [`${side}.status`]),
+    run: (gs, side, p, out, ctx) => {
+      const condition = text(p.condition, 'condition', 20);
+      if (!GAME.STATUS_KEYS.includes(condition)) throw new ActionError('unknown special condition');
+      const pokemon = gs.state[side].active;
+      if (!(pokemon.cardId || pokemon.name)) throw new ActionError('there is no Active Pokémon');
+      ctx.condition = GAME.STATUS_CONDITIONS.find((entry) => entry.key === condition).label;
+      ctx.on = gs.setStatus(side, condition, typeof p.enabled === 'boolean' ? p.enabled : undefined).includes(condition);
+    },
+    label: (gs, side, p, ctx) => `${slotName(gs, side, -1)} is ${ctx.on ? '' : 'no longer '}${ctx.condition}`
+  },
+  clearStatus: {
+    targets: (side) => [`${side}.status`],
+    run: (gs, side) => gs.clearStatus(side),
+    label: (gs, side) => `${slotName(gs, side, -1)} recovered from every special condition`
+  },
+  setRetreat: {
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p) => gs.setRetreat(side, pickSlot(p.slot), integer(p.cost, 'cost', 0, 6)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} retreat cost ${gs.pokemonAt(side, Number(p.slot)).retreat}`
   },
   removeSpecialEnergy: {
     targets: (side, p) => [slotKey(side, p.slot)],
@@ -480,7 +537,8 @@ const ANNOUNCEMENT_SOUND = { topdeck: 'topdeck', attack: 'attack', startgame: 's
 
 function announce(action, type, describe, paramsFrom = () => ({})) {
   return {
-    sfx: () => ANNOUNCEMENT_SOUND[type],
+    // an ability announced like an attack has the ability's sound
+    sfx: (side, p) => (type === 'attack' && p && p.ability === true ? 'ability' : ANNOUNCEMENT_SOUND[type]),
     targets: () => [`announce.${action}`],
     run: (gs, side, p, out) => {
       const a = announcements.build(gs.state, type, paramsFrom(p));
@@ -494,7 +552,10 @@ const TOAST = {
   topDeck: announce('topDeck', 'topdeck', () => 'Top Deck announcement', (p) => ({ target: p.target })),
   attack: announce('attack', 'attack', () => 'Attack announcement', (p) => ({
     attackName: p.attackName === undefined ? undefined : text(p.attackName, 'attackName', 60),
-    damage: p.damage === undefined ? 0 : integer(p.damage, 'damage', 0, 9999)
+    // who attacks (or uses the ability); without it, whoever has the turn
+    source: p.source === 'trainerA' || p.source === 'trainerB' ? p.source : undefined,
+    ability: p.ability === true,
+    damage: p.damage === undefined || p.ability === true ? 0 : inTens(integer(p.damage, 'damage', 0, 9999), 'damage')
   })),
   startGame: announce('startGame', 'startgame', () => 'Game start announcement'),
   trainerAWin: announce('trainerAWin', 'win', () => 'Trainer A victory announcement', () => ({ side: 'trainerA' })),
@@ -528,6 +589,8 @@ function cleanCard(data) {
     name: text(data.name ?? '', 'card name', 80),
     hp: data.hp === undefined || data.hp === null ? '' : String(data.hp).slice(0, 6),
     abilities: abilityNames(data.abilities),
+    attacks: attacksOf(data.attacks),
+    retreat: retreatOf({ retreat: data.retreat }),
     images
   };
 }
@@ -663,13 +726,23 @@ function resolve(event, payload) {
     // Applies the action to `gs` and returns the announcements it triggers
     run(gs) {
       const out = [];
+      const before = { trainerA: gs.state.trainerA.prizes.count, trainerB: gs.state.trainerB.prizes.count };
       spec.run(gs, side, payload, out, ctx);
+      // Whoever has just taken their last prize card has won: the victory is announced by itself, whatever
+      // took the card (a knock out, the minus button, a draft sent from somewhere else)
+      for (const trainer of ['trainerA', 'trainerB']) {
+        if (before[trainer] > 0 && gs.state[trainer].prizes.count === 0) {
+          const victory = announcements.build(gs.state, 'win', { side: trainer });
+          if (victory) out.push(victory);
+          ctx.won = true;
+        }
+      }
       return out;
     },
     // Human-readable description, to be called after run()
     label: (gs) => spec.label(gs, side, payload, ctx),
     // The sound cues this action makes, to be called after run(). Independent of the visual announcements.
-    cues: () => (spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : [])
+    cues: () => [...(spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : []), ...(ctx.won ? ['win'] : [])]
   };
 }
 
@@ -681,15 +754,15 @@ async function prepare(gs, event, payload) {
   if (event !== 'action:card' || payload.action !== 'select' || typeof payload.cardId !== 'string') return payload;
 
   const supplied = payload.cardData && typeof payload.cardData === 'object' ? payload.cardData : null;
-  // A Pokémon's abilities are not in search results, so look the card up (cached after the first time)
-  if (supplied && (supplied.abilities !== undefined || payload.target === 'stadium')) return payload;
+  // A Pokémon's abilities, attacks and retreat cost are not in search results, so look the card up (cached after the first time)
+  if (supplied && (payload.target === 'stadium' || (supplied.abilities !== undefined && supplied.attacks !== undefined))) return payload;
 
   const details = await Promise.race([
-    gs.pokemonTCG.getCard(payload.cardId).catch(() => null),
+    gs.pokemonTCG.getCard(payload.cardId, supplied && supplied.source).catch(() => null),
     new Promise((resolve) => setTimeout(() => resolve(null), DETAILS_TIMEOUT_MS).unref())
   ]);
   if (!details) return payload;
-  return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities } : details };
+  return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities, attacks: details.attacks, retreat: details.retreat } : details };
 }
 
 module.exports = { resolve, prepare, ActionError, SIDE_LABEL };

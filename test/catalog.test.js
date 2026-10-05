@@ -2,7 +2,7 @@ const { describe, it, before, after, beforeEach, afterEach } = require('node:tes
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { CatalogService, CatalogError, PROFILES, STANDARD_MARKS, toRecord } = require('../src/services/catalog');
+const { CatalogService, CatalogError, PROFILES, STANDARD_MARKS, ROTATED_MARKS, NO_MARK_QUERY, toRecord } = require('../src/services/catalog');
 const { ImageCache } = require('../src/services/images');
 const { startMockCardApi, startMockImageHost, respond, ROOT } = require('../test-support/harness');
 
@@ -39,9 +39,13 @@ const STANDARD_POOL = [
   // matches the regulation mark and the basic Energy search: kept once
   card('sve-1', 'Basic Lightning Energy', { regulationMark: 'H', supertype: 'Energy', subtypes: ['Basic'], hp: undefined, types: undefined }),
   // old, with no regulation mark: only the basic Energy search finds it
-  card('sve-2', 'Basic Fire Energy', { supertype: 'Energy', subtypes: ['Basic'], hp: undefined, types: undefined, set: { id: 'sve', name: 'Set sve', releaseDate: '2013/01/01' } })
+  card('sve-2', 'Basic Fire Energy', { supertype: 'Energy', subtypes: ['Basic'], hp: undefined, types: undefined, set: { id: 'sve', name: 'Set sve', releaseDate: '2013/01/01' } }),
+  // no regulation mark, in a set the card service lists as legal in Standard (the Classic Collection): found by its set
+  card('me55c-1', 'Charizard', { types: ['Fire'], set: { id: 'me55c', name: 'Classic Collection', releaseDate: '2026/09/16', legalities: { standard: 'Legal', expanded: 'Legal' } } })
 ];
 const OLDER_POOL = [
+  // in that same set, but with the mark of a rotated set: the mark decides, so it is not Standard
+  card('me55c-2', 'Blastoise', { regulationMark: 'F', types: ['Water'], set: { id: 'me55c', name: 'Classic Collection', releaseDate: '2026/09/16', legalities: { standard: 'Legal', expanded: 'Legal' } } }),
   card('sm1-1', 'Pikachu', { regulationMark: 'F', set: { id: 'sm1', name: 'Set sm1', releaseDate: '2017/02/03' } }),
   // a rule box shown only by its subtype: the card has no rules text
   card('xy1-1', 'Pikachu EX', { subtypes: ['Basic', 'EX'], set: { id: 'xy1', name: 'Set xy1', releaseDate: '2014/01/01' } }),
@@ -50,17 +54,21 @@ const OLDER_POOL = [
 
 // The part of the card API's query language the library uses
 function matches(item, q) {
-  const terms = q.match(/[\w.]+:"[^"]*"|[\w.]+:\S+/g) || [];
+  const terms = q.match(/-?[\w.]+:"[^"]*"|-?[\w.]+:\S+/g) || [];
   return terms.every((term) => {
-    const [key, ...rest] = term.split(':');
+    const negated = term.startsWith('-');
+    const [key, ...rest] = (negated ? term.slice(1) : term).split(':');
     const value = rest.join(':').replace(/"/g, '');
+    let found;
     switch (key) {
-      case 'regulationMark': return item.regulationMark === value;
-      case 'supertype': return item.supertype === value;
-      case 'subtypes': return (item.subtypes || []).includes(value);
-      case 'legalities.expanded': return Boolean(item.legalities && item.legalities.expanded && item.legalities.expanded.toLowerCase() === value);
+      case 'regulationMark': found = item.regulationMark === value; break;
+      case 'supertype': found = item.supertype === value; break;
+      case 'subtypes': found = (item.subtypes || []).includes(value); break;
+      case 'legalities.expanded': found = Boolean(item.legalities && item.legalities.expanded && item.legalities.expanded.toLowerCase() === value); break;
+      case 'set.legalities.standard': found = Boolean(item.set && item.set.legalities && item.set.legalities.standard && item.set.legalities.standard.toLowerCase() === value); break;
       default: throw new Error(`the mock does not understand ${term}`);
     }
+    return negated ? !found : found;
   });
 }
 
@@ -139,7 +147,7 @@ describe('card library', () => {
       assert.equal(status.job, null);
     });
 
-    it('downloads Standard: the current rotation and basic Energy, each card once', async () => {
+    it('downloads Standard: the current rotation, basic Energy and the cards with no mark that are legal, each card once', async () => {
       const catalog = open();
       const job = await run(catalog, 'standard');
       assert.equal(job.phase, 'done');
@@ -147,15 +155,52 @@ describe('card library', () => {
 
       const standard = catalog.status().profiles[0];
       assert.equal(standard.ready, true);
-      assert.equal(standard.count, 10, 'the Energy that matches two searches is kept once');
+      assert.equal(standard.count, 11, 'the Energy that matches two searches is kept once');
       assert.ok(standard.bytes > 0);
       assert.ok(Math.abs(standard.builtAt - Date.now()) < 5000);
-      assert.match(job.message, /Standard is ready: 10 cards/);
+      assert.match(job.message, /Standard is ready: 11 cards/);
 
-      // one count per search (H, I, J and basic Energy), then the cards, each time with a field list
+      // one count per search (H, I, J, basic Energy and the cards with no mark), then the cards, each time with a field list
       const asked = counts(api).map((params) => params.get('q'));
-      assert.deepEqual(asked, ['regulationMark:H', 'regulationMark:I', 'regulationMark:J', 'supertype:Energy subtypes:Basic']);
+      assert.deepEqual(asked, ['regulationMark:H', 'regulationMark:I', 'regulationMark:J', 'supertype:Energy subtypes:Basic', NO_MARK_QUERY]);
       assert.ok(pages(api).every((params) => params.get('select').includes('regulationMark')));
+    });
+
+    it('keeps a card that has no regulation mark when its set is legal in Standard, and only then', async () => {
+      assert.ok(NO_MARK_QUERY.startsWith('set.legalities.standard:legal'));
+      for (const mark of [...ROTATED_MARKS, ...STANDARD_MARKS]) assert.ok(NO_MARK_QUERY.includes(`-regulationMark:${mark}`), `not a card with ${mark}`);
+
+      const catalog = open();
+      await run(catalog, 'standard');
+      const ids = catalog.search('').cards.map((entry) => entry.id);
+      assert.ok(ids.includes('me55c-1'), 'the Classic Collection card has no mark and is in a legal set');
+      assert.ok(!ids.includes('me55c-2'), 'one with the mark of a rotated set is not');
+      assert.ok(!ids.includes('base1-58'), 'a card with no mark in a set that is not legal is not');
+      assert.ok(ids.includes('sve-2'), 'the basic Energy with no mark is still there');
+      assert.equal(catalog.get('me55c-1').regulationMark, '');
+      assert.equal(catalog.search('charizard').cards[0].setName, 'Classic Collection');
+    });
+
+    it('says when a library was saved before it held more, and stops saying it after an update', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      let standard = catalog.status().profiles[0];
+      assert.equal(standard.outdated, false);
+      assert.match(standard.whatsNew, /no regulation mark/);
+
+      // the same library as an earlier version saved it: no revision in the file
+      const meta = JSON.parse(fs.readFileSync(path.join(dir, 'standard.meta.json'), 'utf8'));
+      delete meta.revision;
+      fs.writeFileSync(path.join(dir, 'standard.meta.json'), JSON.stringify(meta));
+      const reopened = open();
+      standard = reopened.status().profiles[0];
+      assert.equal(standard.ready, true);
+      assert.equal(standard.outdated, true);
+      assert.equal(reopened.status().profiles[1].outdated, false, 'a library that never changed is never out of date');
+
+      await run(reopened, 'standard');
+      assert.equal(reopened.status().profiles[0].outdated, false);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'standard.meta.json'), 'utf8')).revision, PROFILES.standard.revision);
     });
 
     it('numbers every change, so a page can tell a late answer from a newer event', async () => {
@@ -211,8 +256,8 @@ describe('card library', () => {
       assert.deepEqual(phases, ['starting', 'counting', 'downloading', 'saving', 'done']);
       const last = seen[seen.length - 1];
       assert.equal(last.finished, true);
-      assert.equal(last.done, 10);
-      assert.equal(last.total, 10);
+      assert.equal(last.done, 11);
+      assert.equal(last.total, 11);
     });
 
     it('asks for a go-ahead before the big downloads, and says how big', () => {
@@ -249,7 +294,7 @@ describe('card library', () => {
       const catalog = open();
       const job = await run(catalog, 'expanded', { confirm: true });
       assert.equal(job.phase, 'done');
-      assert.equal(catalog.status().profiles[2].count, 12, 'the Base Set card is not Expanded-legal');
+      assert.equal(catalog.status().profiles[2].count, 14, 'the Base Set card is not Expanded-legal');
       assert.equal(catalog.search('pikachu').totalCount, 5, 'Pikachu from sm1, sv4 and me1, plus Pikachu ex and Pikachu EX');
     });
 
@@ -258,7 +303,7 @@ describe('card library', () => {
       await run(catalog, 'glc', { confirm: true });
       const names = (text, filters) => catalog.search(text, 1, filters).cards.map((c) => c.name);
 
-      assert.equal(catalog.status().profiles[1].count, 9);
+      assert.equal(catalog.status().profiles[1].count, 11);
       assert.deepEqual(names('pikachu'), ['Pikachu', 'Pikachu', 'Pikachu'], 'neither Pikachu ex (rules text) nor Pikachu EX (subtype only)');
       assert.deepEqual(names('lucario'), [], 'Mega Lucario ex has a rule box');
       // Trainers, Energy and ordinary Pokémon all stay
@@ -276,8 +321,8 @@ describe('card library', () => {
       const job = await run(catalog, 'glc', { confirm: true });
       assert.equal(job.phase, 'done');
       assert.equal(api.requests.length, before, 'no request to the card service');
-      assert.equal(catalog.status().profiles[1].count, 9);
-      assert.match(job.message, /Gym Leader Challenge is ready: 9 cards/);
+      assert.equal(catalog.status().profiles[1].count, 11);
+      assert.match(job.message, /Gym Leader Challenge is ready: 11 cards/);
     });
   });
 
@@ -291,7 +336,7 @@ describe('card library', () => {
 
       const job = await run(catalog, 'standard');
       assert.equal(job.phase, 'done');
-      assert.equal(catalog.status().profiles[0].count, 10);
+      assert.equal(catalog.status().profiles[0].count, 11);
       assert.ok(messages.some((message) => /Trying again \(1 of 7\)/.test(message)), 'the person is told why it is slow');
     });
 
@@ -339,7 +384,7 @@ describe('card library', () => {
       const job = await run(catalog, 'standard');
       assert.equal(job.phase, 'done');
       assert.equal(selects, 1, 'asked once, then never again');
-      assert.equal(catalog.status().profiles[0].count, 10);
+      assert.equal(catalog.status().profiles[0].count, 11);
     });
 
     it('survives the service not being there at all', async () => {
@@ -520,7 +565,7 @@ describe('card library', () => {
       api.requests.length = 0;
       const second = open();
       assert.equal(second.status().active, 'standard');
-      assert.equal(second.status().profiles[0].count, 10);
+      assert.equal(second.status().profiles[0].count, 11);
       assert.equal(second.search('iono').totalCount, 1);
       assert.equal(api.requests.length, 0);
     });
@@ -648,10 +693,10 @@ describe('card library', () => {
       const job = await done;
       assert.equal(job.kind, 'pictures');
       assert.equal(job.phase, 'done');
-      assert.equal(host.requests.length, 10, 'one small picture per card');
+      assert.equal(host.requests.length, 11, 'one small picture per card');
       assert.ok(host.requests.every((url) => !url.includes('hires')));
       assert.equal(job.failed, 1, 'one picture does not exist on the host');
-      assert.match(job.message, /Saved 9 pictures\. 1 could not be downloaded\./);
+      assert.match(job.message, /Saved 10 pictures\. 1 could not be downloaded\./);
 
       const again = ended(catalog);
       host.requests.length = 0;
@@ -666,8 +711,8 @@ describe('card library', () => {
       const done = ended(catalog);
       catalog.downloadPictures({ sizes: 'both' });
       await done;
-      assert.equal(host.requests.length, 20);
-      assert.equal(host.requests.filter((url) => url.includes('hires')).length, 10);
+      assert.equal(host.requests.length, 22);
+      assert.equal(host.requests.filter((url) => url.includes('hires')).length, 11);
     });
 
     it('needs the library chosen first, and a sensible choice of sizes', async () => {

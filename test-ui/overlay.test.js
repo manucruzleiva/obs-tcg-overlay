@@ -268,6 +268,94 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('the GX and VSTAR markers', () => {
+    const marker = (side, name) => page.locator(`.trainer-${side} .token.marker`, { hasText: name });
+    const shown = async (side, name) => (await marker(side, name).count()) > 0 && marker(side, name).isVisible();
+
+    it('are not shown until the producer asks for them; then they show ready or used, and come back when a game is won', async () => {
+      assert.equal(await shown('a', 'GX'), false);
+      assert.equal(await shown('b', 'VSTAR'), false);
+      assert.equal((await live()).settings.display.gxMarker, false);
+
+      await send('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+      await page.waitForFunction(() => [...document.querySelectorAll('.trainer-a .token.marker')].every((node) => node.offsetParent !== null));
+      for (const side of ['a', 'b']) for (const name of ['GX', 'VSTAR']) assert.equal(await shown(side, name), true, `${side} ${name}`);
+      assert.equal(await page.locator('.token.marker.used').count(), 0, 'nothing used yet');
+
+      await send('action:trainerA', { action: 'gxPlus' });
+      await page.waitForSelector('.trainer-a .token.marker.used');
+      assert.equal(await page.locator('.trainer-a .token.marker.used .token-label').textContent(), 'GX');
+      assert.equal(await page.locator('.trainer-b .token.marker.used').count(), 0, 'the other trainer still has theirs');
+      await send('action:trainerB', { action: 'vstarPlus' });
+      await page.waitForSelector('.trainer-b .token.marker.used');
+      assert.equal(await page.locator('.trainer-b .token.marker.used .token-label').textContent(), 'VSTAR');
+
+      // the used one is crossed out, the ready one is not
+      const lines = await page.$$eval('.token.marker .token-label', (nodes) => nodes.map((node) => getComputedStyle(node).textDecorationLine));
+      assert.equal(lines.filter((line) => line === 'line-through').length, 2);
+
+      // a game is won: both trainers have both again
+      await send('action:match', { action: 'trainerAMatchWin' });
+      await page.waitForFunction(() => document.querySelectorAll('.token.marker.used').length === 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('come back at the start of a new game, and the energy, stadium and supporter tokens are untouched by it', async () => {
+      await send('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+      await send('action:trainerA', { action: 'vstarPlus' });
+      await send('action:trainerA', { action: 'energyPlus' });
+      await page.waitForSelector('.trainer-a .token.marker.used');
+      await send('action:match', { action: 'startGame' });
+      await page.waitForFunction(() => document.querySelectorAll('.token.marker.used').length === 0);
+      assert.equal(await page.locator('.trainer-a .token.used').count(), 1, 'only the energy attachment of this turn is still used');
+    });
+
+    it('hide with the other switches', async () => {
+      await send('action:settings', { action: 'update', display: { gxMarker: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .token.marker').offsetParent !== null);
+      await send('action:settings', { action: 'update', display: { gxMarker: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .token.marker').offsetParent === null);
+    });
+  });
+
+  describe('status conditions', () => {
+    const chips = (side = 'a') => page.$$eval(`.trainer-${side} .active .status-chip`, (nodes) => nodes.map((node) => node.textContent));
+
+    it('shows the conditions of the Active Pokémon, each in its own color, and Trapped says what it means', async () => {
+      assert.deepEqual(await chips(), []);
+      assert.equal(await page.locator('.trainer-a .active .statuses').isVisible(), false, 'nothing to show, nothing shown');
+
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'trapped', enabled: true });
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'asleep', enabled: true });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .status-chip').length === 3);
+      assert.deepEqual(await chips(), ['Asleep', 'Poisoned', 'Trapped']);
+      assert.deepEqual(await chips('b'), []);
+
+      const looks = await page.$$eval('.trainer-a .active .status-chip', (nodes) => nodes.map((node) => ({ key: node.dataset.status, color: getComputedStyle(node).backgroundColor, title: node.title })));
+      assert.equal(new Set(looks.map((look) => look.color)).size, 3, 'each condition has a color of its own');
+      assert.equal(looks.find((look) => look.key === 'trapped').title, 'Can\'t retreat');
+
+      // a second Asleep-like condition takes the place of the first
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'paralyzed', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .status-chip[data-status="paralyzed"]'));
+      assert.deepEqual(await chips(), ['Paralyzed', 'Poisoned', 'Trapped']);
+
+      await send('action:trainerA', { action: 'clearStatus' });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .status-chip').length === 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can be switched off with the other Pokémon details', async () => {
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'burned', enabled: true });
+      await page.waitForSelector('.trainer-a .active .status-chip');
+      assert.equal(await page.locator('.trainer-a .active .statuses').isVisible(), true);
+      await send('action:settings', { action: 'update', display: { statusConditions: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .statuses').offsetParent === null);
+      await send('action:settings', { action: 'update', display: { statusConditions: true } });
+    });
+  });
+
   describe('announcements', () => {
     it('shows a banner for two seconds unless told otherwise, then takes it away', async () => {
       assert.equal((await live()).settings.toastSeconds, 2);

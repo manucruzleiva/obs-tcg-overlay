@@ -15,6 +15,7 @@ const fs = require('fs');
 const Database = require('./db/database');
 const PokemonTCGService = require('./services/pokemon-tcg');
 const CacheService = require('./services/cache');
+const { CardUsage } = require('./services/card-usage');
 const GameStateService = require('./services/gamestate');
 const { Auth } = require('./services/auth');
 const { ThemeStore } = require('./services/themes');
@@ -212,8 +213,13 @@ async function initialize() {
     return res.status(401).json({ error: 'Password required' });
   };
 
+  // The cards used most, for the card picker to start from; and expired lookups are cleared away now and then
+  const cardUsage = new CardUsage({ db, localize: (card) => pokemonTCG.localize(card) });
+  cache.cleanup();
+  setInterval(() => cache.cleanup(), 60 * 60 * 1000).unref();
+
   const { publicRouter, protectedRouter } = require('./api/routes')({
-    db, cache, pokemonTCG, gameState, session, auth, themes, sounds, catalog, packages, io, instanceId: INSTANCE_ID
+    db, cache, pokemonTCG, cardUsage, gameState, session, auth, themes, sounds, catalog, packages, io, instanceId: INSTANCE_ID
   });
   app.use('/api', publicRouter);
   app.use('/api', gate, protectedRouter);

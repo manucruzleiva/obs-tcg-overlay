@@ -24,7 +24,9 @@ describe('server', () => {
           id: 'sv1-1', name: 'Sprigatito', supertype: 'Pokémon', hp: '70',
           set: { id: 'sv1', name: 'Scarlet & Violet' },
           images: { large: IMG, small: IMG },
-          abilities: [{ name: 'Spring Dance' }]
+          abilities: [{ name: 'Spring Dance' }],
+          attacks: [{ name: 'Scratch', damage: '10' }, { name: 'Leafage', damage: '30+' }],
+          convertedRetreatCost: 1
         }
       }
     });
@@ -239,6 +241,119 @@ describe('server', () => {
     await trainer('trainerA', { action: 'removeSpecialEnergy', slot: -1, index: 0 });
     const none = await trainer('trainerA', { action: 'attachSpecialEnergy', slot: -1, cardId: 'sv-e1', name: 'No picture' });
     assert.equal(none.ok, true, 'a card with no picture is fine: the overlay draws a plain disc');
+  });
+
+  it('takes the attacks and the retreat cost from the card chosen, and from what a deployment says', async () => {
+    // the mock card service answers the lookup with Scratch and Leafage (see the card fixtures above)
+    let { state } = await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv1-1', cardData: { id: 'sv1-1', name: 'Sprigatito', hp: '70', images: { large: IMG } } });
+    assert.deepEqual(state.trainerA.active.attacks.map((attack) => [attack.name, attack.damage, attack.mod]), [['Scratch', 10, ''], ['Leafage', 30, '+']]);
+    assert.equal(state.trainerA.active.retreat, 1);
+
+    ({ state } = await trainer('trainerA', { action: 'setBench', slot: 0, cardId: 'b-1', name: 'Eevee', image: IMG, hp: 50, attacks: [{ name: 'Tackle', damage: '10' }, { name: '' }, 'Growl'], retreat: 2 }));
+    assert.deepEqual(state.trainerA.bench[0].attacks, [{ name: 'Tackle', damage: 10, mod: '' }, { name: 'Growl', damage: 0, mod: '' }]);
+    assert.equal(state.trainerA.bench[0].retreat, 2);
+
+    ({ state } = await trainer('trainerA', { action: 'setRetreat', slot: 0, cost: 0 }));
+    assert.equal(state.trainerA.bench[0].retreat, 0);
+    assert.equal((await trainer('trainerA', { action: 'setRetreat', slot: 0, cost: 9 })).ok, false);
+    assert.equal((await trainer('trainerA', { action: 'setRetreat', slot: 0, cost: 'free' })).ok, false);
+  });
+
+  it('takes damage and healing in tens only, and says so', async () => {
+    await trainer('trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+    let { state } = await trainer('trainerA', { action: 'activeDamage', amount: 30 });
+    assert.equal(state.trainerA.active.hp.current, 70);
+    ({ state } = await trainer('trainerA', { action: 'activeDamage', amount: -20 }));
+    assert.equal(state.trainerA.active.hp.current, 90);
+    for (const amount of [15, 5, -25, 1, 99]) {
+      const refused = await trainer('trainerA', { action: 'activeDamage', amount });
+      assert.equal(refused.ok, false, String(amount));
+      assert.match(refused.rejected.message, /comes in tens/);
+    }
+    const bench = await trainer('trainerA', { action: 'benchDamage', slot: 0, amount: 25 });
+    assert.equal(bench.ok, false);
+    assert.equal((await trainer('trainerA', { action: 'activeDamage', amount: 0 })).ok, true, 'nothing is a multiple of ten too');
+    assert.equal((await producer.act('action:toast', { action: 'attack', attackName: 'Gnaw', damage: 25 })).ok, false, 'and so is an attack');
+    assert.equal((await producer.act('action:toast', { action: 'attack', attackName: 'Gnaw', damage: 120 })).ok, true);
+    assert.equal(((await fetch(`${server.base}/api/state`)).ok), true);
+  });
+
+  it('announces the victory by itself when a trainer takes their last prize card', async () => {
+    // what was announced in earlier tests is not counted
+    const wins = () => (producer.events.announce || []).filter((a) => a.type === 'win').length;
+    const earlier = wins();
+    const listener = producer.expect('announce', (announcement) => announcement.type === 'win', 6000);
+    for (let i = 0; i < 5; i++) await trainer('trainerA', { action: 'prizeMinus' });
+    // five taken: nobody has won yet
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(wins(), earlier, 'five of six is not a victory');
+
+    const last = await trainer('trainerA', { action: 'prizeMinus' });
+    assert.equal(last.ok, true);
+    const victory = await listener;
+    assert.equal(victory.type, 'win');
+    assert.equal(victory.side, 'trainerA');
+    assert.match(victory.subtitle, /Trainer A wins/);
+    assert.ok(victory.toastMs > 0 && victory.animationMs > 0);
+    assert.equal((await fetch(`${server.base}/api/state`).then((r) => r.json())).trainerA.prizes.count, 0);
+
+    // once only: with none left there is nothing more to take, and nothing more to announce
+    const after = wins();
+    await trainer('trainerA', { action: 'prizeMinus' });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(wins(), after, 'zero stays zero: nothing to announce');
+  });
+
+  it('announces it whatever takes the last prize card, for the right trainer, and respects the switches', async () => {
+    await trainer('trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 60 });
+    await trainer('trainerB', { action: 'prizeSet', count: 2 });
+    const first = producer.expect('announce', (a) => a.type === 'win', 6000);
+    await trainer('trainerA', { action: 'knockOut', slot: -1, prizes: 2 });
+    const knockOut = await first;
+    assert.equal(knockOut.side, 'trainerB', 'the trainer who took the cards, not the one who lost the Pokémon');
+
+    // set to zero by hand counts too
+    await trainer('trainerA', { action: 'prizeReset' });
+    const second = producer.expect('announce', (a) => a.type === 'win' && a.side === 'trainerA', 6000);
+    await trainer('trainerA', { action: 'prizeSet', count: 0 });
+    assert.equal((await second).side, 'trainerA');
+
+    // the banner and the effect can be switched off in the settings, like any other announcement
+    await trainer('trainerB', { action: 'prizeReset' });
+    await producer.act('action:settings', { action: 'update', enableTrainerBWinToast: false, enableTrainerBWinAnimation: false });
+    const before = (producer.events.announce || []).length;
+    await trainer('trainerB', { action: 'prizeSet', count: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal((producer.events.announce || []).length, before, 'both switched off: nothing to show');
+  });
+
+  it('announces an ability like an attack, with its name, no damage and the ability sound', async () => {
+    await producer.act('action:settings', { action: 'update', sound: { enabled: true } });
+    await producer.act('action:match', { action: 'setTurn' }).catch(() => null);
+    await trainer('trainerA', { action: 'setTurn', isTurn: true });
+    const banner = producer.expect('announce', (a) => a.type === 'attack' && a.data && a.data.ability === true, 6000);
+    const cue = producer.expect('sfx', (message) => message.cue === 'ability', 6000);
+    assert.equal((await producer.act('action:toast', { action: 'attack', attackName: 'Static', ability: true, damage: 120 })).ok, true, 'a damage sent with an ability is ignored');
+    const announced = await banner;
+    assert.equal(announced.title, 'Static');
+    assert.equal(announced.subtitle, 'ABILITY USED');
+    assert.equal(announced.data.damage, 0);
+    assert.equal(announced.side, 'trainerA', 'the trainer who uses it, not the one who is attacked');
+    assert.equal((await cue).cue, 'ability');
+
+    // an attack is as it was
+    const attack = producer.expect('announce', (a) => a.type === 'attack' && a.data && a.data.ability === false && a.title === 'Gnaw', 6000);
+    await producer.act('action:toast', { action: 'attack', attackName: 'Gnaw', damage: 30 });
+    const plain = await attack;
+    assert.equal(plain.subtitle, '30 damage');
+    assert.equal(plain.side, 'trainerB');
+  });
+
+  it('plays the victory sound with it', async () => {
+    await producer.act('action:settings', { action: 'update', sound: { enabled: true } });
+    const cue = producer.expect('sfx', (message) => message.cue === 'win', 6000);
+    await trainer('trainerA', { action: 'prizeSet', count: 0 });
+    assert.equal((await cue).cue, 'win');
   });
 
   it('refuses to attach energy to an empty slot or an unknown type', async () => {

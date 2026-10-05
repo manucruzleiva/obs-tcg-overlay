@@ -139,9 +139,10 @@ class CacheService {
     }
   }
 
+  // Forget every remembered search and card, in memory and on disk
   clearAll() {
     this.memoryCache.clear();
-    // Disk cache cleared via direct DB calls if needed
+    this.db.clearCache();
   }
 
   // Helpers

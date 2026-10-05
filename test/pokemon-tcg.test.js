@@ -37,7 +37,8 @@ const PIKACHU = {
   rarity: 'Common',
   set: { id: 'base1', name: 'Base' },
   images: { small: 'https://img.test/s.png', large: 'https://img.test/l.png' },
-  attacks: [{ name: 'Gnaw' }],
+  attacks: [{ name: 'Gnaw', damage: '20' }, { name: 'Thunder Jolt', damage: '30+', cost: ['Lightning'] }],
+  convertedRetreatCost: 1,
   abilities: []
 };
 const CHARIZARD = { ...PIKACHU, id: 'base1-4', name: 'Charizard', rarity: 'Rare Holo', hp: '120' };
@@ -132,7 +133,8 @@ describe('PokemonTCGService', () => {
   it('fetches and caches a single card with its attacks', async () => {
     const card = await service.getCard('base1-58');
     assert.equal(card.name, 'Pikachu');
-    assert.deepEqual(card.attacks, ['Gnaw']);
+    assert.deepEqual(card.attacks, [{ name: 'Gnaw', damage: 20, mod: '' }, { name: 'Thunder Jolt', damage: 30, mod: '+' }]);
+    assert.equal(card.retreat, 1);
     assert.equal(requests[0].url, '/cards/base1-58');
 
     await service.getCard('base1-58');

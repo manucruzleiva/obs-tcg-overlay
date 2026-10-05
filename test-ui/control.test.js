@@ -308,9 +308,184 @@ describe('control panel', { skip }, () => {
     await press('2');
     await press('h');
     await page.waitForSelector('.modal');
+    // damage and healing come in tens: 25 is taken as the nearest ten
     await modal().locator('.amount-input').fill('25');
+    assert.match(await modal().locator('.preview-row').textContent(), /Charizard.*110 → 140/);
     await press('Enter');
-    await expectLive((state) => state.trainerB.active.hp.current, 135);
+    await expectLive((state) => state.trainerB.active.hp.current, 140);
+  });
+
+  it('brings a damage typed in to the nearest ten when the box is left', async () => {
+    await press('d');
+    await page.waitForSelector('.modal');
+    await modal().locator('.amount-input').fill('44');
+    await modal().locator('.amount-input').press('Tab');
+    assert.equal(await modal().locator('.amount-input').inputValue(), '40');
+    assert.match(await modal().textContent(), /In tens: 10, 20, 30/);
+    await modal().locator('.amount-input').fill('7');
+    await modal().locator('.amount-input').press('Tab');
+    assert.equal(await modal().locator('.amount-input').inputValue(), '10');
+  });
+
+  it('has no victory buttons in the hype: whoever takes the last prize card wins by itself', async () => {
+    assert.equal(await page.locator('.hype-grid button', { hasText: 'Victory' }).count(), 0);
+    assert.equal(await page.locator('.hype-grid button', { hasText: 'Game start' }).count(), 1);
+
+    await producer.act('action:trainerA', { action: 'prizeSet', count: 1 });
+    await expectLive((state) => state.trainerA.prizes.count, 1);
+    const won = producer.expect('announce', (announcement) => announcement.type === 'win');
+    await press('ArrowDown'); // Ash takes the last one
+    const victory = await won;
+    assert.equal(victory.side, 'trainerA');
+    assert.match(victory.subtitle, /Ash wins/);
+    await expectLive((state) => state.trainerA.prizes.count, 0);
+  });
+
+  describe('the attack dialog', () => {
+    const picks = () => modal().locator('.attack-pick:not(.ability)');
+    const damageBox = () => modal().locator('.amount-input');
+
+    beforeEach(async () => {
+      await producer.act('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100, abilities: ['Static'], attacks: [{ name: 'Gnaw', damage: '20' }, { name: 'Thunder Jolt', damage: '30+' }] });
+      await expectLive((state) => state.trainerA.active.attacks.map((attack) => attack.name), ['Gnaw', 'Thunder Jolt']);
+    });
+
+    it('lists what the card can do, takes the damage of the attack as the base, and lets it be changed in tens', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.match(await modal().locator('.modal-sub').textContent(), /Ash attacks Gary/);
+      assert.deepEqual(await picks().locator('.attack-name').allTextContents(), ['Gnaw', 'Thunder Jolt']);
+      assert.deepEqual(await picks().locator('.attack-damage').allTextContents(), ['20', '30+']);
+      assert.deepEqual(await picks().locator('kbd').allTextContents(), ['1', '2']);
+      assert.match(await modal().locator('.attack-pick.ability').textContent(), /Static/);
+      assert.equal(await modal().locator('.attack-pick.ability kbd').textContent(), '3');
+
+      await press('2');
+      assert.equal(await modal().locator('input[aria-label="Attack name"]').inputValue(), 'Thunder Jolt');
+      assert.equal(await damageBox().inputValue(), '30');
+      assert.match(await modal().locator('.hint-line').textContent(), /The card says 30\+: and more with some conditions/);
+      assert.equal(await modal().locator('.attack-pick.on .attack-name').textContent(), 'Thunder Jolt');
+
+      // the stepper moves in tens, and Base brings the card's damage back
+      await modal().getByRole('button', { name: '10 more' }).click();
+      await modal().getByRole('button', { name: '10 more' }).click();
+      assert.equal(await damageBox().inputValue(), '50');
+      await modal().getByRole('button', { name: 'Base 30' }).click();
+      assert.equal(await damageBox().inputValue(), '30');
+      assert.equal(await modal().getByRole('button', { name: 'Base 30' }).isVisible(), false, 'nothing to go back to');
+      await modal().getByRole('button', { name: '10 less' }).click();
+      assert.equal(await damageBox().inputValue(), '20');
+
+      // a number typed in is taken to the nearest ten
+      await damageBox().fill('64');
+      await damageBox().press('Tab');
+      assert.equal(await damageBox().inputValue(), '60');
+
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await modal().locator('.modal-foot .danger').click();
+      const announced = await heard;
+      assert.equal(announced.title, 'Thunder Jolt');
+      assert.equal(announced.subtitle, '60 damage');
+      assert.equal(announced.data.source, 'trainerA');
+      await expectLive((state) => state.trainerB.active.hp.current, 90);
+      await dialogClosed();
+    });
+
+    it('announces with the keyboard alone: C, the number of the attack, Enter', async () => {
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await press('c');
+      await page.waitForSelector('.modal');
+      await press('1');
+      await press('Enter');
+      const announced = await heard;
+      assert.equal(announced.title, 'Gnaw');
+      assert.equal(announced.subtitle, '20 damage');
+      await expectLive((state) => state.trainerB.active.hp.current, 130);
+      await dialogClosed();
+    });
+
+    it('can leave the damage off the Pokémon', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      await press('1');
+      await modal().locator('.switch', { hasText: 'Also apply the damage' }).click();
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await press('Enter');
+      assert.equal((await heard).subtitle, '20 damage');
+      await dialogClosed();
+      assert.equal((await live()).trainerB.active.hp.current, 150, 'announced, not applied');
+    });
+
+    it('announces an ability the same way, and marks its token used', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      await modal().locator('.attack-pick.ability').click();
+      assert.match(await modal().locator('.modal-body').textContent(), /Mark Static as used/);
+      assert.equal(await damageBox().count(), 0, 'an ability has no damage');
+      assert.equal(await modal().locator('.modal-foot .danger').textContent(), 'Announce ability');
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack' && announcement.data && announcement.data.ability === true);
+      await modal().locator('.modal-foot .danger').click();
+      const announced = await heard;
+      assert.equal(announced.title, 'Static');
+      assert.equal(announced.subtitle, 'ABILITY USED');
+      assert.equal(announced.side, 'trainerA', 'the trainer who uses it');
+      await expectLive((state) => state.trainerA.active.abilities.map((ability) => ability.used), [true]);
+      assert.equal((await live()).trainerB.active.hp.current, 150, 'nobody is damaged by an ability');
+      await dialogClosed();
+
+      // one that is already used is announced again without being marked twice
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.match(await modal().locator('.attack-pick.ability').textContent(), /USED/);
+      await modal().locator('.attack-pick.ability').click();
+      assert.equal(await modal().locator('.switch input').isChecked(), false);
+      await modal().locator('.modal-foot .danger').click();
+      await dialogClosed();
+    });
+
+    it('lists the abilities of the Pokémon on the bench too', async () => {
+      await producer.act('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60, abilities: ['Adaptability'] });
+      await expectLive((state) => state.trainerA.bench[0].abilities.map((ability) => ability.name), ['Adaptability']);
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.deepEqual(await modal().locator('.attack-pick.ability .attack-name').allTextContents(), ['Static Pikachu · Active', 'Adaptability Eevee · Bench 1']);
+      await modal().locator('.attack-pick.ability', { hasText: 'Adaptability' }).click();
+      const heard = producer.expect('announce', (announcement) => announcement.data && announcement.data.ability === true);
+      await modal().locator('.modal-foot .danger').click();
+      assert.equal((await heard).title, 'Adaptability');
+      await expectLive((state) => [state.trainerA.active.abilities[0].used, state.trainerA.bench[0].abilities[0].used], [false, true]);
+    });
+
+    it('lets the other trainer attack, and the announcement says so', async () => {
+      await producer.act('action:trainerB', { action: 'setActive', cardId: 'b-1', name: 'Charizard', image: IMG, hp: 150, attacks: [{ name: 'Flamethrower', damage: '90' }] });
+      await expectLive((state) => state.trainerB.active.attacks.map((attack) => attack.name), ['Flamethrower']);
+      await press('c');
+      await page.waitForSelector('.modal');
+      await modal().locator('.side-tab', { hasText: 'Gary' }).click();
+      assert.match(await modal().locator('.modal-sub').textContent(), /Gary attacks Ash/);
+      assert.deepEqual(await picks().locator('.attack-name').allTextContents(), ['Flamethrower']);
+      await modal().locator('.attack-pick').first().click();
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await modal().locator('.modal-foot .danger').click();
+      const announced = await heard;
+      assert.equal(announced.data.source, 'trainerB', 'even though it is Ash\'s turn');
+      assert.equal(announced.data.target, 'trainerA');
+      await expectLive((state) => state.trainerA.active.hp.current, 10);
+    });
+
+    it('says so when the card lists no attacks, and still takes one typed in', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      await modal().locator('.side-tab', { hasText: 'Gary' }).click();
+      assert.match(await modal().locator('.empty').textContent(), /no attacks on file/);
+      assert.equal(await modal().locator('.attack-pick').count(), 0);
+      await modal().locator('input[aria-label="Attack name"]').fill('Hyper Beam');
+      await damageBox().fill('120');
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await press('Enter');
+      assert.equal((await heard).title, 'Hyper Beam');
+      await expectLive((state) => state.trainerA.active.hp.current, 0);
+    });
   });
 
   it('edits the HP by clicking it, and a forgotten edit does not linger', async () => {
@@ -372,6 +547,182 @@ describe('control panel', { skip }, () => {
 
     await modal().locator('button', { hasText: 'All ready' }).click();
     await expectLive((state) => state.trainerA.active.abilities.map((ability) => ability.used), [false, false]);
+  });
+
+  it('marks the GX attack and the VSTAR Power used with their own tokens, and a new game gives them back', async () => {
+    const token = (side, name) => page.locator(`.trainer-panel.side-${side} .token-btn`, { hasText: name });
+    assert.match(await page.locator('.trainer-panel.side-a .block-title.sub', { hasText: 'This game' }).textContent(), /back when the game ends/);
+    assert.match(await token('a', 'GX attack').textContent(), /ready/);
+    assert.match(await token('a', 'VSTAR Power').textContent(), /ready/);
+
+    await token('a', 'GX attack').click();
+    await expectLive((state) => [state.trainerA.resources.gxPerGame.used, state.trainerA.resources.vstarPerGame.used], [1, 0]);
+    await page.waitForSelector('.trainer-panel.side-a .token-btn.used:has-text("GX attack")');
+    assert.match(await token('a', 'GX attack').textContent(), /used/);
+    assert.match(await token('b', 'GX attack').textContent(), /ready/, 'the other trainer has theirs');
+
+    await token('b', 'VSTAR Power').click();
+    await expectLive((state) => state.trainerB.resources.vstarPerGame.used, 1);
+
+    // clicking a used one gives it back
+    await token('a', 'GX attack').click();
+    await expectLive((state) => state.trainerA.resources.gxPerGame.used, 0);
+    await token('a', 'GX attack').click();
+    await expectLive((state) => state.trainerA.resources.gxPerGame.used, 1);
+
+    // a new game gives them all back
+    await page.getByRole('button', { name: 'New game' }).click();
+    await expectLive((state) => [state.trainerA.resources.gxPerGame.used, state.trainerB.resources.vstarPerGame.used], [0, 0]);
+    await page.waitForFunction(() => document.querySelectorAll('.token-btn.used').length === 0);
+    assert.deepEqual(page.problems, []);
+  });
+
+  it('puts special conditions and Trapped on the Active Pokémon with the chips under it', async () => {
+    const chip = (side, key) => page.locator(`.trainer-panel.side-${side} .condition-chip[data-condition="${key}"]`);
+    assert.deepEqual(await page.locator('.trainer-panel.side-a .condition-chip').allTextContents(), ['Asleep', 'Burned', 'Confused', 'Paralyzed', 'Poisoned', 'Trapped']);
+    assert.equal(await page.locator('.trainer-panel.side-a .mon-card.compact .condition-chip').count(), 0, 'the bench has none: only the Active Pokémon is asleep, burned or poisoned');
+    assert.match(await chip('a', 'trapped').getAttribute('title'), /can't retreat/i);
+    assert.equal(await chip('a', 'poisoned').getAttribute('aria-pressed'), 'false');
+
+    await chip('a', 'poisoned').click();
+    await expectLive((state) => state.trainerA.active.status, ['poisoned']);
+    await page.waitForSelector('.trainer-panel.side-a .condition-chip[data-condition="poisoned"].on');
+    assert.equal(await chip('a', 'poisoned').getAttribute('aria-pressed'), 'true');
+
+    await chip('a', 'asleep').click();
+    await expectLive((state) => state.trainerA.active.status, ['asleep', 'poisoned']);
+    await chip('a', 'paralyzed').click();
+    await expectLive((state) => state.trainerA.active.status, ['paralyzed', 'poisoned']);
+    await page.waitForSelector('.trainer-panel.side-a .condition-chip[data-condition="paralyzed"].on');
+    assert.equal(await page.locator('.trainer-panel.side-a .condition-chip[data-condition="asleep"].on').count(), 0, 'paralyzed took the place of asleep');
+
+    await chip('a', 'trapped').click();
+    await expectLive((state) => state.trainerA.active.status, ['paralyzed', 'poisoned', 'trapped']);
+    await chip('a', 'poisoned').click();
+    await expectLive((state) => state.trainerA.active.status, ['paralyzed', 'trapped']);
+    await expectLive((state) => state.trainerB.active.status, [], 'the other trainer is untouched');
+
+    // someone else cures it: the chips follow
+    await producer.act('action:trainerA', { action: 'clearStatus' });
+    await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .condition-chip.on').length === 0);
+
+    // it ends when the Pokémon goes to the bench
+    await chip('a', 'burned').click();
+    await expectLive((state) => state.trainerA.active.status, ['burned']);
+    await producer.act('action:trainerA', { action: 'swapWithActive', slot: 0 });
+    await expectLive((state) => [state.trainerA.active.name, state.trainerA.bench[0].status], ['Eevee', []]);
+    assert.deepEqual(page.problems, []);
+  });
+
+  describe('the card picker with nothing typed', () => {
+    const ask = (method, path) => fetch(`${server.base}${path}`, { method });
+    const popular = async () => (await ask('GET', '/api/cards/popular')).json();
+    const tiles = () => page.locator('.modal .card-tile .card-name').allTextContents();
+    const status = () => page.locator('.modal .picker-status').textContent();
+    const openFeature = async () => {
+      await page.locator('.block-title.sub', { hasText: 'Feature cards' }).getByRole('button', { name: 'Add' }).click();
+      await page.waitForSelector('.modal .search-input');
+    };
+    const usedCount = async (count) => {
+      for (let i = 0; i < 60 && (await popular()).used !== count; i++) await wait(50);
+      assert.equal((await popular()).used, count, 'the cards used so far');
+    };
+
+    beforeEach(async () => {
+      await ask('DELETE', '/api/cards/used');
+      await ask('POST', '/api/cache/clear');
+    });
+
+    it('lists the cards that are already saved on this computer, in the feature picker too', async () => {
+      // nothing has been seen yet, and it says so
+      await openFeature();
+      await page.waitForFunction(() => /listed here next time/.test(document.querySelector('.modal .picker-status').textContent));
+      assert.deepEqual(await tiles(), []);
+
+      // a search saves what it finds...
+      await page.locator('.search-input').fill('pika');
+      await page.waitForSelector('.modal .card-tile');
+      await press('Escape');
+      await dialogClosed();
+
+      // ...and the next time the picker opens it is there before anything is typed
+      await openFeature();
+      await page.waitForSelector('.modal .card-tile');
+      assert.deepEqual(await tiles(), ['Pikachu ex']);
+      assert.match(await status(), /^Cards saved on this computer \(1\)\. Type a card name to search for others\./);
+
+      // Enter with nothing typed does not choose from a suggestion
+      await press('Enter');
+      await wait(300);
+      assert.equal(await page.locator('.modal').count(), 1);
+      assert.deepEqual((await live()).featureCards, []);
+
+      // a click does, and the card is counted
+      await page.locator('.modal .card-pick').first().click();
+      await expectLive((state) => state.featureCards.map((entry) => entry.name), ['Pikachu ex']);
+      await dialogClosed();
+      await usedCount(1);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('puts the most used cards first, for each kind of picker', async () => {
+      // one Pokémon for the feature picker, one Stadium
+      await openFeature();
+      await page.locator('.search-input').fill('pika');
+      await page.waitForSelector('.modal .card-tile');
+      await press('Enter');
+      await dialogClosed();
+      await usedCount(1);
+      await press('s');
+      await page.locator('.search-input').fill('area');
+      await page.waitForSelector('.modal .card-tile');
+      await press('Enter');
+      await expectLive((state) => state.stadium.name, 'Area Zero');
+      await dialogClosed();
+      await usedCount(2);
+
+      // the Stadium picker offers Stadiums only, the most used ones
+      await press('s');
+      await page.waitForSelector('.modal .card-tile');
+      assert.deepEqual(await tiles(), ['Area Zero']);
+      assert.match(await status(), /^Your most used cards \(1\)/);
+      await press('Escape');
+      await dialogClosed();
+
+      // the Active picker offers Pokémon only
+      await press('a');
+      await page.waitForSelector('.modal .card-tile');
+      assert.deepEqual(await tiles(), ['Pikachu ex']);
+      await press('Escape');
+      await dialogClosed();
+
+      // the feature picker offers everything (the latest use first among equals), and its chips narrow it
+      await openFeature();
+      await page.waitForSelector('.modal .card-tile');
+      assert.deepEqual(await tiles(), ['Area Zero', 'Pikachu ex']);
+      const chip = (name) => page.locator('.modal .filter-chips .chip', { hasText: name });
+      await chip('Pokémon').click();
+      await page.waitForFunction(() => document.querySelectorAll('.modal .card-tile').length === 1);
+      assert.deepEqual(await tiles(), ['Pikachu ex']);
+      await chip('Trainer').click();
+      await page.waitForFunction(() => document.querySelector('.modal .card-tile .card-name').textContent === 'Area Zero');
+      await chip('Energy').click();
+      await page.waitForFunction(() => document.querySelectorAll('.modal .card-tile').length === 0);
+      assert.match(await status(), /listed here next time/);
+      await chip('All').click();
+      await page.waitForFunction(() => document.querySelectorAll('.modal .card-tile').length === 2);
+
+      // typing takes the suggestions away at once, and an empty box brings them back
+      await page.locator('.search-input').fill('pika');
+      assert.deepEqual(await tiles(), [], 'no suggestion is left to be chosen by mistake');
+      await page.waitForSelector('.modal .card-tile');
+      assert.deepEqual(await tiles(), ['Pikachu ex']);
+      assert.match(await status(), /1 cards found/);
+      await page.locator('.search-input').fill('');
+      await page.waitForFunction(() => /^Your most used cards/.test(document.querySelector('.modal .picker-status').textContent));
+      assert.deepEqual(await tiles(), ['Area Zero', 'Pikachu ex']);
+      assert.deepEqual(page.problems, []);
+    });
   });
 
   it('finds a card with A, and takes its HP and abilities', async () => {

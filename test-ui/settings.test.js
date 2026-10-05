@@ -66,6 +66,8 @@ describe('settings', { skip }, () => {
     return client;
   };
 
+  const live = async () => (await fetch(`${server.base}/api/state`)).json();
+
   const call = async (method, route, body) => {
     const isJson = body !== undefined && !Buffer.isBuffer(body);
     const response = await fetch(`${server.base}${route}`, {
@@ -437,6 +439,63 @@ describe('settings', { skip }, () => {
     });
   });
 
+  describe('what the overlay shows', () => {
+    const option = (label) => page.locator('.option-group label.switch', { hasText: label }).locator('input');
+
+    it('lists the GX and VSTAR markers, off to begin with, and shows them when asked', async () => {
+      await openSettings('Overlay');
+      await page.waitForSelector('.option-group');
+      assert.equal(await option('GX attack marker (once per game)').isChecked(), false);
+      assert.equal(await option('VSTAR Power marker (once per game)').isChecked(), false);
+      assert.equal(await option('Supporter play counter').isChecked(), true, 'the supporter counter has its switch now too');
+      assert.equal(await option('Energy attachment counter').isChecked(), true);
+
+      await page.locator('.option-group label.switch', { hasText: 'GX attack marker (once per game)' }).click(); // the box itself is under its track
+      for (let waited = 0; waited < 40 && !(await live()).settings.display.gxMarker; waited++) await wait(50);
+      assert.equal((await live()).settings.display.gxMarker, true);
+      assert.equal((await live()).settings.display.vstarMarker, false);
+
+      await page.getByRole('button', { name: 'Show everything' }).click();
+      for (let waited = 0; waited < 40 && !(await live()).settings.display.vstarMarker; waited++) await wait(50);
+      assert.equal((await live()).settings.display.vstarMarker, true, 'everything means everything');
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('what the card picker remembers', () => {
+    const listed = async () => (await call('GET', '/api/cards/popular')).json;
+
+    it('forgets the most used cards on their own, and the saved searches on their own', async () => {
+      await call('GET', '/api/cards/search?q=pika'); // saves what it finds
+      await call('POST', '/api/cards/used', { id: 'sv5-3', name: 'Eevee', supertype: 'Pokémon', subtypes: 'Basic', images: {} });
+      assert.deepEqual([(await listed()).used, (await listed()).totalCount], [1, 4], 'Eevee was used and is one of the four the search saved: listed once');
+
+      await openSettings('Cards');
+      assert.match(await page.locator('.modal').textContent(), /The card picker starts from the cards you use most/);
+      await page.getByRole('button', { name: 'Forget', exact: true }).click();
+      const forget = page.locator('.modal[aria-label="Forget the most used cards?"]');
+      await forget.waitFor();
+      await forget.getByRole('button', { name: 'Forget', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.toast-success')?.textContent === 'Forgotten');
+      assert.deepEqual([(await listed()).used, (await listed()).totalCount], [0, 4], 'what was saved stays');
+
+      await page.locator('.modal[aria-label="Settings"]').getByRole('button', { name: 'Clear', exact: true }).click();
+      await page.locator('.modal[aria-label="Clear remembered searches?"]').getByRole('button', { name: 'Clear', exact: true }).click();
+      await page.waitForFunction(() => [...document.querySelectorAll('.toast-success')].some((toast) => toast.textContent === 'Cleared'));
+      assert.deepEqual((await listed()).totalCount, 0, 'and now that is gone too');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('does not forget a thing when told no', async () => {
+      await call('POST', '/api/cards/used', { id: 'sv5-3', name: 'Eevee', supertype: 'Pokémon', subtypes: 'Basic', images: {} });
+      await openSettings('Cards');
+      await page.getByRole('button', { name: 'Forget', exact: true }).click();
+      await page.locator('.modal[aria-label="Forget the most used cards?"]').getByRole('button', { name: 'Cancel' }).click();
+      await wait(200);
+      assert.equal((await listed()).used, 1);
+    });
+  });
+
   describe('card library', () => {
     it('shows the libraries, downloads one in the background and uses it for searching', async () => {
       await openSettings('Cards');
@@ -444,10 +503,12 @@ describe('settings', { skip }, () => {
       assert.equal(await page.locator('.library-row').count(), 4, 'online only, and the three libraries');
       assert.equal(await page.locator('.library-row:has-text("Search online only") input').isChecked(), true);
       assert.match(await library('Standard').textContent(), /Not downloaded · about 3,000 cards/);
+      assert.match(await library('Standard').textContent(), /no regulation mark but are legal in Standard/, 'the cards that have no mark are part of it');
 
       await library('Standard').locator('button', { hasText: 'Download' }).click();
       await libraryReady('Standard');
       assert.match(await library('Standard').textContent(), /4 cards · .* MB · saved/);
+      assert.doesNotMatch(await library('Standard').textContent(), /Update to add/, 'a library that was just saved is not out of date');
       assert.equal(await library('Standard').locator('input').isChecked(), true, 'the first library downloaded is the one in use');
       await page.waitForSelector('.toast-success');
       assert.match(await page.locator('.toast-success').first().textContent(), /Standard is ready: 4 cards/);

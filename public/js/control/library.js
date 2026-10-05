@@ -114,7 +114,9 @@ export function libraryPanels(app) {
       live.library = { id: profile.id, update: bar.update };
       state = bar.node;
     } else if (profile.ready) {
-      state = h('span', { class: 'library-state' }, `${number(profile.count)} cards · ${size(profile.bytes)} · saved ${day(profile.builtAt)}`);
+      state = h('span', { class: 'library-state' }, `${number(profile.count)} cards · ${size(profile.bytes)} · saved ${day(profile.builtAt)}`,
+        // a copy saved before the library held more says what it is missing
+        profile.outdated && h('span', { class: 'library-new' }, ` · Update to add ${profile.whatsNew || 'new cards'}`));
     } else {
       state = h('span', { class: 'library-state' }, profile.resumable ? 'Stopped part way. It carries on from where it got to.' : `Not downloaded · about ${number(profile.approximate)} cards`);
     }

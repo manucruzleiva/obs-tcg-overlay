@@ -24,8 +24,32 @@
 
   const ENERGY_KEYS = ENERGY_TYPES.map((type) => type.key);
 
+  // The statuses of the Active Pokémon: the special conditions of the game and "Trapped" (an effect that stops it
+  // from retreating). In the game Asleep, Confused and Paralyzed are shown by turning the card, so a Pokémon has
+  // only one of those (`turn: true`); the rest are markers and go with anything. `hint` says what a status means
+  // when its name does not. color is the chip's background and ink the text on it.
+  const STATUS_CONDITIONS = [
+    { key: 'asleep', label: 'Asleep', color: '#5c6bc0', ink: '#ffffff', turn: true },
+    { key: 'burned', label: 'Burned', color: '#f4511e', ink: '#ffffff' },
+    { key: 'confused', label: 'Confused', color: '#ec407a', ink: '#ffffff', turn: true },
+    { key: 'paralyzed', label: 'Paralyzed', color: '#fdd835', ink: '#1d1402', turn: true },
+    { key: 'poisoned', label: 'Poisoned', color: '#ab47bc', ink: '#ffffff' },
+    { key: 'trapped', label: 'Trapped', hint: 'Can\'t retreat', color: '#78909c', ink: '#ffffff' }
+  ];
+
+  const STATUS_KEYS = STATUS_CONDITIONS.map((condition) => condition.key);
+
+  // A list of conditions as the game keeps it: known ones only, one of Asleep / Confused / Paralyzed at most (the
+  // last of them in the list wins), in the order of STATUS_CONDITIONS so the overlay always shows them the same way
+  function cleanStatus(list) {
+    const wanted = new Set(Array.isArray(list) ? list.filter((key) => STATUS_KEYS.includes(key)) : []);
+    const turned = STATUS_CONDITIONS.filter((condition) => condition.turn && wanted.has(condition.key));
+    const keepTurned = Array.isArray(list) ? [...list].reverse().find((key) => turned.some((condition) => condition.key === key)) : undefined;
+    return STATUS_CONDITIONS.filter((condition) => wanted.has(condition.key) && (!condition.turn || condition.key === keepTurned)).map((condition) => condition.key);
+  }
+
   // How many prize cards a knocked-out Pokémon is usually worth
   const PRIZE_CHOICES = [1, 2, 3];
 
-  return { ENERGY_TYPES, ENERGY_KEYS, PRIZE_CHOICES };
+  return { ENERGY_TYPES, ENERGY_KEYS, STATUS_CONDITIONS, STATUS_KEYS, cleanStatus, PRIZE_CHOICES };
 }));

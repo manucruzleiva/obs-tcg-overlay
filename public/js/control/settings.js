@@ -356,6 +356,8 @@ function themesTab(app) {
   const openEditor = (designName) => openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
 
   const newTheme = async () => {
+    // The list of designs may still be on its way, or have changed: ask again, so a name that is taken is never reused
+    try { names = (await json('GET', '/api/themes')).names; } catch (error) { /* the check below uses the list it has */ }
     const name = await promptDialog({
       title: 'Create a design', label: 'Name of the design', placeholder: 'Store League', confirmLabel: 'Create', maxLength: 40,
       message: 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
@@ -410,6 +412,12 @@ function cardsTab(app) {
       note('Cards come from the Pokémon TCG API. It works without a key, but a free key from pokemontcg.io/developer raises the request limit.'),
       h('div', { class: 'inline-form' }, keyInput,
         h('button', { class: 'btn', type: 'button', onclick: async () => { const result = await app.act('action:settings', { action: 'update', apiKey: keyInput.value.trim() }); if (result.ok) { app.toast(keyInput.value.trim() ? 'API key saved' : 'API key removed', 'success'); keyInput.value = ''; keyInput.placeholder = 'Done'; } } }, 'Save key'))),
+    section('Most used cards',
+      note('The card picker starts from the cards you use most, and from those already saved on this computer, before you type anything.'),
+      h('button', { class: 'btn', type: 'button', onclick: async () => {
+        const yes = await confirmDialog({ title: 'Forget the most used cards?', message: 'The picker will start from the cards saved on this computer until you use cards again.', confirmLabel: 'Forget' });
+        if (yes) { await fetch('/api/cards/used', { method: 'DELETE' }); app.toast('Forgotten', 'success'); }
+      } }, 'Forget')),
     section('Remembered searches',
       note('Searches and cards you have looked up are remembered for a while so they load fast.'),
       h('button', { class: 'btn', type: 'button', onclick: async () => {

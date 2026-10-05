@@ -298,6 +298,7 @@ html, body {
 .token-count { font-variant-numeric: tabular-nums; color: var(--fg-secondary); }
 .token-count:empty { display: none; }
 .token.used { opacity: 0.5; }
+.token.marker.used .token-label { text-decoration: line-through; }
 .token.used .dot { background: transparent; border: 2px solid var(--fg-muted); box-shadow: none; }
 
 .locks { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -465,11 +466,13 @@ html, body {
 }
 
 .statuses { display: flex; flex-wrap: wrap; gap: 6px; }
+/* --c and --ink are the color of the condition (see STATUS_CONDITIONS in game-data.js) */
 .status-chip {
   padding: 3px 10px;
   border-radius: 999px;
-  background: var(--warning);
-  color: #1d1402;
+  background: var(--c, var(--warning));
+  color: var(--ink, #1d1402);
+  box-shadow: 0 2px 8px var(--shadow);
   font: 700 14px/1.3 var(--font-display);
   text-transform: uppercase;
   letter-spacing: 0.08em;

@@ -43,16 +43,19 @@ function build(state, type, params = {}) {
     }
 
     case 'attack': {
-      const source = state.trainerA.isTurn ? 'trainerA' : 'trainerB';
+      const source = params.source ? sideOf(params.source) : state.trainerA.isTurn ? 'trainerA' : 'trainerB';
       const target = source === 'trainerA' ? 'trainerB' : 'trainerA';
       const damage = Number(params.damage) || 0;
+      // An ability is announced the same way (same switches), with its name and no damage; it belongs to the
+      // trainer who uses it, an attack to the one who is attacked
+      const ability = params.ability === true;
       spec = {
-        side: target,
-        title: params.attackName || 'ATTACK!',
-        subtitle: damage ? `${damage} damage` : '',
+        side: ability ? source : target,
+        title: params.attackName || (ability ? 'ABILITY!' : 'ATTACK!'),
+        subtitle: ability ? 'ABILITY USED' : damage ? `${damage} damage` : '',
         toast: s.enableAttackToast,
         animation: s.enableAttackAnimation,
-        data: { source, target, damage }
+        data: { source, target, damage: ability ? 0 : damage, ability }
       };
       break;
     }

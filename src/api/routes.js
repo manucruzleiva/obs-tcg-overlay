@@ -31,7 +31,7 @@ function searchRequest(query) {
 }
 
 module.exports = (services) => {
-  const { gameState, pokemonTCG, cache, db, session, auth, themes, sounds, catalog, packages, io } = services;
+  const { gameState, pokemonTCG, cardUsage, cache, db, session, auth, themes, sounds, catalog, packages, io } = services;
 
   const publicRouter = express.Router();
   const protectedRouter = express.Router();
@@ -176,6 +176,25 @@ module.exports = (services) => {
     const request = searchRequest(req.query);
     if (!request) return res.status(400).json({ error: 'Query required' });
     res.json(await pokemonTCG.searchCards(request.text, request.page, request.filters));
+  }));
+
+  // The cards to start from when nothing has been typed: the most used ones, then those already saved on this computer.
+  // Before /cards/:id, which would take "popular" for a card.
+  protectedRouter.get('/cards/popular', handle((req, res) => {
+    const filters = {};
+    for (const key of ['supertype', 'subtype']) {
+      if (typeof req.query[key] === 'string') filters[key] = req.query[key].slice(0, 100);
+    }
+    res.json(cardUsage.popular({ ...filters, page: Math.min(100, parseInt(req.query.page, 10) || 1) }));
+  }));
+  // The picker says which card was chosen (the card as it showed it), so it can be offered first next time
+  protectedRouter.post('/cards/used', handle((req, res) => {
+    if (!cardUsage.record(body(req))) return res.status(400).json({ error: 'That is not a card' });
+    res.json({ ok: true });
+  }));
+  protectedRouter.delete('/cards/used', handle((req, res) => {
+    cardUsage.clear();
+    res.json({ ok: true });
   }));
 
   protectedRouter.get('/cards/:id', handle(async (req, res) => {

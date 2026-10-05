@@ -3,6 +3,7 @@
  */
 
 const { localImageUrl } = require('./images');
+const { attacksOf, retreatOf } = require('./attacks');
 
 // A card lookup must never hang the control panel when the network is slow or down
 const REQUEST_TIMEOUT_MS = 8000;
@@ -144,8 +145,15 @@ class PokemonTCGService {
   // Get single card by ID: from the library on this computer when it is there, otherwise from the API
   async getCard(cardId) {
     const local = this.catalog && this.catalog.get(cardId);
-    if (local) return local;
-    return this.localize(await this.fetchCard(cardId));
+    if (local && local.attacks !== undefined) return local;
+    // A library saved before attacks and retreat costs were kept has none: ask the card service for them
+    try {
+      const online = this.localize(await this.fetchCard(cardId));
+      return local ? { ...local, attacks: online.attacks, retreat: online.retreat } : online;
+    } catch (error) {
+      if (local) return { ...local, attacks: [], retreat: 0 }; // no way to ask: the card is still usable, by hand
+      throw error;
+    }
   }
 
   async fetchCard(cardId) {
@@ -250,7 +258,8 @@ class PokemonTCGService {
       artist: item.artist || '',
       flavorText: item.flavorText || '',
       regulationMark: item.regulationMark || '',
-      attacks: (item.attacks || []).map(a => a.name).filter(Boolean),
+      attacks: attacksOf(item.attacks) || [],
+      retreat: retreatOf(item),
       abilities: (item.abilities || []).map(a => a.name).filter(Boolean)
     };
   }

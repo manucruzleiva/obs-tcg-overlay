@@ -33,8 +33,12 @@ describe('two producers', () => {
     throw new Error(`pages out of sync: ${alice.revision} vs ${bob.revision}`);
   }
 
+  // Both pages must have caught up with the last test before the reset: a reset from a view that has not seen
+  // Bob's last click is a clash and is refused (it was, now and then, on a busy machine)
   beforeEach(async () => {
-    await reset(alice);
+    await inSync();
+    const result = await reset(alice);
+    assert.equal(result.ok, true, 'the game was reset');
     await inSync();
   });
 

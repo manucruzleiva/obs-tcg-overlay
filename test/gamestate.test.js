@@ -42,6 +42,66 @@ describe('GameStateService', () => {
     assert.equal(state.trainerA.benchSize, 5);
     assert.equal(state.settings.display.nationality, true);
     assert.equal(state.settings.toastSeconds, 2, 'banners stay for two seconds unless the producer says otherwise');
+    assert.equal(state.settings.display.gxMarker, false, 'the GX marker is off until the producer asks for it');
+    assert.equal(state.settings.display.vstarMarker, false, 'and so is the VSTAR marker');
+    assert.equal(state.settings.display.supporterCounter, true, 'the others show');
+    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || key === 'gxMarker' || key === 'vstarMarker'));
+  });
+
+  it('keeps the GX attack and the VSTAR Power as markers that can be used once per game, back when the game ends', () => {
+    const marker = (side, kind) => gs.state[side].resources[kind];
+    for (const side of ['trainerA', 'trainerB']) {
+      assert.deepEqual([marker(side, 'gxPerGame'), marker(side, 'vstarPerGame')], [{ available: 1, used: 0 }, { available: 1, used: 0 }]);
+    }
+
+    gs.stepCounter('trainerA', 'gxPerGame', 1);
+    gs.stepCounter('trainerA', 'gxPerGame', 1);
+    assert.equal(marker('trainerA', 'gxPerGame').used, 1, 'once is all there is');
+    gs.stepCounter('trainerB', 'vstarPerGame', 1);
+    gs.stepCounter('trainerA', 'vstarPerGame', 1);
+    gs.stepCounter('trainerA', 'vstarPerGame', -1);
+    assert.equal(marker('trainerA', 'vstarPerGame').used, 0, 'taking it back works');
+
+    // a turn passing is not a game ending
+    gs.toggleTurn();
+    gs.toggleTurn();
+    assert.equal(marker('trainerA', 'gxPerGame').used, 1);
+    assert.equal(marker('trainerB', 'vstarPerGame').used, 1);
+
+    // a game won gives both trainers both of them back
+    gs.matchWin('trainerA');
+    for (const side of ['trainerA', 'trainerB']) assert.deepEqual([marker(side, 'gxPerGame').used, marker(side, 'vstarPerGame').used], [0, 0], side);
+
+    // so does starting a new one, and starting the score again
+    for (const [side, kind] of [['trainerA', 'gxPerGame'], ['trainerB', 'vstarPerGame']]) gs.stepCounter(side, kind, 1);
+    gs.startGame();
+    for (const side of ['trainerA', 'trainerB']) assert.deepEqual([marker(side, 'gxPerGame').used, marker(side, 'vstarPerGame').used], [0, 0], `${side} after a new game`);
+    gs.stepCounter('trainerB', 'gxPerGame', 1);
+    gs.resetMatchScore();
+    assert.equal(marker('trainerB', 'gxPerGame').used, 0);
+
+    // taking a win back does not hand anything back
+    gs.matchWin('trainerA');
+    gs.stepCounter('trainerA', 'vstarPerGame', 1);
+    gs.matchWinMinus('trainerA');
+    assert.equal(marker('trainerA', 'vstarPerGame').used, 1);
+  });
+
+  it('gives the markers to a game saved before they existed', () => {
+    const saved = makeGame().state;
+    delete saved.trainerA.resources.gxPerGame;
+    delete saved.trainerB.resources.vstarPerGame;
+    delete saved.settings.display.gxMarker;
+    const loaded = makeGame({ saved });
+    assert.deepEqual(loaded.state.trainerA.resources.gxPerGame, { available: 1, used: 0 });
+    assert.deepEqual(loaded.state.trainerB.resources.vstarPerGame, { available: 1, used: 0 });
+    assert.equal(loaded.state.settings.display.gxMarker, false, 'and they stay off');
+  });
+
+  it('lets the producer show the markers on the overlay', () => {
+    gs.updateSettings({ display: { gxMarker: true, vstarMarker: true } });
+    assert.equal(gs.state.settings.display.gxMarker, true);
+    assert.equal(gs.state.settings.display.vstarMarker, true);
   });
 
   it('gives the turn to trainer A first, then alternates, refreshing the starting trainer\'s limits', () => {
@@ -143,6 +203,36 @@ describe('GameStateService', () => {
     assert.deepEqual(gs.state.trainerA.active.specialEnergies, []);
   });
 
+  it('keeps the attacks and the retreat cost of the card in the slot, and lets go of them with it', () => {
+    const attacks = [{ name: 'Gnaw', damage: 20, mod: '' }, { name: 'Thunderbolt', damage: 120, mod: '' }];
+    gs.setPokemon('trainerA', -1, { cardId: 'p', name: 'Pikachu', image: IMG, hp: 60, attacks, retreat: 1 });
+    assert.deepEqual(gs.state.trainerA.active.attacks, attacks);
+    assert.equal(gs.state.trainerA.active.retreat, 1);
+
+    // an evolution is another card: its own attacks, or none known (by hand), never the ones it had
+    gs.setPokemon('trainerA', -1, { cardId: 'r', name: 'Raichu', image: IMG, hp: 120, attacks: [{ name: 'Thunder', damage: 90, mod: '' }], retreat: 2 }, { keep: true });
+    assert.deepEqual(gs.state.trainerA.active.attacks, [{ name: 'Thunder', damage: 90, mod: '' }]);
+    gs.setPokemon('trainerA', -1, { cardId: 'r2', name: 'Raichu', image: IMG, hp: 120 }, { keep: true });
+    assert.deepEqual(gs.state.trainerA.active.attacks, []);
+    assert.equal(gs.state.trainerA.active.retreat, 0);
+
+    // out-of-range numbers and too many attacks are brought back
+    gs.setPokemon('trainerA', 0, { cardId: 'm', name: 'Mew', image: IMG, hp: 40, attacks: Array.from({ length: 9 }, (_, i) => ({ name: `A${i}`, damage: 10, mod: '' })), retreat: 99 });
+    assert.equal(gs.state.trainerA.bench[0].attacks.length, 4);
+    assert.equal(gs.state.trainerA.bench[0].retreat, 6);
+    gs.setRetreat('trainerA', 0, -4);
+    assert.equal(gs.state.trainerA.bench[0].retreat, 0);
+    gs.setRetreat('trainerA', 0, 2.7);
+    assert.equal(gs.state.trainerA.bench[0].retreat, 2);
+  });
+
+  it('reads a save from before attacks and retreat costs were kept', () => {
+    const old = makeGame({ saved: { trainerA: { active: { slot: -1, cardId: 'p', name: 'Pikachu', hp: { max: 60, current: 60 } }, bench: [{ slot: 0, cardId: 'e', name: 'Eevee', hp: { max: 50, current: 50 }, retreat: 'x' }] } } });
+    assert.deepEqual(old.state.trainerA.active.attacks, []);
+    assert.equal(old.state.trainerA.active.retreat, 0);
+    assert.equal(old.state.trainerA.bench[0].retreat, 0, 'a retreat cost that is not a number is none');
+  });
+
   it('reads a save from before Special Energy existed', () => {
     const old = makeGame({ saved: { trainerA: { active: { slot: -1, cardId: 'p', name: 'Pikachu', energies: ['fire'], hp: { max: 60, current: 60 } }, bench: [{ slot: 0, cardId: 'e', name: 'Eevee', energies: [], hp: { max: 50, current: 50 } }] } } });
     assert.deepEqual(old.state.trainerA.active.specialEnergies, []);
@@ -202,6 +292,66 @@ describe('GameStateService', () => {
     assert.equal(gs.state.trainerA.bench[2].slot, 2);
 
     assert.doesNotThrow(() => gs.swapWithActive('trainerA', 99));
+  });
+
+  it('puts special conditions on the Active Pokémon: one of Asleep, Confused and Paralyzed at most, the rest together', () => {
+    put(gs, 'trainerA', -1);
+    const status = () => gs.state.trainerA.active.status;
+    assert.deepEqual(status(), []);
+
+    gs.setStatus('trainerA', 'poisoned');
+    gs.setStatus('trainerA', 'asleep');
+    assert.deepEqual(status(), ['asleep', 'poisoned']);
+    gs.setStatus('trainerA', 'paralyzed', true);
+    assert.deepEqual(status(), ['paralyzed', 'poisoned'], 'paralyzed takes the place of asleep: the card is turned one way');
+    gs.setStatus('trainerA', 'confused', true);
+    gs.setStatus('trainerA', 'burned', true);
+    gs.setStatus('trainerA', 'trapped', true);
+    assert.deepEqual(status(), ['burned', 'confused', 'poisoned', 'trapped'], 'markers go with anything, always in the same order');
+
+    gs.setStatus('trainerA', 'burned'); // no value: toggles
+    gs.setStatus('trainerA', 'trapped', false);
+    gs.setStatus('trainerA', 'confused', false);
+    assert.deepEqual(status(), ['poisoned']);
+    gs.setStatus('trainerA', 'poisoned', true);
+    assert.deepEqual(status(), ['poisoned'], 'twice is still once');
+
+    gs.setStatus('trainerA', 'sparkly', true);
+    assert.deepEqual(status(), ['poisoned'], 'a condition the game does not have is ignored');
+    gs.clearStatus('trainerA');
+    assert.deepEqual(status(), []);
+    assert.deepEqual(gs.state.trainerB.active.status, [], 'the other trainer is untouched');
+  });
+
+  it('ends the conditions of a Pokémon that goes to the bench, evolves or is replaced', () => {
+    put(gs, 'trainerA', -1, { hp: 60 });
+    put(gs, 'trainerA', 1, { hp: 80 });
+    gs.setStatus('trainerA', 'poisoned', true);
+    gs.setStatus('trainerA', 'trapped', true);
+
+    gs.setPokemon('trainerA', -1, { cardId: 'evo', name: 'Evolved', image: IMG, hp: 100 }, { keep: true });
+    assert.deepEqual(gs.state.trainerA.active.status, [], 'evolving cures it');
+
+    gs.setStatus('trainerA', 'burned', true);
+    gs.swapWithActive('trainerA', 1);
+    assert.deepEqual(gs.state.trainerA.bench[1].status, [], 'retreating cures it');
+    assert.deepEqual(gs.state.trainerA.active.status, []);
+
+    gs.setStatus('trainerA', 'asleep', true);
+    gs.setPokemon('trainerA', -1, { cardId: 'fresh', name: 'Fresh', image: IMG, hp: 70 });
+    assert.deepEqual(gs.state.trainerA.active.status, [], 'a new card has none');
+    gs.setStatus('trainerA', 'asleep', true);
+    gs.knockOut('trainerA', -1);
+    assert.deepEqual(gs.state.trainerA.active.status, []);
+  });
+
+  it('tidies the conditions of a saved game', () => {
+    const saved = makeGame().state;
+    saved.trainerA.active = { ...saved.trainerA.active, cardId: 'x', name: 'X', status: ['poisoned', 'sparkly', 'asleep', 'confused', 'poisoned'] };
+    saved.trainerB.active = { ...saved.trainerB.active, cardId: 'y', name: 'Y', status: 'poisoned' };
+    const loaded = makeGame({ saved });
+    assert.deepEqual(loaded.state.trainerA.active.status, ['confused', 'poisoned'], 'only the last of the turned ones, known ones only');
+    assert.deepEqual(loaded.state.trainerB.active.status, [], 'anything that is not a list is nothing');
   });
 
   it('knocks a Pokémon out, moving prizes to the opponent', () => {
@@ -433,6 +583,48 @@ describe('actions', () => {
     assert.match(run('action:trainerB', { action: 'activeDamage', amount: 20 }).label, /Eevee took 20/);
     assert.match(run('action:trainerB', { action: 'attachEnergy', slot: -1, energyType: 'water', countsAsTurn: false }).label, /special attachment/);
     assert.match(run('action:trainerB', { action: 'knockOut', slot: -1, prizes: 2 }).label, /Eevee knocked out \(Ash takes 2 prizes\)/);
+  });
+
+  it('uses and gives back the GX attack and the VSTAR Power, and says so', () => {
+    gs.state.trainerA.name = 'Ash';
+    assert.deepEqual(actions.resolve('action:trainerA', { action: 'gxPlus' }).targets(), ['trainerA.GX attack']);
+    assert.deepEqual(actions.resolve('action:trainerB', { action: 'vstarMinus' }).targets(), ['trainerB.VSTAR Power']);
+    assert.equal(run('action:trainerA', { action: 'gxPlus' }).label, 'Ash used the GX attack');
+    assert.equal(gs.state.trainerA.resources.gxPerGame.used, 1);
+    assert.equal(run('action:trainerA', { action: 'gxMinus' }).label, 'Ash has the GX attack again');
+    assert.equal(run('action:trainerA', { action: 'vstarPlus' }).label, 'Ash used the VSTAR Power');
+    assert.equal(gs.state.trainerA.resources.vstarPerGame.used, 1);
+    assert.equal(run('action:trainerA', { action: 'vstarReset' }).label, 'Ash has the VSTAR Power again');
+    assert.equal(gs.state.trainerA.resources.vstarPerGame.used, 0);
+    run('action:trainerB', { action: 'gxPlus' });
+    run('action:trainerB', { action: 'gxReset' });
+    assert.equal(gs.state.trainerB.resources.gxPerGame.used, 0);
+    assert.equal(actions.resolve('action:trainerA', { action: 'gxReset' }).targets(), null, 'last writer wins');
+  });
+
+  it('puts conditions on the Active Pokémon, and a click that says what it wants is not a toggle', () => {
+    put(gs, 'trainerA', -1, { name: 'Pikachu' });
+    assert.deepEqual(actions.resolve('action:trainerA', { action: 'toggleStatus', condition: 'poisoned' }).targets(), ['trainerA.status']);
+    assert.equal(actions.resolve('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true }).targets(), null, 'last writer wins');
+
+    assert.equal(run('action:trainerA', { action: 'toggleStatus', condition: 'poisoned' }).label, 'Pikachu is Poisoned');
+    assert.deepEqual(gs.state.trainerA.active.status, ['poisoned']);
+    assert.equal(run('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true }).label, 'Pikachu is Poisoned', 'two producers agree');
+    assert.deepEqual(gs.state.trainerA.active.status, ['poisoned']);
+    assert.equal(run('action:trainerA', { action: 'toggleStatus', condition: 'trapped', enabled: true }).label, 'Pikachu is Trapped');
+    assert.deepEqual(gs.state.trainerA.active.status, ['poisoned', 'trapped']);
+    assert.equal(run('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: false }).label, 'Pikachu is no longer Poisoned');
+    assert.equal(run('action:trainerA', { action: 'clearStatus' }).label, 'Pikachu recovered from every special condition');
+    assert.deepEqual(gs.state.trainerA.active.status, []);
+  });
+
+  it('refuses a condition the game does not have, and one for an empty Active spot', () => {
+    for (const payload of [{ condition: 'sparkly' }, { condition: 7 }, {}]) {
+      put(gs, 'trainerA', -1);
+      assert.throws(() => actions.resolve('action:trainerA', { action: 'toggleStatus', ...payload }).run(gs), actions.ActionError, JSON.stringify(payload));
+    }
+    assert.throws(() => actions.resolve('action:trainerB', { action: 'toggleStatus', condition: 'asleep' }).run(gs), /no Active Pokémon/);
+    assert.deepEqual(gs.state.trainerB.active.status, []);
   });
 
   it('applies a draft to a fork without touching the live game', () => {

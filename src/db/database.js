@@ -97,6 +97,15 @@ class DatabaseService {
         updated_at INTEGER NOT NULL
       );`,
 
+      // The cards producers have picked in the card picker: the card as the picker shows it and how many times it was
+      // used, so the picker can list the most used ones before anything is typed (see services/card-usage.js)
+      `CREATE TABLE IF NOT EXISTS card_usage (
+        card_id TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        uses INTEGER NOT NULL DEFAULT 0,
+        last_used INTEGER NOT NULL
+      );`,
+
       // Favorites
       `CREATE TABLE IF NOT EXISTS favorites (
         card_id TEXT PRIMARY KEY,
@@ -282,6 +291,54 @@ class DatabaseService {
     );
     stmt.run([url, etag, Date.now()]);
     stmt.free();
+  }
+
+  // The cards that are saved in the lookup cache (single cards and searches), newest first, as the API gave them
+  cachedCards(limit = 40) {
+    const cards = [];
+    const read = (sql, take) => {
+      const stmt = this.db.prepare(sql);
+      stmt.bind([Date.now(), limit]);
+      while (stmt.step()) {
+        try { take(JSON.parse(stmt.getAsObject().data_json)); } catch { /* a row that cannot be read is no card */ }
+      }
+      stmt.free();
+    };
+    read('SELECT data_json FROM card_cache WHERE expires_at > ? ORDER BY created_at DESC LIMIT ?', (card) => cards.push(card));
+    read('SELECT data_json FROM search_cache WHERE expires_at > ? ORDER BY created_at DESC LIMIT ?', (result) => cards.push(...((result && result.cards) || [])));
+    return cards;
+  }
+
+  // Forget what is in the lookup cache (the card usage and the pictures are kept)
+  clearCache() {
+    for (const table of ['card_cache', 'search_cache', 'etag_cache']) this.db.run(`DELETE FROM ${table}`);
+  }
+
+  // Card usage: one row per card with how often it was used
+  recordCardUse(cardId, card, now = Date.now()) {
+    const stmt = this.db.prepare(
+      `INSERT INTO card_usage (card_id, data_json, uses, last_used) VALUES (?, ?, 1, ?)
+       ON CONFLICT(card_id) DO UPDATE SET data_json = excluded.data_json, uses = uses + 1, last_used = excluded.last_used`
+    );
+    stmt.run([cardId, JSON.stringify(card), now]);
+    stmt.free();
+  }
+
+  // The cards used, the most used first (and among those the latest): [{ card, uses, lastUsed }]
+  usedCards(limit = 500) {
+    const stmt = this.db.prepare('SELECT data_json, uses, last_used FROM card_usage ORDER BY uses DESC, last_used DESC LIMIT ?');
+    stmt.bind([limit]);
+    const used = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      try { used.push({ card: JSON.parse(row.data_json), uses: row.uses, lastUsed: row.last_used }); } catch { /* skip it */ }
+    }
+    stmt.free();
+    return used;
+  }
+
+  clearCardUsage() {
+    this.db.run('DELETE FROM card_usage');
   }
 
   // Favorites

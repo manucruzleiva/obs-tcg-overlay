@@ -296,6 +296,11 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .ability-chip .diamond { width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }
 .ability-chip.used { border-color: var(--border); color: var(--fg-muted); text-decoration: line-through; }
 .ability-chip.used .diamond { background: transparent; border: 2px solid var(--fg-muted); }
+/* special conditions: a dim chip when off, the color of the condition when on */
+.conditions { gap: 4px; }
+.condition-chip { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
+.condition-chip:hover { border-color: var(--c); color: var(--fg-primary); }
+.condition-chip.on { border-color: var(--c); background: var(--c); color: var(--ink, #fff); }
 .used-tag { padding: 0 6px; border-radius: 4px; background: var(--danger); color: #1a0505; font-size: 10px; letter-spacing: 0.1em; text-decoration: none; display: inline-block; }
 .mon-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .mini-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); font-size: 12px; font-weight: 600; color: var(--fg-secondary); }
@@ -409,6 +414,21 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .hint-line { margin-top: 6px; font-size: 13px; color: var(--fg-muted); }
 .hint-line.warn { color: var(--warning); }
 
+/* the attack dialog: the attacks and abilities of the cards, one button each */
+.attack-list { display: flex; flex-direction: column; gap: 6px; }
+.attack-pick { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); text-align: left; font-weight: 700; }
+.attack-pick:hover { border-color: rgba(255, 255, 255, 0.3); }
+.attack-pick.on { border-color: var(--accent); background: rgba(124, 140, 255, 0.16); box-shadow: 0 0 0 1px var(--accent); }
+.attack-pick kbd { flex: none; }
+.attack-pick .attack-name { flex: 1; min-width: 0; }
+.attack-pick .attack-name small { color: var(--fg-muted); font-weight: 500; }
+.attack-pick .attack-damage { flex: none; font: 800 20px var(--font-display); font-variant-numeric: tabular-nums; }
+.attack-pick.ability .attack-damage { font: 600 12px var(--font-body); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.attack-pick .diamond, .ability-line .diamond { flex: none; width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }
+.ability-line { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.ability-line small { color: var(--fg-muted); }
+.tens-note { color: var(--fg-muted); font-weight: 500; }
+
 .bench-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .bench-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg-tertiary); }
 .bench-row.empty { opacity: 0.8; }
@@ -496,6 +516,7 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .library-name { font-weight: 700; }
 .library-text p { margin: 2px 0 6px; color: var(--fg-muted); font-size: 13px; max-width: 70ch; }
 .library-state { display: block; color: var(--fg-secondary); font-size: 13px; }
+.library-new { color: var(--warning); }
 .library-error { color: var(--danger) !important; }
 .library-actions { display: flex; gap: 6px; align-items: center; }
 .progress { height: 8px; margin: 8px 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }

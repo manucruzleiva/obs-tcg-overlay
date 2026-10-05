@@ -8,6 +8,8 @@
 const { randomUUID } = require('crypto');
 const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
+const GAME = require('../../public/js/game-data');
+const { MAX_ATTACKS, MAX_RETREAT } = require('./attacks');
 
 const MAX_ENERGIES_PER_POKEMON = 20;
 const MAX_ABILITIES = 4;
@@ -40,6 +42,9 @@ const emptyPokemon = (slot) => ({
   energies: [],
   // Special Energy cards: { cardId, name, image }. They are cards, not one of the basic types, so the overlay shows a circle cut out of each.
   specialEnergies: [],
+  // What the card says it can do: [{ name, damage, mod }] (see attacks.js), and how many Energy it costs to retreat
+  attacks: [],
+  retreat: 0,
   tools: [],
   status: [],
   // Ability tokens: { name, used, scope } where scope 'turn' refreshes every turn and 'game' never does
@@ -134,7 +139,10 @@ class GameStateService {
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
-        supporterPerTurn: { available: 1, used: 0 }
+        supporterPerTurn: { available: 1, used: 0 },
+        // the GX attack and the VSTAR Power: one of each per game, back when the game ends
+        gxPerGame: { available: 1, used: 0 },
+        vstarPerGame: { available: 1, used: 0 }
       },
       locks: { itemLock: false, evoLock: false },
       isTurn: false,
@@ -153,8 +161,14 @@ class GameStateService {
     }
     if (!Number.isInteger(merged.revision) || merged.revision < 0) merged.revision = 0;
     for (const side of ['trainerA', 'trainerB']) {
-      // Pokémon saved before Special Energy existed hold none
-      for (const pokemon of [merged[side].active, ...merged[side].bench]) if (pokemon && !Array.isArray(pokemon.specialEnergies)) pokemon.specialEnergies = [];
+      // Pokémon saved before Special Energy, attacks and retreat costs existed hold none
+      for (const pokemon of [merged[side].active, ...merged[side].bench]) {
+        if (!pokemon) continue;
+        if (!Array.isArray(pokemon.specialEnergies)) pokemon.specialEnergies = [];
+        if (!Array.isArray(pokemon.attacks)) pokemon.attacks = [];
+        if (!Number.isInteger(pokemon.retreat)) pokemon.retreat = 0;
+        pokemon.status = GAME.cleanStatus(pokemon.status);
+      }
       // The penalty used to be an on/off flag: it is a number of prize cards now
       const prizes = merged[side].prizes;
       if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
@@ -304,7 +318,7 @@ class GameStateService {
 
   // Put a card into a slot. A fresh Pokémon starts at full HP with nothing attached;
   // an evolution (keep: true) keeps its attachments and the damage already taken.
-  setPokemon(side, slot, { cardId, name, image, hp, abilities }, { keep = false } = {}) {
+  setPokemon(side, slot, { cardId, name, image, hp, abilities, attacks, retreat }, { keep = false } = {}) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
 
@@ -312,11 +326,12 @@ class GameStateService {
     const damageTaken = Math.max(0, pokemon.hp.max - pokemon.hp.current);
 
     Object.assign(pokemon, { cardId, name, image });
+    // A different card, an evolution too, has no special conditions (the rules cure them when a Pokémon evolves)
+    pokemon.status = [];
     if (!keep) {
       pokemon.energies = [];
       pokemon.specialEnergies = [];
       pokemon.tools = [];
-      pokemon.status = [];
     }
     // A different card has different abilities; with no data an evolution keeps the tokens it had
     if (Array.isArray(abilities)) {
@@ -324,8 +339,17 @@ class GameStateService {
     } else if (!keep) {
       pokemon.abilities = [];
     }
+    // Attacks and the retreat cost belong to the card, so a different card (an evolution too) has its own
+    pokemon.attacks = Array.isArray(attacks) ? attacks.slice(0, MAX_ATTACKS) : [];
+    pokemon.retreat = Number.isInteger(retreat) ? Math.max(0, Math.min(MAX_RETREAT, retreat)) : 0;
     pokemon.hp.max = newMax;
     pokemon.hp.current = keep ? Math.max(0, newMax - damageTaken) : newMax;
+  }
+
+  // Change how many Energy it costs to retreat (an effect can make it cheaper or dearer)
+  setRetreat(side, slot, cost) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (pokemon) pokemon.retreat = Math.max(0, Math.min(MAX_RETREAT, Math.trunc(cost)));
   }
 
   // Attach one energy of the given type. Whether it also counts as the turn's energy attachment
@@ -353,6 +377,22 @@ class GameStateService {
   removeSpecialEnergy(side, slot, index) {
     const pokemon = this.pokemonAt(side, slot);
     if (pokemon && Array.isArray(pokemon.specialEnergies) && index >= 0 && index < pokemon.specialEnergies.length) pokemon.specialEnergies.splice(index, 1);
+  }
+
+  // A special condition of the Active Pokémon; omit `on` to toggle. Putting on Asleep, Confused or Paralyzed takes
+  // off whichever of the three it had (see GAME.cleanStatus). Returns the conditions it has now.
+  setStatus(side, condition, on) {
+    const pokemon = this.state[side].active;
+    if (!GAME.STATUS_KEYS.includes(condition)) return pokemon.status;
+    const rest = pokemon.status.filter((key) => key !== condition);
+    const wanted = on === undefined ? !pokemon.status.includes(condition) : on;
+    pokemon.status = GAME.cleanStatus(wanted ? [...rest, condition] : rest);
+    return pokemon.status;
+  }
+
+  // Cure the Active Pokémon of everything
+  clearStatus(side) {
+    this.state[side].active.status = [];
   }
 
   setAbilityUsed(side, slot, index, used) {
@@ -387,6 +427,7 @@ class GameStateService {
     const benched = trainer.bench[slot];
     if (!benched) return;
     const active = trainer.active;
+    active.status = []; // special conditions end when a Pokémon leaves the Active spot
     active.slot = slot;
     benched.slot = 'active';
     trainer.active = benched;
@@ -419,12 +460,20 @@ class GameStateService {
 
   // ------------------------------------------------------------------- match
 
+  // A game is over (won, or a new one begins): the once-per-game markers are available again
+  resetGameMarkers() {
+    for (const side of ['trainerA', 'trainerB']) {
+      for (const kind of ['gxPerGame', 'vstarPerGame']) this.resetCounter(side, kind);
+    }
+  }
+
   startGame() {
     this.matchStartTime = Date.now();
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
       this.state[side].prizes.penalty = 0;
     }
+    this.resetGameMarkers();
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
     this.resetAbilities('trainerA', { includeGame: true });
     this.resetAbilities('trainerB', { includeGame: true });
@@ -462,6 +511,7 @@ class GameStateService {
     const score = this.state.matchScore;
     const key = `${side}Wins`;
     score[key]++;
+    this.resetGameMarkers(); // that game is over
     if (score[key] > score.bestOf / 2) this.endGame(side);
   }
 
@@ -473,6 +523,7 @@ class GameStateService {
 
   resetMatchScore() {
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
+    this.resetGameMarkers();
   }
 
   setBestOf(bestOf) {
@@ -495,7 +546,7 @@ class GameStateService {
     if (!match) throw new Error(`Invalid card target: ${target}`);
     const [, side, where, benchIndex] = match;
     const slot = where === 'active' ? -1 : Number(benchIndex);
-    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities }, { keep });
+    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities, attacks: card.attacks, retreat: card.retreat }, { keep });
   }
 
   setStadium(cardId, name, image) {

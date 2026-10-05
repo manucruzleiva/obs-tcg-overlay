@@ -223,8 +223,12 @@ function describeControls(settings) {
   const cueLabels = Object.fromEntries(SOUND.GROUPS.flatMap((group) => group.cues.map((cue) => [cue.key, cue.label])));
   const display = settings.display || {};
   const events = (settings.sound && settings.sound.events) || {};
+  // what a package hides is what normally shows; the options that are off to begin with (the GX and VSTAR markers) are
+  // not "hidden" by a package that leaves them off, and one that switches them on is worth saying
+  const normallyShown = (key) => DISPLAY.DEFAULTS[key] !== false;
   return {
-    hidden: Object.keys(display).filter((key) => display[key] === false).map((key) => labels[key]),
+    hidden: Object.keys(display).filter((key) => display[key] === false && normallyShown(key)).map((key) => labels[key]),
+    revealed: Object.keys(display).filter((key) => display[key] === true && !normallyShown(key)).map((key) => labels[key]),
     shown: Object.keys(display).filter((key) => display[key] === true).length,
     toastSeconds: settings.toastSeconds,
     animationSeconds: settings.animationSeconds,

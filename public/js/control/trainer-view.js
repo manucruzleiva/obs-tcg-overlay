@@ -81,17 +81,22 @@ export class TrainerView {
         this.penaltyCount,
         h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'One more prize card in red', onclick: () => act('prizePenaltyPlus') }, icon('plus'))));
 
-    // once-per-turn tokens and locks
+    // once-per-turn tokens (and the once-per-game ones) and locks
     const token = (label, kind) => h('button', { class: 'token-btn', type: 'button', onclick: () => this.stepToken(kind) },
       h('span', { class: 'dot' }), label, h('span', { class: 'count' }));
     this.tokens = {
       energy: token('Energy', 'energy'),
       stadium: token('Stadium', 'stadium'),
-      supporter: token('Supporter', 'supporter')
+      supporter: token('Supporter', 'supporter'),
+      gx: token('GX attack', 'gx'),
+      vstar: token('VSTAR Power', 'vstar')
     };
     const turnBlock = h('section', { class: 'block turn-block' },
       h('div', { class: 'block-title' }, 'This turn', h('span', { class: 'hint' }, 'Shift+S supporter')),
       h('div', { class: 'token-row' }, this.tokens.energy, this.tokens.stadium, this.tokens.supporter),
+      // once per game: they come back by themselves when the game ends
+      h('div', { class: 'block-title sub' }, 'This game', h('span', { class: 'hint' }, 'back when the game ends')),
+      h('div', { class: 'token-row' }, this.tokens.gx, this.tokens.vstar),
       h('div', { class: 'toggle-row' },
         this.toggle('Item lock (I)', (on) => act('toggleItemLock', { enabled: on }), (t) => { this.itemToggle = t; }),
         this.toggle('Evolution lock (V)', (on) => act('toggleEvoLock', { enabled: on }), (t) => { this.evoToggle = t; })));
@@ -142,7 +147,7 @@ export class TrainerView {
   stepToken(kind) {
     const state = this.app.conn.state;
     if (!state) return;
-    const resource = { energy: 'energyPerTurn', stadium: 'stadiumPerTurn', supporter: 'supporterPerTurn' }[kind];
+    const resource = { energy: 'energyPerTurn', stadium: 'stadiumPerTurn', supporter: 'supporterPerTurn', gx: 'gxPerGame', vstar: 'vstarPerGame' }[kind];
     const counter = state[this.side].resources[resource];
     this.app.act(`action:${this.side}`, { action: `${kind}${counter.used >= counter.available ? 'Minus' : 'Plus'}` });
   }
@@ -184,8 +189,9 @@ export class TrainerView {
     this.evoToggle.input.checked = Boolean(trainer.locks.evoLock);
 
     // tokens
-    for (const [kind, resource] of [['energy', 'energyPerTurn'], ['stadium', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn']]) {
+    for (const [kind, resource] of [['energy', 'energyPerTurn'], ['stadium', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn'], ['gx', 'gxPerGame'], ['vstar', 'vstarPerGame']]) {
       const counter = trainer.resources[resource];
+      if (!counter) continue;
       const used = counter.used >= counter.available;
       this.tokens[kind].classList.toggle('used', used);
       this.tokens[kind].querySelector('.count').textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : used ? 'used' : 'ready';
@@ -260,6 +266,19 @@ export class TrainerView {
       'aria-pressed': String(Boolean(ability.used)), onclick: () => act('setAbilityUsed', { index, used: !ability.used })
     }, h('span', { class: 'diamond' }), ability.name, ability.used && h('span', { class: 'used-tag' }, 'USED')));
 
+    // Special conditions: only the Active Pokémon has them. The chip says what it will be after the click, so two
+    // producers pressing the same one agree.
+    const conditions = compact ? null : h('div', { class: 'chips conditions', role: 'group', 'aria-label': 'Special conditions' },
+      GAME.STATUS_CONDITIONS.map((condition) => {
+        const on = (pokemon.status || []).includes(condition.key);
+        return h('button', {
+          class: `condition-chip${on ? ' on' : ''}`, type: 'button', 'aria-pressed': String(on), dataset: { condition: condition.key },
+          style: { '--c': condition.color, '--ink': condition.ink },
+          title: `${condition.label}${condition.hint ? ` (${condition.hint.toLowerCase()})` : ''}: click to ${on ? 'remove it' : 'put it on'}`,
+          onclick: () => act('toggleStatus', { condition: condition.key, enabled: !on })
+        }, condition.label);
+      }));
+
     const buttons = compact
       ? [
         this.mini('Switch in', 'swap', () => act('swapWithActive')),
@@ -285,6 +304,7 @@ export class TrainerView {
         h('div', { class: 'hp-line' }, hpValue, h('div', { class: `hp-bar${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, h('div', { style: { width: `${percent}%` } }))),
         (energies.length > 0 || specials.length > 0) && h('div', { class: 'chips energies' }, [...energies, ...specials]),
         abilities.length > 0 && h('div', { class: 'chips abilities' }, abilities),
+        conditions,
         h('div', { class: 'mon-actions' }, buttons)));
   }
 

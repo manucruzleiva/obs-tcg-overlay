@@ -33,6 +33,7 @@ function controlLines(controls) {
   const lines = [];
   if (controls.hidden.length) lines.push(`Hides: ${controls.hidden.join(', ')}`);
   else if (controls.shown) lines.push('Shows everything on the overlay');
+  if (controls.revealed && controls.revealed.length) lines.push(`Also shows: ${controls.revealed.join(', ')}`);
   if (controls.toastSeconds !== undefined || controls.animationSeconds !== undefined) {
     const parts = [];
     if (controls.toastSeconds !== undefined) parts.push(`banners stay ${controls.toastSeconds} s`);

@@ -10,10 +10,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { ImageCache, pictureOf } = require('./images');
+const { attacksOf, retreatOf } = require('./attacks');
 
 const FILE_VERSION = 1;
 const PAGE_SIZE = 250; // the most the card API allows
-const SELECT = 'id,name,supertype,subtypes,hp,types,number,rarity,set,images,regulationMark,rules,abilities,evolvesFrom';
+const SELECT = 'id,name,supertype,subtypes,hp,types,number,rarity,set,images,regulationMark,rules,abilities,attacks,convertedRetreatCost,evolvesFrom';
 const REQUEST_TIMEOUT_MS = 90_000; // a page of 250 cards is slow on the free API
 const ATTEMPTS = 8; // the free API fails two requests in three on a bad day, so be patient before giving up
 const RETRY_DELAY_MS = 2000; // doubled after each failed attempt, up to MAX_RETRY_DELAY_MS
@@ -24,10 +25,16 @@ const PROGRESS_EVERY_MS = 250;
 const RESULTS_PER_PAGE = 20;
 const CONFIRM_PICTURES_ABOVE = 500;
 
-// "Standard" is the current rotation, chosen by regulation mark. When the format rotates, add the new
-// letter and drop the oldest one here; nothing else needs to change.
+// "Standard" is the current rotation, chosen by regulation mark. When the format rotates, move the oldest letter from
+// STANDARD_MARKS to ROTATED_MARKS and add the new one to STANDARD_MARKS (and raise the revision of the Standard
+// profile below, so the libraries people already have say they can be updated); nothing else needs to change.
 const STANDARD_MARKS = ['H', 'I', 'J'];
+const ROTATED_MARKS = ['D', 'E', 'F', 'G'];
 const EXPANDED_QUERY = 'legalities.expanded:legal';
+// Some cards have no regulation mark and are legal in Standard all the same: the reprints of a set the card service lists
+// as legal there (the Classic Collection, for instance). Nothing to find them by but the set, so ask for the cards of
+// those sets that carry none of the marks.
+const NO_MARK_QUERY = `set.legalities.standard:legal ${[...ROTATED_MARKS, ...STANDARD_MARKS].map((mark) => `-regulationMark:${mark}`).join(' ')}`;
 
 // Pokémon with these subtypes (or with rules text on the card) have a "rule box": ex, V, VMAX, VSTAR, GX...
 const RULE_BOX_SUBTYPES = new Set(['ex', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'V-UNION', 'BREAK', 'LEGEND', 'MEGA', 'Prism Star', 'TAG TEAM', 'Radiant']);
@@ -35,8 +42,11 @@ const RULE_BOX_SUBTYPES = new Set(['ex', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'V-UN
 const PROFILES = {
   standard: {
     label: 'Standard',
-    description: `The current rotation (regulation marks ${STANDARD_MARKS.join(', ')}) and basic Energy.`,
-    queries: [...STANDARD_MARKS.map((mark) => `regulationMark:${mark}`), 'supertype:Energy subtypes:Basic'],
+    description: `The current rotation (regulation marks ${STANDARD_MARKS.join(', ')}), basic Energy, and the cards that have no regulation mark but are legal in Standard (reprints such as the Classic Collection).`,
+    queries: [...STANDARD_MARKS.map((mark) => `regulationMark:${mark}`), 'supertype:Energy subtypes:Basic', NO_MARK_QUERY],
+    // Raised each time what a library holds changes, so a copy saved before says it can be updated
+    revision: 2,
+    whatsNew: 'the cards that have no regulation mark but are legal in Standard',
     approximate: 3000,
     big: false
   },
@@ -113,6 +123,8 @@ function toRecord(item) {
     mark: String(item.regulationMark || ''),
     abilities: (Array.isArray(item.abilities) ? item.abilities : []).map((ability) => ability && ability.name).filter((name) => typeof name === 'string' && name),
     evolvesFrom: String(item.evolvesFrom || ''),
+    attacks: attacksOf(item.attacks) || [],
+    retreat: retreatOf(item) ?? 0,
     images: { small: shortImage(item.images && item.images.small), large: shortImage(item.images && item.images.large) }
   };
   if (isRuleBox(item)) record.ruleBox = true;
@@ -138,7 +150,8 @@ function summary(record) {
 
 // The shape a single card lookup returns (see PokemonTCGService.parseCardResponse)
 function detail(record) {
-  return { ...summary(record), rules: '', artist: '', flavorText: '', regulationMark: record.mark, attacks: [], abilities: record.abilities };
+  // a library saved before attacks and retreat costs were kept has neither: undefined says so, and the card is asked for online
+  return { ...summary(record), rules: '', artist: '', flavorText: '', regulationMark: record.mark, attacks: record.attacks, retreat: record.retreat, abilities: record.abilities };
 }
 
 // "Pokémon" matches "pokemon", and every word typed has to start some word of the name
@@ -208,7 +221,7 @@ class CatalogService extends EventEmitter {
     try {
       const meta = JSON.parse(fs.readFileSync(this.file(id, 'meta.json'), 'utf8'));
       const bytes = fs.statSync(this.file(id)).size; // throws when the data file is missing
-      this.metas[id] = meta && meta.version === FILE_VERSION ? { count: meta.count, builtAt: meta.builtAt, bytes } : null;
+      this.metas[id] = meta && meta.version === FILE_VERSION ? { count: meta.count, builtAt: meta.builtAt, bytes, revision: meta.revision || 1 } : null;
     } catch {
       this.metas[id] = null;
     }
@@ -228,7 +241,7 @@ class CatalogService extends EventEmitter {
     };
     // The small "meta" file is written last: a library only counts as there once it exists
     write('json', JSON.stringify({ version: FILE_VERSION, id, cards: records }));
-    write('meta.json', JSON.stringify({ version: FILE_VERSION, id, count: records.length, builtAt: Date.now() }));
+    write('meta.json', JSON.stringify({ version: FILE_VERSION, id, count: records.length, builtAt: Date.now(), revision: PROFILES[id].revision || 1 }));
     this.refreshMeta(id);
   }
 
@@ -263,6 +276,9 @@ class CatalogService extends EventEmitter {
         count: this.metas[id] ? this.metas[id].count : 0,
         builtAt: this.metas[id] ? this.metas[id].builtAt : null,
         bytes: this.metas[id] ? this.metas[id].bytes : 0,
+        // saved before what the library holds changed: Update brings it up to date
+        outdated: Boolean(this.metas[id] && this.metas[id].revision < (profile.revision || 1)),
+        whatsNew: profile.whatsNew || '',
         // a download that stopped partway and can carry on
         resumable: !this.metas[id] && fs.existsSync(this.file(id, 'partial.json')) && !(running && running.profile === id),
         building: Boolean(running && running.kind === 'library' && running.profile === id)
@@ -579,4 +595,4 @@ class CatalogService extends EventEmitter {
   }
 }
 
-module.exports = { CatalogService, CatalogError, PROFILES, STANDARD_MARKS, RULE_BOX_SUBTYPES, toRecord, words, PAGE_SIZE };
+module.exports = { CatalogService, CatalogError, PROFILES, STANDARD_MARKS, ROTATED_MARKS, NO_MARK_QUERY, RULE_BOX_SUBTYPES, toRecord, words, PAGE_SIZE };

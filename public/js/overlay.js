@@ -25,6 +25,8 @@
   const SIDE_CLASS = { trainerA: 'a', trainerB: 'b' };
   const ENERGY_INDEX = {};
   GAME.ENERGY_KEYS.forEach((key, index) => { ENERGY_INDEX[key] = index; });
+  const STATUS = {};
+  GAME.STATUS_CONDITIONS.forEach((condition) => { STATUS[condition.key] = condition; });
 
   // ------------------------------------------------------------------ helpers
 
@@ -161,7 +163,17 @@
 
     const status = pokemon.status || [];
     mon.statuses.textContent = '';
-    status.forEach((condition) => mon.statuses.appendChild(el('span', 'status-chip', String(condition))));
+    status.forEach((key) => {
+      const known = STATUS[key];
+      const chip = el('span', 'status-chip', known ? known.label : String(key));
+      chip.dataset.status = String(key);
+      if (known) {
+        chip.style.setProperty('--c', known.color);
+        chip.style.setProperty('--ink', known.ink);
+        if (known.hint) chip.title = known.hint;
+      }
+      mon.statuses.appendChild(chip);
+    });
     mon.statuses.hidden = status.length === 0;
   }
 
@@ -309,7 +321,11 @@
       const energy = createToken('energyCounter', 'ENERGY');
       const stadiumUse = createToken('stadiumCounter', 'STADIUM');
       const supporter = createToken('supporterCounter', 'SUPPORTER');
-      [energy, stadiumUse, supporter].forEach((token) => tokens.appendChild(token.root));
+      // the GX attack and the VSTAR Power: once per game, and not shown unless the producer asks for them
+      const gx = createToken('gxMarker', 'GX');
+      const vstar = createToken('vstarMarker', 'VSTAR');
+      [gx, vstar].forEach((token) => token.root.classList.add('marker'));
+      [energy, stadiumUse, supporter, gx, vstar].forEach((token) => tokens.appendChild(token.root));
 
       const locks = opt(el('div', 'locks'), 'locks');
       [prizes, tokens, locks].forEach((node) => top.appendChild(node));
@@ -328,7 +344,7 @@
 
       [turnTag, top, active, bench].forEach((node) => root.appendChild(node));
       this.stage.appendChild(root);
-      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, locks, activeMon, benchMons };
+      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, activeMon, benchMons };
     }
 
     buildCenter() {
@@ -411,9 +427,10 @@
       refs.prizes.classList.toggle('pulse', penalty > 0 && state.settings.showPenaltyAnimation !== false);
       refs.prizeFlag.textContent = penalty > 0 ? 'PENALTY' : '';
 
-      // once-per-turn tokens
-      [['energy', 'energyPerTurn'], ['stadiumUse', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn']].forEach(([key, resource]) => {
+      // once-per-turn tokens, and the once-per-game markers
+      [['energy', 'energyPerTurn'], ['stadiumUse', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn'], ['gx', 'gxPerGame'], ['vstar', 'vstarPerGame']].forEach(([key, resource]) => {
         const counter = trainer.resources[resource];
+        if (!counter) return;
         refs[key].root.classList.toggle('used', counter.used >= counter.available);
         refs[key].count.textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : '';
       });

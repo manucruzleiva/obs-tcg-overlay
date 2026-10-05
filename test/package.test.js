@@ -340,13 +340,21 @@ describe('the package service', () => {
   describe('looking inside a package', () => {
     const exported = () => service.exportPackage({ design: 'Store League', controls: true }).buffer;
 
+    it('says when a package switches on something that is off to begin with', () => {
+      const controls = Buffer.from(JSON.stringify({ version: 1, settings: { display: { gxMarker: true, vstarMarker: false, nationality: false, locks: true } } }));
+      const info = service.inspect(createZip([{ name: 'controls.json', data: controls }]));
+      assert.deepEqual(info.controls.revealed, ['GX attack marker (once per game)']);
+      assert.deepEqual(info.controls.hidden, ['Nationality'], 'the VSTAR marker it leaves off is not a thing it hides');
+    });
+
     it('says what it holds without changing anything', () => {
       const info = service.inspect(exported());
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
       assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [] });
-      assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)']);
+      assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)'], 'the markers that are off to begin with are not "hidden"');
+      assert.deepEqual(info.controls.revealed, []);
       assert.equal(info.controls.toastSeconds, 6);
       assert.deepEqual(info.ignored, []);
       assert.deepEqual(themes.list(), ['Store League']);
