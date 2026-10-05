@@ -1,0 +1,72 @@
+/**
+ * Catalogue of everything on the overlay that can be shown or hidden.
+ *
+ * One source of truth, loaded by the browser (as OTO_DISPLAY) and by the server (via require):
+ * the server uses DEFAULTS as the starting settings, the control panel builds its
+ * "Overlay visibility" switches from GROUPS, and the overlay maps each key to a CSS class.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.OTO_DISPLAY = factory();
+}(typeof self !== 'undefined' ? self : this, function () {
+  const GROUPS = [
+    {
+      id: 'match',
+      label: 'Scoreboard',
+      options: [
+        { key: 'scoreboard', label: 'Scoreboard bar' },
+        { key: 'matchScore', label: 'Match score (games won)' },
+        { key: 'bestOf', label: 'Best-of label' },
+        { key: 'roundLabel', label: 'Round / stage label' },
+        { key: 'turnIndicator', label: 'Turn highlight' }
+      ]
+    },
+    {
+      id: 'trainer',
+      label: 'Trainers',
+      options: [
+        { key: 'trainerName', label: 'Names' },
+        { key: 'nationality', label: 'Nationality' },
+        { key: 'record', label: 'Tournament record (W/L/T)' },
+        { key: 'prizes', label: 'Prize cards' },
+        { key: 'energyCounter', label: 'Energy attachment counter' },
+        { key: 'stadiumCounter', label: 'Stadium play counter' },
+        { key: 'locks', label: 'Item / Evolution lock badges' }
+      ]
+    },
+    {
+      id: 'pokemon',
+      label: 'Pokémon',
+      options: [
+        { key: 'activePokemon', label: 'Active Pokémon' },
+        { key: 'benchPokemon', label: 'Bench' },
+        { key: 'pokemonNames', label: 'Pokémon names' },
+        { key: 'hpBars', label: 'HP bars and numbers' },
+        { key: 'attachments', label: 'Attached energy and tools' },
+        { key: 'abilityTokens', label: 'Ability tokens (ready / used)' },
+        { key: 'statusConditions', label: 'Status conditions' }
+      ]
+    },
+    {
+      id: 'table',
+      label: 'Table',
+      options: [
+        { key: 'stadium', label: 'Stadium card' },
+        { key: 'featureCards', label: 'Feature cards' }
+      ]
+    },
+    {
+      id: 'effects',
+      label: 'Announcements',
+      options: [
+        { key: 'toasts', label: 'Toast banners' },
+        { key: 'animations', label: 'Full-screen animations' }
+      ]
+    }
+  ];
+
+  const KEYS = GROUPS.flatMap((group) => group.options.map((option) => option.key));
+  const DEFAULTS = Object.fromEntries(KEYS.map((key) => [key, true]));
+
+  return { GROUPS, KEYS, DEFAULTS };
+}));

@@ -1,0 +1,119 @@
+{
+  "name": "obs-tcg-overlay",
+  "version": "1.0.0",
+  "description": "OTO (OBS TCG Overlay): streaming overlay and producer control panel for Pokémon TCG matches",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "electron": "electron electron/main.js",
+    "electron:dev": "concurrently \"npm start\" \"wait-on http://localhost:6767 && electron electron/main.js\"",
+    "test": "node --test \"test/*.test.js\"",
+    "test:ui": "node --test \"test-ui/*.test.js\"",
+    "test:desktop": "node --test \"test-desktop/*.test.js\"",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.obs.tcg-overlay",
+    "productName": "OTO",
+    "copyright": "Copyright © 2026 obs-tcg-overlay contributors",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "logo.ico",
+      "logo.gif",
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "NOTICE.md"
+    ],
+    "win": {
+      "icon": "logo.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OTO",
+      "include": "installer/installer.nsh",
+      "artifactName": "OTO-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "OTO-${version}-portable.${ext}"
+    },
+    "fileAssociations": [
+      {
+        "ext": "oto",
+        "name": "OTO package",
+        "description": "OTO design and settings package",
+        "icon": "logo.ico"
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "manucruzleiva",
+      "repo": "obs-tcg-overlay"
+    }
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "electron-updater": "^6.8.9",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "socket.io": "^4.7.2",
+    "sql.js": "^1.14.2",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "playwright-core": "^1.63.0",
+    "socket.io-client": "^4.7.2",
+    "wait-on": "^9.5.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "obs",
+    "overlay",
+    "streaming",
+    "pokemon",
+    "pokemon-tcg",
+    "tcg",
+    "electron",
+    "socket.io"
+  ],
+  "author": "obs-tcg-overlay contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manucruzleiva/obs-tcg-overlay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/manucruzleiva/obs-tcg-overlay/issues"
+  },
+  "homepage": "https://github.com/manucruzleiva/obs-tcg-overlay#readme"
+}

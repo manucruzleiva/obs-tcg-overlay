@@ -1,0 +1,646 @@
+/**
+ * Every action a control panel can send, in one place.
+ *
+ * For each action the registry says how to validate and apply it, which part of the
+ * game it touches (`targets`, used to detect two producers changing the same thing),
+ * and how to describe it to humans (`label`, used by the activity feed).
+ *
+ * Applying an action only changes the GameStateService it is given, so the same code
+ * serves the live game and the private copy behind a producer's draft.
+ */
+
+const announcements = require('./services/announcements');
+const GAME = require('../public/js/game-data');
+
+const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
+
+// Raised for input that a well-behaved control panel would never send
+class ActionError extends Error {}
+
+// ------------------------------------------------------------------ validation
+
+function text(value, name, max = 80) {
+  if (typeof value !== 'string') throw new ActionError(`${name} must be text`);
+  return value.trim().slice(0, max);
+}
+
+function integer(value, name, min, max) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < min || number > max) {
+    throw new ActionError(`${name} must be a whole number from ${min} to ${max}`);
+  }
+  return number;
+}
+
+function bool(value, name) {
+  if (typeof value !== 'boolean') throw new ActionError(`${name} must be true or false`);
+  return value;
+}
+
+// Card images must be web addresses (or same-site paths); empty means "no image"
+function imageUrl(value, name) {
+  if (value === undefined || value === null || value === '') return '';
+  const url = text(value, name, 2048);
+  if (url && !/^(https?:\/\/|\/)/i.test(url)) throw new ActionError(`${name} must be a web address`);
+  return url;
+}
+
+const pickSlot = (value) => integer(value, 'slot', -1, 7);
+const benchSlot = (value) => integer(value, 'slot', 0, 7);
+const amount = (value) => integer(value, 'amount', -9999, 9999);
+
+// -------------------------------------------------------------------- helpers
+
+const who = (gs, side) => gs.state[side].name || SIDE_LABEL[side];
+const slotKey = (side, slot) => (Number(slot) === -1 ? `${side}.active` : `${side}.bench.${slot}`);
+const slotName = (gs, side, slot) => {
+  const pokemon = gs.pokemonAt(side, Number(slot));
+  return (pokemon && pokemon.name) || (Number(slot) === -1 ? 'Active' : `Bench ${Number(slot) + 1}`);
+};
+const opponent = (side) => (side === 'trainerA' ? 'trainerB' : 'trainerA');
+const signed = (n) => (n > 0 ? `+${n}` : `−${Math.abs(n)}`);
+
+// Ability names from card data: strings or { name } objects. Undefined means "no information".
+function abilityNames(list) {
+  if (!Array.isArray(list)) return undefined;
+  return list
+    .map((item) => (typeof item === 'string' ? item : item && item.name))
+    .filter((name) => typeof name === 'string' && name.trim())
+    .map((name) => name.trim().slice(0, 60))
+    .slice(0, 4);
+}
+
+// Pokémon data sent with setActive / setBench
+function pokemonFields(p) {
+  const hp = p.hp === undefined || p.hp === '' ? 0 : Number(p.hp);
+  return {
+    cardId: text(p.cardId ?? '', 'cardId', 64),
+    name: text(p.name ?? '', 'name', 80),
+    image: imageUrl(p.image, 'image'),
+    hp: Number.isFinite(hp) ? hp : 0,
+    abilities: abilityNames(p.abilities)
+  };
+}
+
+// Toggle-style actions double as absolute ones when the sender says what it wants ({ enabled: true })
+function flagAction(name, apply) {
+  return {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : [`${side}.flag.${name}`]),
+    run: (gs, side, p) => apply(gs, side, typeof p.enabled === 'boolean' ? p.enabled : undefined),
+    label: (gs, side) => `${who(gs, side)}: ${name} changed`
+  };
+}
+
+function counterAction(kind, key, delta) {
+  return {
+    targets: (side) => [`${side}.${key}`],
+    run: (gs, side) => gs.stepCounter(side, kind, delta),
+    label: (gs, side) => `${who(gs, side)}: ${key} ${signed(delta)}`
+  };
+}
+
+// ------------------------------------------------------------------- trainers
+
+const TRAINER = {
+  setName: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setName(side, text(p.name, 'name', 60)),
+    label: (gs, side) => `${SIDE_LABEL[side]} name → ${gs.state[side].name}`
+  },
+  setNationality: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setNationality(side, text(p.nationality, 'nationality', 40)),
+    label: (gs, side) => `${who(gs, side)} nationality → ${gs.state[side].nationality || 'none'}`
+  },
+  setRecord: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setRecord(side, {
+      wins: integer(p.wins, 'wins', 0, 999),
+      losses: integer(p.losses, 'losses', 0, 999),
+      ties: integer(p.ties, 'ties', 0, 999)
+    }),
+    label: (gs, side) => {
+      const { wins, losses, ties } = gs.state[side].record;
+      return `${who(gs, side)} record ${wins}-${losses}-${ties}`;
+    }
+  },
+  setTurn: {
+    targets: () => ['turn'],
+    run: (gs, side, p) => gs.setTurn(side, bool(p.isTurn, 'isTurn')),
+    label: (gs, side) => `Turn → ${who(gs, gs.state.trainerA.isTurn ? 'trainerA' : 'trainerB')}`
+  },
+
+  prizeMinus: {
+    sfx: () => 'prize',
+    targets: (side) => [`${side}.prizes`],
+    run: (gs, side) => gs.adjustPrizes(side, -1),
+    label: (gs, side) => `${who(gs, side)} prizes −1 (${gs.state[side].prizes.count} left)`
+  },
+  prizePlus: {
+    targets: (side) => [`${side}.prizes`],
+    run: (gs, side) => gs.adjustPrizes(side, 1),
+    label: (gs, side) => `${who(gs, side)} prizes +1 (${gs.state[side].prizes.count} left)`
+  },
+  prizeSet: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setPrizes(side, integer(p.count, 'count', 0, 6)),
+    label: (gs, side) => `${who(gs, side)} prizes set to ${gs.state[side].prizes.count}`
+  },
+  prizeReset: {
+    targets: () => null,
+    run: (gs, side) => gs.setPrizes(side, 6),
+    label: (gs, side) => `${who(gs, side)} prizes reset`
+  },
+  togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizeFlag(side, 'hidden', value)),
+  togglePrizePenalty: flagAction('prize penalty', (gs, side, value) => gs.setPrizeFlag(side, 'penalty', value)),
+  toggleItemLock: flagAction('item lock', (gs, side, value) => gs.setLock(side, 'itemLock', value)),
+  toggleEvoLock: flagAction('evolution lock', (gs, side, value) => gs.setLock(side, 'evoLock', value)),
+
+  energyPlus: counterAction('energyPerTurn', 'energy', 1),
+  energyMinus: counterAction('energyPerTurn', 'energy', -1),
+  energyReset: {
+    targets: () => null,
+    run: (gs, side) => gs.resetCounter(side, 'energyPerTurn'),
+    label: (gs, side) => `${who(gs, side)} energy counter reset`
+  },
+  stadiumPlus: counterAction('stadiumPerTurn', 'stadium use', 1),
+  stadiumMinus: counterAction('stadiumPerTurn', 'stadium use', -1),
+  stadiumReset: {
+    targets: () => null,
+    run: (gs, side) => gs.resetCounter(side, 'stadiumPerTurn'),
+    label: (gs, side) => `${who(gs, side)} stadium counter reset`
+  },
+
+  supporterPlus: counterAction('supporterPerTurn', 'supporter', 1),
+  supporterMinus: counterAction('supporterPerTurn', 'supporter', -1),
+  supporterReset: {
+    targets: () => null,
+    run: (gs, side) => gs.resetCounter(side, 'supporterPerTurn'),
+    label: (gs, side) => `${who(gs, side)} supporter counter reset`
+  },
+
+  // Attach energy to a Pokémon. By default it counts as the turn's energy attachment;
+  // send countsAsTurn: false for a special attachment (an ability or card effect).
+  attachEnergy: {
+    sfx: () => 'energy',
+    targets: (side, p) => {
+      const keys = [slotKey(side, p.slot)];
+      if (p.countsAsTurn !== false) keys.push(`${side}.energy`);
+      return keys;
+    },
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const type = text(p.energyType, 'energyType', 20);
+      if (!GAME.ENERGY_KEYS.includes(type)) throw new ActionError('unknown energy type');
+      const count = p.count === undefined ? 1 : integer(p.count, 'count', 1, 10);
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+
+      for (let i = 0; i < count; i++) gs.attachEnergy(side, slot, type);
+      if (p.countsAsTurn !== false) gs.stepCounter(side, 'energyPerTurn', 1);
+      ctx.type = type;
+      ctx.count = count;
+    },
+    label: (gs, side, p, ctx) =>
+      `${slotName(gs, side, p.slot)} +${ctx.count} ${ctx.type} energy${p.countsAsTurn === false ? ' (special attachment)' : ''}`
+  },
+  removeEnergy: {
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p) => gs.removeEnergy(side, pickSlot(p.slot), integer(p.index, 'index', 0, 99)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} lost an energy`
+  },
+
+  // Ability tokens. The sender says whether the ability is now used, so two producers
+  // clicking the same token agree instead of cancelling each other out.
+  setAbilityUsed: {
+    sfx: (side, p) => (p.used === true ? 'ability' : null),
+    targets: () => null,
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const index = integer(p.index, 'index', 0, 3);
+      const used = bool(p.used, 'used');
+      const ability = (gs.pokemonAt(side, slot) || { abilities: [] }).abilities[index];
+      if (!ability) throw new ActionError('no such ability token');
+      ctx.name = ability.name;
+      ctx.used = used;
+      gs.setAbilityUsed(side, slot, index, used);
+    },
+    label: (gs, side, p, ctx) => `${slotName(gs, side, p.slot)}: ${ctx.name} ${ctx.used ? 'used' : 'ready'}`
+  },
+  addAbility: {
+    targets: (side, p) => [`${slotKey(side, p.slot)}.abilities`],
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const name = text(p.name, 'name', 60);
+      if (!name) throw new ActionError('name is required');
+      const scope = p.scope === 'game' ? 'game' : 'turn';
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+      ctx.name = name;
+      gs.addAbility(side, slot, name, scope);
+    },
+    label: (gs, side, p, ctx) => `${slotName(gs, side, p.slot)}: added ability token "${ctx.name}"`
+  },
+  removeAbility: {
+    targets: (side, p) => [`${slotKey(side, p.slot)}.abilities`],
+    run: (gs, side, p) => gs.removeAbility(side, pickSlot(p.slot), integer(p.index, 'index', 0, 3)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)}: removed an ability token`
+  },
+  resetAbilities: {
+    targets: () => null,
+    run: (gs, side, p) => gs.resetAbilities(side, { includeGame: p.includeGame === true }),
+    label: (gs, side) => `${who(gs, side)}: abilities ready again`
+  },
+
+  // Switch a benched Pokémon with the active one
+  swapWithActive: {
+    sfx: () => 'deploy',
+    targets: (side, p) => [`${side}.active`, `${side}.bench.${p.slot}`],
+    run: (gs, side, p, out, ctx) => {
+      const slot = benchSlot(p.slot);
+      const benched = gs.pokemonAt(side, slot);
+      if (!benched || !(benched.cardId || benched.name)) throw new ActionError('no Pokémon in that bench slot');
+      ctx.name = benched.name;
+      gs.swapWithActive(side, slot);
+    },
+    label: (gs, side, p, ctx) => `${who(gs, side)} switched in ${ctx.name || 'a Pokémon'}`
+  },
+
+  // A Pokémon is knocked out: announce it, take it off the table and let the opponent take prizes
+  knockOut: {
+    sfx: () => 'ko',
+    targets: (side, p) => [slotKey(side, p.slot), `${opponent(side)}.prizes`],
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const prizes = p.prizes === undefined ? 1 : integer(p.prizes, 'prizes', 0, 6);
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+
+      ctx.name = pokemon.name || 'Pokémon';
+      ctx.prizes = prizes;
+      gs.knockOut(side, slot, { prizesTaken: prizes, clear: p.clear !== false });
+      const a = announcements.build(gs.state, 'ko', { side, isOOC: slot !== -1, slot });
+      if (a) out.push(a);
+    },
+    label: (gs, side, p, ctx) =>
+      `${ctx.name} knocked out (${who(gs, opponent(side))} takes ${ctx.prizes} prize${ctx.prizes === 1 ? '' : 's'})`
+  },
+
+  // Positive amounts are damage, negative amounts heal
+  activeDamage: {
+    sfx: (side, p) => (Number(p.amount) < 0 ? 'heal' : 'damage'),
+    targets: (side) => [`${side}.active.hp`],
+    run: (gs, side, p) => gs.damage(side, -1, amount(p.amount)),
+    label: (gs, side, p) => `${slotName(gs, side, -1)} ${Number(p.amount) >= 0 ? 'took' : 'healed'} ${Math.abs(Number(p.amount))}`
+  },
+  benchDamage: {
+    sfx: (side, p) => (Number(p.amount) < 0 ? 'heal' : 'damage'),
+    targets: (side, p) => [`${side}.bench.${p.slot}.hp`],
+    run: (gs, side, p) => gs.damage(side, benchSlot(p.slot), amount(p.amount)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} ${Number(p.amount) >= 0 ? 'took' : 'healed'} ${Math.abs(Number(p.amount))}`
+  },
+  activeHeal: {
+    sfx: () => 'heal',
+    targets: (side) => [`${side}.active.hp`],
+    run: (gs, side) => gs.healFull(side, -1),
+    label: (gs, side) => `${slotName(gs, side, -1)} fully healed`
+  },
+  benchHeal: {
+    sfx: () => 'heal',
+    targets: (side, p) => [`${side}.bench.${p.slot}.hp`],
+    run: (gs, side, p) => gs.healFull(side, benchSlot(p.slot)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} fully healed`
+  },
+  setHP: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setHP(side, pickSlot(p.slot), integer(p.current, 'current', 0, 9999)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} HP set to ${gs.pokemonAt(side, Number(p.slot)).hp.current}`
+  },
+  setMaxHP: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setMaxHP(side, pickSlot(p.slot), integer(p.max, 'max', 0, 9999)),
+    label: (gs, side, p) => `${slotName(gs, side, p.slot)} max HP set to ${gs.pokemonAt(side, Number(p.slot)).hp.max}`
+  },
+
+  setActive: {
+    sfx: () => 'deploy',
+    targets: (side) => [`${side}.active`],
+    run: (gs, side, p) => gs.setPokemon(side, -1, pokemonFields(p)),
+    label: (gs, side) => `${who(gs, side)} active → ${slotName(gs, side, -1)}`
+  },
+  setBench: {
+    sfx: () => 'bench',
+    targets: (side, p) => [`${side}.bench.${p.slot}`],
+    run: (gs, side, p) => gs.setPokemon(side, benchSlot(p.slot), pokemonFields(p)),
+    label: (gs, side, p) => `${who(gs, side)} bench ${Number(p.slot) + 1} → ${slotName(gs, side, p.slot)}`
+  },
+  clearSlot: {
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p) => gs.clearSlot(side, pickSlot(p.slot)),
+    label: (gs, side, p) => `${who(gs, side)} cleared ${Number(p.slot) === -1 ? 'active' : `bench ${Number(p.slot) + 1}`}`
+  },
+  benchSizePlus: {
+    targets: (side) => [`${side}.benchSize`],
+    run: (gs, side) => gs.adjustBenchSize(side, 1),
+    label: (gs, side) => `${who(gs, side)} bench size ${gs.state[side].benchSize}`
+  },
+  benchSizeMinus: {
+    targets: (side) => [`${side}.benchSize`],
+    run: (gs, side) => gs.adjustBenchSize(side, -1),
+    label: (gs, side) => `${who(gs, side)} bench size ${gs.state[side].benchSize}`
+  }
+};
+
+// ---------------------------------------------------------------------- match
+
+function matchWinAction(side, direction) {
+  return {
+    sfx: () => (direction > 0 ? 'point' : null),
+    targets: () => ['score'],
+    run: (gs) => (direction > 0 ? gs.matchWin(side) : gs.matchWinMinus(side)),
+    label: (gs) => {
+      const { trainerAWins, trainerBWins } = gs.state.matchScore;
+      return `Score ${trainerAWins}–${trainerBWins}`;
+    }
+  };
+}
+
+const MATCH = {
+  toggleTurn: {
+    sfx: () => 'turn',
+    targets: () => ['turn'],
+    run: (gs, side, p, announce) => {
+      gs.toggleTurn();
+      const a = announcements.build(gs.state, 'passturn');
+      if (a) announce.push(a);
+    },
+    label: (gs) => `Turn → ${who(gs, gs.state.trainerA.isTurn ? 'trainerA' : 'trainerB')}`
+  },
+  startGame: {
+    targets: () => ['game', 'score', 'trainerA.prizes', 'trainerB.prizes'],
+    run: (gs) => gs.startGame(),
+    label: () => 'Game started'
+  },
+  endGame: {
+    targets: () => ['game'],
+    run: (gs, side, p) => {
+      const winner = p.winner;
+      if (winner !== 'trainerA' && winner !== 'trainerB') throw new ActionError('winner must be trainerA or trainerB');
+      gs.endGame(winner);
+    },
+    label: (gs, side, p) => `Game ended, ${who(gs, p.winner)} won`
+  },
+  trainerAMatchWin: matchWinAction('trainerA', 1),
+  trainerAMatchWinPlus: matchWinAction('trainerA', 1),
+  trainerBMatchWin: matchWinAction('trainerB', 1),
+  trainerBMatchWinPlus: matchWinAction('trainerB', 1),
+  trainerAMatchWinMinus: matchWinAction('trainerA', -1),
+  trainerBMatchWinMinus: matchWinAction('trainerB', -1),
+  resetMatchScore: {
+    targets: () => null,
+    run: (gs) => gs.resetMatchScore(),
+    label: () => 'Score reset'
+  },
+  setRoundLabel: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setRoundLabel(text(p.text ?? '', 'text', 40)),
+    label: (gs) => (gs.state.matchInfo.round ? `Round label → ${gs.state.matchInfo.round}` : 'Round label cleared')
+  },
+  setBestOf: {
+    targets: () => null,
+    run: (gs, side, p) => {
+      const bestOf = integer(p.bestOf, 'bestOf', 1, 5);
+      if (bestOf % 2 === 0) throw new ActionError('bestOf must be 1, 3 or 5');
+      gs.setBestOf(bestOf);
+    },
+    label: (gs) => `Best of ${gs.state.matchScore.bestOf}`
+  },
+  resetGamePrizes: {
+    targets: () => null,
+    run: (gs) => {
+      gs.setPrizes('trainerA', 6);
+      gs.setPrizes('trainerB', 6);
+    },
+    label: () => 'Prizes reset for both trainers'
+  }
+};
+
+// ----------------------------------------------------------- announcements
+
+const ANNOUNCEMENT_SOUND = { topdeck: 'topdeck', attack: 'attack', startgame: 'startgame', win: 'win', passturn: 'turn', ko: 'ko' };
+
+function announce(action, type, describe, paramsFrom = () => ({})) {
+  return {
+    sfx: () => ANNOUNCEMENT_SOUND[type],
+    targets: () => [`announce.${action}`],
+    run: (gs, side, p, out) => {
+      const a = announcements.build(gs.state, type, paramsFrom(p));
+      if (a) out.push(a);
+    },
+    label: describe
+  };
+}
+
+const TOAST = {
+  topDeck: announce('topDeck', 'topdeck', () => 'Top Deck announcement', (p) => ({ target: p.target })),
+  attack: announce('attack', 'attack', () => 'Attack announcement', (p) => ({
+    attackName: p.attackName === undefined ? undefined : text(p.attackName, 'attackName', 60),
+    damage: p.damage === undefined ? 0 : integer(p.damage, 'damage', 0, 9999)
+  })),
+  startGame: announce('startGame', 'startgame', () => 'Game start announcement'),
+  trainerAWin: announce('trainerAWin', 'win', () => 'Trainer A victory announcement', () => ({ side: 'trainerA' })),
+  trainerBWin: announce('trainerBWin', 'win', () => 'Trainer B victory announcement', () => ({ side: 'trainerB' })),
+  passTurn: announce('passTurn', 'passturn', () => 'Pass Turn announcement'),
+  trainerAKO: announce('trainerAKO', 'ko', () => 'Trainer A KO announcement', (p) => ({ side: 'trainerA', isOOC: Boolean(p.isOOC), slot: p.slot })),
+  trainerBKO: announce('trainerBKO', 'ko', () => 'Trainer B KO announcement', (p) => ({ side: 'trainerB', isOOC: Boolean(p.isOOC), slot: p.slot }))
+};
+
+// ---------------------------------------------------------------------- cards
+
+const CARD_TARGET = /^(trainer[AB])-(active|bench-(\d))$/;
+
+function cardTargetKey(target) {
+  if (target === 'stadium') return 'stadium';
+  const match = CARD_TARGET.exec(String(target));
+  if (!match) return null;
+  return match[2] === 'active' ? `${match[1]}.active` : `${match[1]}.bench.${match[3]}`;
+}
+
+// The card data the server resolved (or the control panel supplied), reduced to what we use
+function cleanCard(data) {
+  if (!data || typeof data !== 'object') throw new ActionError('card data is missing');
+  const images = {};
+  for (const size of ['small', 'medium', 'large']) {
+    const url = imageUrl(data.images && data.images[size], `${size} image`);
+    if (url) images[size] = url;
+  }
+  return {
+    id: text(data.id ?? '', 'card id', 64),
+    name: text(data.name ?? '', 'card name', 80),
+    hp: data.hp === undefined || data.hp === null ? '' : String(data.hp).slice(0, 6),
+    abilities: abilityNames(data.abilities),
+    images
+  };
+}
+
+const CARD = {
+  select: {
+    sfx: (side, p) => (p.target === 'stadium' ? 'stadium' : /-active$/.test(String(p.target)) ? 'deploy' : 'bench'),
+    targets: (side, p) => {
+      const key = cardTargetKey(p.target);
+      return key ? [key] : null;
+    },
+    run: (gs, side, p) => {
+      if (p.target !== 'stadium' && !CARD_TARGET.test(String(p.target))) throw new ActionError('invalid card target');
+      gs.selectCard(p.target, cleanCard(p.cardData), { keep: p.evolve === true });
+    },
+    label: (gs, side, p) => `${p.target === 'stadium' ? 'Stadium' : p.target.replace('-', ' ').replace('-', ' ')} → ${p.cardData && p.cardData.name}`
+  },
+  setStadium: {
+    sfx: (side, p) => (p.cardId || p.name ? 'stadium' : null),
+    targets: () => ['stadium'],
+    run: (gs, side, p) => gs.setStadium(text(p.cardId ?? '', 'cardId', 64), text(p.name ?? '', 'name', 80), imageUrl(p.image, 'image')),
+    label: (gs) => (gs.state.stadium.inPlay ? `Stadium → ${gs.state.stadium.name}` : 'Stadium cleared')
+  },
+  favorite: {
+    targets: (side, p) => [`favorite.${p.cardId}`],
+    run: (gs, side, p) => gs.toggleFavorite(text(p.cardId, 'cardId', 64)),
+    label: (gs, side, p) => `Favorite toggled (${p.cardId})`
+  },
+  addFeatureCard: {
+    targets: () => ['featureCards'],
+    run: (gs, side, p) => gs.addFeatureCard({
+      cardId: text(p.cardId ?? '', 'cardId', 64),
+      name: text(p.name ?? '', 'name', 80),
+      image: imageUrl(p.image, 'image'),
+      note: text(p.note ?? '', 'note', 200)
+    }),
+    label: (gs, side, p) => `Feature card added: ${p.name}`
+  },
+  removeFeatureCard: {
+    targets: () => ['featureCards'],
+    run: (gs, side, p) => gs.removeFeatureCard({
+      id: p.id === undefined ? undefined : text(p.id, 'id', 64),
+      index: p.id === undefined ? integer(p.index, 'index', 0, 99) : undefined
+    }),
+    label: () => 'Feature card removed'
+  },
+  clearFeatureCards: {
+    targets: () => ['featureCards'],
+    run: (gs) => gs.clearFeatureCards(),
+    label: () => 'Feature cards cleared'
+  }
+};
+
+// ------------------------------------------------------------------- settings
+
+const SETTINGS = {
+  import: {
+    targets: () => ['*'],
+    run: (gs, side, p) => {
+      if (!p.config || typeof p.config !== 'object' || Array.isArray(p.config)) throw new ActionError('config must be an object');
+      gs.importState(p.config);
+    },
+    label: () => 'Configuration imported'
+  },
+  save: {
+    silent: true,
+    targets: () => null,
+    run: (gs) => gs.autosave(),
+    label: () => 'Saved'
+  }
+};
+
+// Any other settings message is a settings change: the fields besides `action` and `meta` are the new values
+const SETTINGS_UPDATE = {
+  targets: () => null,
+  run: (gs, side, p) => {
+    const { action, meta, ...patch } = p;
+    gs.updateSettings(patch);
+  },
+  label: (gs, side, p) => ('display' in p ? 'Overlay visibility changed' : 'Settings changed')
+};
+
+const RESET = {
+  run: (gs) => gs.fullReset(),
+  targets: () => ['*'],
+  label: () => 'Everything reset'
+};
+
+// ----------------------------------------------------------------- public API
+
+// Look up the handler for a socket event + payload. Returns null for anything unknown or invalid.
+function resolve(event, payload) {
+  if (!payload || typeof payload !== 'object' || typeof payload.action !== 'string') return null;
+  const { action } = payload;
+
+  let spec = null;
+  let side = null;
+
+  switch (event) {
+    case 'action:trainerA':
+    case 'action:trainerB':
+      side = event.slice('action:'.length);
+      spec = Object.hasOwn(TRAINER, action) ? TRAINER[action] : null;
+      break;
+    case 'action:match':
+      spec = Object.hasOwn(MATCH, action) ? MATCH[action] : null;
+      break;
+    case 'action:toast':
+      spec = Object.hasOwn(TOAST, action) ? TOAST[action] : null;
+      break;
+    case 'action:card':
+      spec = Object.hasOwn(CARD, action) ? CARD[action] : null;
+      break;
+    case 'action:settings':
+      spec = Object.hasOwn(SETTINGS, action) ? SETTINGS[action] : SETTINGS_UPDATE;
+      break;
+    case 'action:reset':
+      spec = payload.confirm === 'FULL_RESET' ? RESET : null;
+      break;
+    default:
+      return null;
+  }
+  if (!spec) return null;
+
+  const ctx = {};
+  return {
+    event,
+    action,
+    side,
+    silent: Boolean(spec.silent),
+    // Parts of the game this touches, or null for "last writer wins" changes
+    targets: () => (spec.targets ? spec.targets(side, payload) : null),
+    // Applies the action to `gs` and returns the announcements it triggers
+    run(gs) {
+      const out = [];
+      spec.run(gs, side, payload, out, ctx);
+      return out;
+    },
+    // Human-readable description, to be called after run()
+    label: (gs) => spec.label(gs, side, payload, ctx),
+    // The sound cues this action makes, to be called after run(). Independent of the visual announcements.
+    cues: () => (spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : [])
+  };
+}
+
+// Fetch whatever an action needs from the network before it is applied (kept out of the
+// synchronous apply step so a slow card API never delays other producers)
+const DETAILS_TIMEOUT_MS = 2500;
+
+async function prepare(gs, event, payload) {
+  if (event !== 'action:card' || payload.action !== 'select' || typeof payload.cardId !== 'string') return payload;
+
+  const supplied = payload.cardData && typeof payload.cardData === 'object' ? payload.cardData : null;
+  // A Pokémon's abilities are not in search results, so look the card up (cached after the first time)
+  if (supplied && (supplied.abilities !== undefined || payload.target === 'stadium')) return payload;
+
+  const details = await Promise.race([
+    gs.pokemonTCG.getCard(payload.cardId).catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), DETAILS_TIMEOUT_MS).unref())
+  ]);
+  if (!details) return payload;
+  return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities } : details };
+}
+
+module.exports = { resolve, prepare, ActionError, SIDE_LABEL };

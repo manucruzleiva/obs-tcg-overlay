@@ -1,0 +1,69 @@
+/*
+ * OTO design tokens: the colors, type and shape shared by the control panel, the overlay and the
+ * sign-in page. Themes change the overlay by overriding these variables, so everything visual
+ * should come from here instead of being hard-coded.
+ *
+ * The names below are the ones a theme may set (see src/services/themes.js).
+ */
+
+:root {
+  /* Surfaces */
+  --bg-primary: #0a0d14;
+  --bg-secondary: #111723;
+  --bg-tertiary: #1a2233;
+  --bg-panel: rgba(10, 14, 24, 0.82);
+  --bg-card: rgba(18, 24, 38, 0.94);
+
+  /* Text */
+  --fg-primary: #f3f6fc;
+  --fg-secondary: #aab5cb;
+  --fg-muted: #6b7790;
+
+  /* Brand and the two sides of the table */
+  --accent: #7c8cff;
+  --accent-hover: #98a5ff;
+  --trainer-a: #38bdf8;
+  --trainer-b: #fb7185;
+
+  /* Status */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  /* Lines, depth and shape */
+  --border: rgba(255, 255, 255, 0.14);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --transition: 0.18s ease;
+
+  /* Type */
+  --font-display: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+
+  /* Energy colors (the overlay can replace these with an uploaded icon strip) */
+  --energy-grass: #4caf50;
+  --energy-fire: #f4511e;
+  --energy-water: #29b6f6;
+  --energy-lightning: #fdd835;
+  --energy-psychic: #ab47bc;
+  --energy-fighting: #a1672f;
+  --energy-darkness: #455a64;
+  --energy-metal: #90a4ae;
+  --energy-dragon: #c9a227;
+  --energy-fairy: #f48fb1;
+  --energy-colorless: #e0e0e0;
+
+  /* Theme images (set by a theme; "none" means the built-in look) */
+  --cardBackImage: none;
+  --backgroundImage: none;
+  --trainerAAvatar: none;
+  --trainerBAvatar: none;
+  --logoImage: none;
+  --prizeCardBack: none;
+  --energySymbols: none;
+
+  color-scheme: dark;
+}

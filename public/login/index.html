@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTO · Sign in</title>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/login.css">
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <img class="brand-logo" src="/logo.gif" alt="">
+      <div>
+        <div class="brand-name">OTO</div>
+        <div class="brand-sub">OBS TCG Overlay</div>
+      </div>
+    </div>
+
+    <h1>Producer control panel</h1>
+    <p class="hint">Enter the password to open the control panel.</p>
+
+    <form id="form" autocomplete="off">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autofocus required maxlength="128">
+      <p id="error" class="error" role="alert" hidden></p>
+      <button id="submit" type="submit">Open control panel</button>
+    </form>
+
+    <p class="foot">The overlay for OBS does not need a password.</p>
+  </main>
+
+  <script src="/js/login.js"></script>
+</body>
+</html>
