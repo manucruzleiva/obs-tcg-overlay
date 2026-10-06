@@ -214,6 +214,8 @@ describe('settings', { skip }, () => {
       const option = (key) => dialog.locator(`select[data-option="${key}"]`);
       assert.match(await option('scoreboard').locator('option').first().textContent(), /Same as the main overlay \(shown\)/);
       await option('scoreboard').selectOption('hide');
+      // (one change at a time, as a person makes them: the next one starts from what the page knows after the first)
+      await page.waitForFunction(() => window.oto.conn.live.settings.screens[0].display.scoreboard === false);
       await option('hpBars').selectOption('show');
       await page.waitForFunction(async () => Object.keys((await (await fetch('/api/state')).json()).settings.screens[0].display).length === 2);
       assert.deepEqual((await screensNow())[0].display, { scoreboard: false, hpBars: true });

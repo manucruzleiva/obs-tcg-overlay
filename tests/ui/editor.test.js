@@ -581,6 +581,11 @@ describe('design editor', { skip }, () => {
         await prize().selectOption('english');
         await drawn();
         await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-english'));
+        // (they fade with a transition: wait for it to be over, a slow machine can look at it half way)
+        await page.waitForFunction(() => {
+          const node = document.querySelector('iframe[src*="editor=1"]').contentDocument.querySelector('.trainer-a .prize.taken');
+          return node && Number(getComputedStyle(node).opacity) < 0.3;
+        });
         const taken = await overlayFrame().evaluate(() => {
           const node = document.querySelector('.trainer-a .prize.taken');
           const style = node && getComputedStyle(node);
@@ -753,6 +758,12 @@ describe('design editor', { skip }, () => {
       await page.mouse.up();
       const moved = (await crop()).active;
       assert.ok(Math.abs(moved.x - 0.15) < 0.01 && Math.abs(moved.y - 0.65) < 0.01 && Math.abs(moved.w - rect.w) < 0.001 && Math.abs(moved.h - rect.h) < 0.001, JSON.stringify(moved));
+      // (the handles are drawn again at the new place a moment after: a slow machine can grab one where it was)
+      const handleNear = (selector, fx, fy) => page.waitForFunction(({ selector, x, y }) => {
+        const box = document.querySelector(selector).getBoundingClientRect();
+        return Math.abs(box.x + box.width / 2 - x) < 30 && Math.abs(box.y + box.height / 2 - y) < 30;
+      }, { selector, ...at(fx, fy) });
+      await handleNear('.crop-handle.se', moved.x + moved.w, moved.y + moved.h);
 
       // resize it by a corner, then by an edge; it never leaves the card or gets smaller than 5%
       const corner = await page.locator('.crop-handle.se').boundingBox();
@@ -762,6 +773,7 @@ describe('design editor', { skip }, () => {
       await page.mouse.up();
       rect = (await crop()).active;
       assert.ok(Math.abs(rect.x + rect.w - 1) < 0.002 && Math.abs(rect.y + rect.h - 1) < 0.002, `stopped at the edge of the card: ${JSON.stringify(rect)}`);
+      await handleNear('.crop-handle.w', rect.x, rect.y + rect.h / 2);
       const edge = await page.locator('.crop-handle.w').boundingBox();
       await page.mouse.move(edge.x + 6, edge.y + 6);
       await page.mouse.down();
@@ -1480,6 +1492,7 @@ describe('design editor', { skip }, () => {
       await tab().click();
       await row('names').locator('input').fill('');
       assert.deepEqual(await draftFamilies(), { numbers: 'Georgia' });
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names') === '');
       assert.equal(await frameVar('--font-names'), '');
     });
 
