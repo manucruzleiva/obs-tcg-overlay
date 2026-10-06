@@ -352,7 +352,7 @@ describe('the package service', () => {
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
-      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null, prizeLayout: null, orientation: null, spaces: 0 });
+      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], fonts: [], fontFamilies: [], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null, prizeLayout: null, orientation: null, spaces: 0 });
       assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)'], 'the markers that are off to begin with are not "hidden"');
       assert.deepEqual(info.controls.revealed, []);
       assert.equal(info.controls.toastSeconds, 6);
@@ -437,6 +437,26 @@ describe('the package service', () => {
       const usual = service.install(zip({ 'design.json': { name: 'Usual Screen', orientation: 'landscape', spaces: [] } }));
       assert.equal('orientation' in themes.get(usual.design.name), false, 'the usual screen is not written down');
       assert.equal('spaces' in themes.get(usual.design.name), false);
+    });
+
+    it('brings the fonts of a design: the main one, one for each group of text, and the fonts to use, and ignores a font no group has', () => {
+      themes.setFontRole('Store League', 'names', S.WOFF2);
+      themes.setFontRole('Store League', 'banners', S.WOFF2);
+      themes.save('Store League', { fontFamilies: { numbers: 'Impact, sans-serif' } });
+      const info = service.inspect(exported({ design: 'Store League' }));
+      assert.deepEqual(info.design.fonts.sort(), ['banners', 'names']);
+      assert.deepEqual(info.design.fontFamilies, ['numbers']);
+
+      const result = service.install(exported({ design: 'Store League' }));
+      const installed = themes.get(result.design.name);
+      assert.deepEqual(Object.keys(installed.fonts).sort(), ['banners', 'names']);
+      assert.deepEqual(installed.fontFamilies, { numbers: 'Impact, sans-serif' });
+      assert.ok(fs.existsSync(path.join(themes.folderFor(installed.name), installed.fonts.names)));
+
+      // made by hand: a font by the name of its group is found, one for a group that does not exist is reported as not used
+      const odd = service.inspect(zip({ 'design.json': { name: 'By Hand' }, 'fonts/labels.woff2': S.WOFF2, 'fonts/mystery.woff2': S.WOFF2 }));
+      assert.deepEqual(odd.design.fonts, ['labels']);
+      assert.ok(odd.ignored.includes('fonts/mystery.woff2'));
     });
 
     it('can replace the design that has the same name', () => {

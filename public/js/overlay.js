@@ -319,7 +319,8 @@
       this.layoutNodes = []; // the pieces a design has moved
       this.stageSize = { width: STAGE_WIDTH, height: STAGE_HEIGHT }; // a mobile design has a tall one
       this.portrait = false;
-      this.themeFont = null;
+      this.themeFonts = []; // the fonts of the design that is on (see applyTheme)
+      this.themeGeneration = 0;
       this.toastTimers = {};
       this.effectNodes = [];
 
@@ -910,10 +911,9 @@
       });
       this.layoutNodes = [];
 
-      if (this.themeFont) {
-        document.fonts.delete(this.themeFont);
-        this.themeFont = null;
-      }
+      this.themeFonts.forEach((face) => document.fonts.delete(face));
+      this.themeFonts = [];
+      const generation = ++this.themeGeneration; // (a font that arrives after the design has changed again is not for this page any more)
 
       // the screen (wide, or a tall one for a phone) and the reserved spaces
       this.setScreen(theme && theme.orientation);
@@ -977,14 +977,32 @@
       if (images.statusSymbols) root.classList.add('has-status-sprite');
       if (images.backgroundImage) root.classList.add('has-backdrop');
 
-      if (theme.font) {
-        const face = new window.FontFace('OTO Theme', cssUrl(theme.font));
+      // Fonts: the main one and one for each group of text. A group can have a font file in the design and/or a list of fonts (a CSS font-family)
+      // to use; what a group does not have is the main font's (and the main font falls back on the font of the page).
+      const files = Object.assign({}, theme.fonts, theme.font ? { display: theme.font } : {});
+      const families = theme.fontFamilies || {};
+      THEME.FONT_ROLES.forEach((role) => {
+        const file = files[role.key];
+        const listed = typeof families[role.key] === 'string' ? families[role.key] : '';
+        if (!file && !listed) return;
+        const fallback = role.key === 'display' ? 'var(--font-body)' : role.key === 'text' || role.key === 'subtitles' ? 'system-ui, sans-serif' : 'var(--font-display)';
+        const stack = (face) => [face, listed, fallback].filter(Boolean).join(', ');
+        if (!file) {
+          set(role.variable, stack(''));
+          return;
+        }
+        const family = role.key === 'display' ? 'OTO Theme' : `OTO Theme ${role.key}`;
+        const face = new window.FontFace(family, cssUrl(file));
         face.load().then(() => {
+          if (generation !== this.themeGeneration) return;
           document.fonts.add(face);
-          this.themeFont = face;
-          set('--font-display', '"OTO Theme", var(--font-body)');
-        }).catch(() => { /* a font that fails to load leaves the built-in one */ });
-      }
+          this.themeFonts.push(face);
+          set(role.variable, stack(`"${family}"`));
+        }).catch(() => {
+          // a font that fails to load leaves the list of fonts that was named, or the built-in one
+          if (generation === this.themeGeneration && listed) set(role.variable, stack(''));
+        });
+      });
     }
   }
 

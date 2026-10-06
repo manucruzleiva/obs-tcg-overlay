@@ -7,6 +7,7 @@
 import { h, icon } from './dom.js';
 import { openModal, closeModal, confirmDialog, pickFile } from './ui.js';
 import { SpacesPanel } from './editor-spaces.js';
+import { FontsPanel } from './editor-fonts.js';
 import { EditorModel } from './editor-model.js';
 import { EditorCanvas } from './editor-canvas.js';
 import { CropSelector } from './editor-crop.js';
@@ -216,6 +217,33 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   };
   const spaces = new SpacesPanel({ model, canvas, frameUrl, upload: uploadFrame, removePicture: removeFrame });
 
+  // The font files of the groups of text go up the moment they are chosen too (the main font is the design's "font")
+  const fontRoute = (role) => `/api/themes/${encodeURIComponent(model.name)}/${role === 'display' ? 'font' : `fonts/${role}`}`;
+  const uploadFont = async (role) => {
+    const file = await pickFile('.woff2,.woff,.ttf,.otf,font/*');
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) { app.toast('That font file is larger than 4.5 MB.', 'warning'); return; }
+    try {
+      const response = await fetch(fontRoute(role), { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'The font could not be saved');
+      model.setFiles(data);
+    } catch (error) {
+      app.toast(error.message, 'error');
+    }
+  };
+  const removeFont = async (role) => {
+    try {
+      const response = await fetch(fontRoute(role), { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'The font could not be taken off');
+      model.setFiles(data);
+    } catch (error) {
+      app.toast(error.message, 'error');
+    }
+  };
+  const fonts = new FontsPanel({ model, fileOf: (role) => model.fontFileOf(role), upload: uploadFont, removeFile: removeFont });
+
   // ---- the toolbar above the canvas
   const iconButton = (label, glyph, onclick) => h('button', { class: 'icon-btn', type: 'button', title: label, 'aria-label': label, onclick }, icon(glyph));
   toolbar.undo = iconButton('Undo (Ctrl+Z)', 'undo', () => model.undo());
@@ -260,8 +288,8 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));
 
   // ---- the side panel
-  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, spaces: spaces.element, code: code.element };
-  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['spaces', 'Spaces'], ['code', 'Code']];
+  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, spaces: spaces.element, fonts: fonts.element, code: code.element };
+  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['spaces', 'Spaces'], ['fonts', 'Fonts'], ['code', 'Code']];
   const tabButtons = new Map();
   const sideBody = h('div', { class: 'editor-side-body' });
   let current = 'layout';
@@ -306,7 +334,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     try {
       const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle, prizeLayout: model.draft.prizeLayout, orientation: model.draft.orientation, spaces: model.draft.spaces })
+        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle, prizeLayout: model.draft.prizeLayout, orientation: model.draft.orientation, spaces: model.draft.spaces, fontFamilies: model.draft.fontFamilies })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The design could not be saved');
@@ -329,6 +357,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     if (change.kind !== 'saved') canvas.redesign();
     layout.refresh();
     spaces.refresh();
+    fonts.refresh();
     if (document.activeElement !== screen) screen.value = model.orientationOf();
     refreshStatus();
   });

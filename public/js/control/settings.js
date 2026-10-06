@@ -267,7 +267,7 @@ function themesTab(app) {
     pending = false;
     status.textContent = 'Saving…';
     try {
-      await json('PUT', here(''), { colors: theme.colors, author: theme.author || '', description: theme.description || '' });
+      await json('PUT', here(''), { colors: theme.colors, author: theme.author || '', description: theme.description || '', fontFamilies: theme.fontFamilies || {} });
       if (!pending) status.textContent = savedText();
     } catch (error) {
       status.textContent = '';
@@ -282,7 +282,7 @@ function themesTab(app) {
     status.textContent = 'Saving…';
     try {
       const saved = await work();
-      theme = { ...saved, colors: theme.colors, author: theme.author, description: theme.description };
+      theme = { ...saved, colors: theme.colors, author: theme.author, description: theme.description, fontFamilies: theme.fontFamilies };
       status.textContent = pending ? 'Unsaved changes…' : savedText();
       draw();
     } catch (error) {
@@ -322,9 +322,9 @@ function themesTab(app) {
           ref && h('button', { class: 'btn tiny', type: 'button', onclick: () => change(() => json('DELETE', here(`/images/${image.key}`))) }, icon('trash', 14), 'Remove'))));
   };
 
-  const fontRow = () => h('div', { class: 'image-row' },
+  const fontRow = () => h('div', { class: 'image-row', dataset: { role: 'display' } },
     h('div', { class: 'image-preview font-sample' }, theme.font ? h('span', {}, 'Aa') : h('span', { class: 'muted' }, 'None')),
-    h('div', { class: 'image-info' }, h('strong', {}, 'Font'), h('small', {}, 'Used for names, numbers and announcements (WOFF2, WOFF, TTF or OTF)'),
+    h('div', { class: 'image-info' }, h('strong', {}, 'Main font'), h('small', {}, 'Used for names, numbers and announcements (WOFF2, WOFF, TTF or OTF). A font for each kind of text is in the editor, on the Fonts tab.'),
       h('div', { class: 'button-row' },
         h('button', { class: 'btn tiny', type: 'button', onclick: async () => {
           const file = await pickFile('.woff2,.woff,.ttf,.otf,font/*');
@@ -365,7 +365,8 @@ function themesTab(app) {
       names.map((name) => h('button', { class: `theme-item${name === selected ? ' on' : ''}${name === active ? ' live' : ''}`, type: 'button', onclick: () => refresh(name) },
         h('strong', {}, name), name === active && h('span', { class: 'live-tag' }, 'On the overlay'))),
       h('div', { class: 'button-row' },
-        h('button', { class: 'btn', type: 'button', onclick: newTheme }, icon('plus', 16), 'New'),
+        h('button', { class: 'btn', type: 'button', onclick: () => newTheme() }, icon('plus', 16), 'New'),
+        h('button', { class: 'btn', type: 'button', title: 'A design with every color of the built-in look written out, to learn from and change', onclick: () => newTheme({ fromBuiltIn: true }) }, icon('layout', 16), 'Copy of the built-in look'),
         h('button', { class: 'btn', type: 'button', onclick: importPackage }, icon('upload', 16), 'Install a .oto')));
 
     const editor = theme
@@ -396,12 +397,13 @@ function themesTab(app) {
   // The editor for a design opens over the settings; when it closes after saving, the design is read again
   const openEditor = (designName) => openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
 
-  const newTheme = async () => {
+  // A new design: an empty one, or (`fromBuiltIn`) a copy of the built-in look, with every color and the fonts written out so they can be changed
+  const newTheme = async ({ fromBuiltIn = false } = {}) => {
     // The list of designs may still be on its way, or have changed: ask again, so a name that is taken is never reused
     try { names = (await json('GET', '/api/themes')).names; } catch (error) { /* the check below uses the list it has */ }
     const name = await promptDialog({
-      title: 'Create a design', label: 'Name of the design', placeholder: 'Store League', confirmLabel: 'Create', maxLength: 40,
-      message: 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
+      title: fromBuiltIn ? 'Copy of the built-in look' : 'Create a design', label: 'Name of the design', placeholder: fromBuiltIn ? 'My copy' : 'Store League', confirmLabel: 'Create', maxLength: 40,
+      message: fromBuiltIn ? 'Every color of the built-in look is written into the new design, so you can see how it is made and change what you like.' : 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
       check: (value) => {
         if (value && !/[a-z0-9]/i.test(value)) return 'A name needs at least one letter or digit';
         return names.some((existing) => existing.toLowerCase() === value.toLowerCase()) ? 'You already have a design with that name' : '';
@@ -409,7 +411,14 @@ function themesTab(app) {
     });
     if (!name) return;
     try {
-      const saved = await json('PUT', `/api/themes/${encodeURIComponent(name)}`, { colors: {} });
+      const body = fromBuiltIn
+        ? {
+          colors: Object.fromEntries(THEME.COLORS.map((color) => [color.key, defaultOf(color.key)]).filter(([, value]) => value)),
+          fontFamilies: { display: defaultOf('--font-display'), text: defaultOf('--font-body') },
+          description: 'A copy of the built-in look'
+        }
+        : { colors: {} };
+      const saved = await json('PUT', `/api/themes/${encodeURIComponent(name)}`, body);
       await refresh(saved.name);
       openEditor(saved.name);
     } catch (error) { app.toast(error.message, 'error'); }

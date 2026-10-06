@@ -1,0 +1,88 @@
+{
+  "name": "Built-in look",
+  "author": "OTO",
+  "description": "The built-in look of the overlay, written out: change what you like and delete what you do not need. Everything is optional.",
+  "colors": {
+    "--accent": "#7c8cff",
+    "--accent-hover": "#98a5ff",
+    "--trainer-a": "#38bdf8",
+    "--trainer-b": "#fb7185",
+    "--bg-panel": "rgba(10, 14, 24, 0.82)",
+    "--bg-card": "rgba(18, 24, 38, 0.94)",
+    "--bg-primary": "#0a0d14",
+    "--bg-secondary": "#111723",
+    "--bg-tertiary": "#1a2233",
+    "--fg-primary": "#f3f6fc",
+    "--fg-secondary": "#aab5cb",
+    "--fg-muted": "#6b7790",
+    "--success": "#34d399",
+    "--warning": "#fbbf24",
+    "--danger": "#f87171",
+    "--info": "#60a5fa",
+    "--border": "rgba(255, 255, 255, 0.14)",
+    "--shadow": "rgba(0, 0, 0, 0.55)",
+    "--radius": "14px",
+    "--radius-sm": "8px",
+    "--transition": "0.18s ease"
+  },
+  "fontFamilies": {
+    "display": "\"Bahnschrift\", \"Segoe UI Variable Display\", \"Segoe UI\", system-ui, -apple-system, \"Helvetica Neue\", Arial, sans-serif",
+    "text": "\"Segoe UI Variable Text\", \"Segoe UI\", system-ui, -apple-system, \"Helvetica Neue\", Arial, sans-serif"
+  },
+  "layout": {
+    "scoreboard": {
+      "x": 0,
+      "y": 0,
+      "scale": 1
+    }
+  },
+  "crop": {
+    "active": {
+      "x": 0.07,
+      "y": 0.115,
+      "w": 0.86,
+      "h": 0.385
+    },
+    "bench": {
+      "x": 0.07,
+      "y": 0.115,
+      "w": 0.86,
+      "h": 0.385
+    },
+    "stadium": {
+      "x": 0.082,
+      "y": 0.145,
+      "w": 0.836,
+      "h": 0.37
+    },
+    "prize": {
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    "energy": {
+      "x": 0.144,
+      "y": 0.136,
+      "w": 0.713,
+      "h": 0.512
+    }
+  },
+  "tile": {
+    "active": {
+      "hp": "top",
+      "energy": "bottom-left",
+      "retreat": "bottom-right",
+      "status": "top-right"
+    },
+    "bench": {
+      "hp": "top",
+      "energy": "bottom-left",
+      "status": "top-right"
+    }
+  },
+  "prizeStyle": "current",
+  "prizeLayout": "row",
+  "orientation": "landscape",
+  "spaces": []
+}

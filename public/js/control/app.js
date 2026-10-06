@@ -96,7 +96,7 @@ class App {
     append(root, [this.topbar.root, this.banner.root,
       h('main', { class: 'board' }, this.trainers.trainerA.root, this.center.root, this.trainers.trainerB.root)]);
     append(document.body, h('datalist', { id: 'nationalities' }, COUNTRIES.COMMON.map((code) => h('option', { value: code, label: COUNTRIES.nameOf(code) }))));
-    const deckNames = [...DECK.energyNames(), ...DECK.pokemonNames()];
+    const deckNames = DECK.suggestions(); // the decks that are played the most first, then the energy types and every Pokémon
     append(document.body,
       h('datalist', { id: 'deck-names' }, deckNames.map((name) => h('option', { value: name }))),
       h('datalist', { id: 'deck-pictures' }, [DECK.NO_PICTURE, ...deckNames].map((name) => h('option', { value: name }))));

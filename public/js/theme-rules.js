@@ -15,6 +15,7 @@
  * Prize style: the picture on the prize cards: "current" (usual), "english" or "japanese" card back, or a "pokeball".
  *   "pokeball"
  * Orientation: the screen: "landscape" (a wide 1920 x 1080 one, the usual) or "portrait" (a tall 1080 x 1920 one, for a phone).
+ * Font families: for each group of text (see FONT_ROLES), the fonts to use, as a CSS font-family: { "names": "Impact, Arial Black, sans-serif" }.
  * Spaces: places kept clear for something else (a camera feed), each with a shape and where it is, in pixels of the stage.
  *   [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
  */
@@ -22,7 +23,7 @@
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./theme-options'));
   else root.OTO_THEME_RULES = factory(root.OTO_THEME);
 }(typeof self !== 'undefined' ? self : this, function (THEME) {
-  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, tilePartsOf, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT, PRIZE_LAYOUT_KEYS, PRIZE_LAYOUT_DEFAULT, PRIZE_CROP_DEFAULT, ORIENTATION_KEYS, ORIENTATION_DEFAULT, SPACE_SHAPE_KEYS, SPACE_LIMITS } = THEME;
+  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, tilePartsOf, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT, PRIZE_LAYOUT_KEYS, PRIZE_LAYOUT_DEFAULT, PRIZE_CROP_DEFAULT, ORIENTATION_KEYS, ORIENTATION_DEFAULT, SPACE_SHAPE_KEYS, SPACE_LIMITS, FONT_ROLE_KEYS, FONT_FAMILY_MAX } = THEME;
   const MAX_COLOR_LENGTH = 200;
 
   // A complaint that can be shown to a person as it is
@@ -187,6 +188,32 @@
     return input === PRIZE_LAYOUT_DEFAULT ? '' : input;
   }
 
+  // The fonts to use for each group of text: { role: "Font One, Font Two, sans-serif" }. A name is letters, digits, spaces, commas, quotes, dots,
+  // dashes and underscores (what a list of fonts is made of), so it can never carry anything else into the page. Without `strict` a bad entry is
+  // dropped; with it, it is refused.
+  function sanitizeFontFamilies(input, { strict = false } = {}) {
+    const families = {};
+    if (input === undefined || input === null) return families;
+    if (!isObject(input)) {
+      if (strict) throw new RuleError('The font families must be an object such as { "names": "Impact, sans-serif" }');
+      return families;
+    }
+    for (const [role, value] of Object.entries(input)) {
+      if (!FONT_ROLE_KEYS.includes(role)) {
+        if (strict) throw new RuleError(`There is no group of text called "${role}" (use ${FONT_ROLE_KEYS.map((key) => `"${key}"`).join(', ')})`);
+        continue;
+      }
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (!text) continue; // nothing is the usual
+      if (text.length > FONT_FAMILY_MAX || !/^[\p{L}\p{N} ,'"._-]+$/u.test(text)) {
+        if (strict) throw new RuleError(`The fonts for "${role}" can use letters, digits, spaces, commas, quotes, dots and dashes, up to ${FONT_FAMILY_MAX} characters`);
+        continue;
+      }
+      families[role] = text;
+    }
+    return families;
+  }
+
   // The screen of the design: one of ORIENTATION_KEYS. The usual ("landscape") is not listed: the result is an empty string for it.
   function sanitizeOrientation(input, { strict = false } = {}) {
     if (input === undefined || input === null || input === '') return '';
@@ -248,5 +275,5 @@
     return spaces.map(({ id, name, shape, x, y, w, h }) => ({ id, ...(name ? { name } : {}), shape, x, y, w, h }));
   }
 
-  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, cleanRect, cleanCircle, isWholeCard, isUsualCrop, isUsualCircle, MAX_COLOR_LENGTH };
+  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, sanitizeFontFamilies, cleanRect, cleanCircle, isWholeCard, isUsualCrop, isUsualCircle, MAX_COLOR_LENGTH };
 }));

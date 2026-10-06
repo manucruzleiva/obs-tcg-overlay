@@ -10,6 +10,7 @@ const { startServer, startMockCardApi, startMockImageHost, wait } = require('../
 const S = require('../test-support/samples');
 const { createZip, readZip } = require('../src/services/zip');
 const SOUND = require('../public/js/sound-options');
+const THEME = require('../public/js/theme-options');
 const { findBrowser, launch, openPage } = require('./browser');
 
 const skip = findBrowser() ? false : 'no Chrome or Edge found (set BROWSER_PATH to use another)';
@@ -148,6 +149,35 @@ describe('settings', { skip }, () => {
     await page.waitForSelector(`.theme-head h3:has-text("${name}")`);
   }
 
+  describe('a copy of the built-in look', () => {
+    it('makes a design with every color and the usual fonts written out, to learn from, and opens it in the editor', async () => {
+      await openSettings('Look');
+      await page.locator('.theme-list').getByRole('button', { name: 'Copy of the built-in look' }).click();
+      const ask = page.locator('.modal[aria-label="Copy of the built-in look"]');
+      await ask.waitFor();
+      assert.match(await ask.locator('.modal-body').textContent(), /Every color of the built-in look is written into the new design/);
+      await ask.locator('input').fill('Learning');
+      await ask.getByRole('button', { name: 'Create', exact: true }).click();
+      const editor = page.locator('.modal[aria-label="Design: Learning"]');
+      await editor.waitFor();
+
+      const design = (await call('GET', '/api/themes/Learning')).json;
+      assert.deepEqual(Object.keys(design.colors).sort(), THEME.COLOR_KEYS.slice().sort(), 'every color it can change');
+      assert.equal(design.colors['--accent'], '#7c8cff');
+      assert.equal(design.colors['--radius'], '14px');
+      assert.match(design.fontFamilies.display, /^"Bahnschrift"/);
+      assert.match(design.fontFamilies.text, /^"Segoe UI Variable Text"/);
+      assert.equal(design.description, 'A copy of the built-in look');
+
+      // the editor shows it as code, so it can be read and changed
+      await editor.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      const code = JSON.parse(await editor.locator('.code-input').inputValue());
+      assert.equal(code.colors['--accent'], '#7c8cff');
+      assert.ok(code.fontFamilies.display);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
   describe('designs', () => {
     it('makes a design, then colors, a picture, a font and a sound, each saved as it is chosen', async () => {
       await openSettings('Look');
@@ -163,8 +193,8 @@ describe('settings', { skip }, () => {
       await page.waitForSelector('.image-row:has-text("Logo") img');
       assert.match(await page.locator('.image-row:has-text("Logo") img').getAttribute('src'), /^\/api\/themes\/Neon%20Night\/assets\/images\/logoImage\.png\?v=\d+$/);
 
-      await chooseFile(page.locator('.image-row', { hasText: 'Font' }).locator('button', { hasText: 'Upload' }), { name: 'font.woff2', mimeType: 'font/woff2', buffer: S.WOFF2 });
-      await page.waitForSelector('.image-row:has-text("Font") button:has-text("Remove")');
+      await chooseFile(page.locator('.image-row[data-role="display"]').locator('button', { hasText: 'Upload' }), { name: 'font.woff2', mimeType: 'font/woff2', buffer: S.WOFF2 });
+      await page.waitForSelector('.image-row[data-role="display"] button:has-text("Remove")');
 
       await chooseFile(page.locator('.sound-row', { hasText: 'Damage' }).locator('button', { hasText: 'Upload' }), { name: 'hit.wav', mimeType: 'audio/wav', buffer: S.playableWav() });
       await page.waitForSelector('.sound-row:has-text("Damage") button:has-text("Remove")');

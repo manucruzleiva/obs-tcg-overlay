@@ -16,6 +16,9 @@ function stable(value) {
 }
 const same = (a, b) => JSON.stringify(stable(a)) === JSON.stringify(stable(b));
 
+// The files of a design that are not in the draft: its pictures, its main font and the fonts of the groups of text
+const filesOf = (design) => ({ images: design.images || {}, font: design.font || null, fonts: design.fonts || {} });
+
 // The part of a design the editor changes
 function editable(design) {
   return {
@@ -28,7 +31,8 @@ function editable(design) {
     prizeStyle: design.prizeStyle || '', // the picture on the prize cards; empty for the usual one
     prizeLayout: design.prizeLayout || '', // how the six are laid out; empty for the usual row
     orientation: design.orientation || '', // the screen; empty for the usual wide one
-    spaces: clone(design.spaces || []) // the places kept clear for a camera feed or the like
+    spaces: clone(design.spaces || []), // the places kept clear for a camera feed or the like
+    fontFamilies: clone(design.fontFamilies || {}) // the fonts to use for each group of text
   };
 }
 
@@ -36,7 +40,7 @@ export class EditorModel {
   constructor(design) {
     this.name = design.name;
     this.version = design.version;
-    this.files = { images: design.images || {}, font: design.font || null }; // the pictures and font: not edited here
+    this.files = filesOf(design); // the pictures and fonts: they go up when they are chosen, not with the draft
     this.saved = editable(design);
     this.draft = clone(this.saved);
     this.history = [clone(this.draft)];
@@ -110,7 +114,7 @@ export class EditorModel {
     this.everSaved = true;
     this.saved = editable(design);
     this.version = design.version;
-    this.files = { images: design.images || {}, font: design.font || null };
+    this.files = filesOf(design);
     this.emit({ kind: 'saved', source: 'save' });
   }
 
@@ -118,7 +122,7 @@ export class EditorModel {
   setFiles(design) {
     this.everSaved = true; // (so the screen behind the editor reads the design again when it closes)
     this.version = design.version;
-    this.files = { images: design.images || {}, font: design.font || null };
+    this.files = filesOf(design);
     this.emit({ kind: 'files', source: 'upload' });
   }
 
@@ -265,6 +269,23 @@ export class EditorModel {
     this.update({ spaces }, options);
   }
 
+  // ---- the fonts
+
+  // The fonts to use for a group of text ("names", "numbers"...): a list such as "Impact, sans-serif"; empty for the main font's
+  setFontFamily(role, families, options) {
+    const fontFamilies = clone(this.draft.fontFamilies);
+    const text = String(families || '').trim();
+    if (text) fontFamilies[role] = text;
+    else delete fontFamilies[role];
+    this.update({ fontFamilies }, options);
+  }
+
+  // The font file a group of text has (the name of the file), or null
+  fontFileOf(role) {
+    const ref = role === 'display' ? this.files.font : this.files.fonts[role];
+    return ref ? ref.split('/').pop() : null;
+  }
+
   // What the overlay needs to draw this draft: addresses for the pictures the design holds
   theme(designAssetUrl) {
     const images = {};
@@ -275,6 +296,8 @@ export class EditorModel {
     if (this.draft.orientation) theme.orientation = this.draft.orientation;
     if (this.draft.spaces.length) theme.spaces = this.draft.spaces;
     if (this.files.font) theme.font = designAssetUrl(this.files.font);
+    if (Object.keys(this.files.fonts).length) theme.fonts = Object.fromEntries(Object.entries(this.files.fonts).map(([role, ref]) => [role, designAssetUrl(ref)]));
+    if (Object.keys(this.draft.fontFamilies).length) theme.fontFamilies = this.draft.fontFamilies;
     return theme;
   }
 
@@ -285,6 +308,7 @@ export class EditorModel {
     if (this.draft.prizeLayout) code.prizeLayout = this.draft.prizeLayout;
     if (this.draft.orientation) code.orientation = this.draft.orientation;
     if (this.draft.spaces.length) code.spaces = this.draft.spaces;
+    if (Object.keys(this.draft.fontFamilies).length) code.fontFamilies = this.draft.fontFamilies;
     return JSON.stringify(code, null, 2);
   }
 }

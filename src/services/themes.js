@@ -7,7 +7,8 @@
  *   themes/store-league/
  *     design.json            the colors and which file fills each slot
  *     images/logoImage.png   one picture per slot (logo, background, avatars, card backs, energy icons)
- *     fonts/font.woff2       the font for names, numbers and announcements
+ *     fonts/font.woff2       the main font, for names, numbers and announcements
+ *     fonts/names.woff2      a font for one group of text (names, numbers, labels, banners, subtitles, text): optional
  *     sounds/damage.mp3      a sound for any cue; used by the overlay while this design is on air
  *
  *   design.json
@@ -22,6 +23,8 @@
  *     "tile": { "active": { "hp": "bottom" } },
  *     "prizeStyle": "english",
  *     "prizeLayout": "two-rows",
+ *     "fonts": { "names": "fonts/names.woff2" },
+ *     "fontFamilies": { "numbers": "Impact, Arial Black, sans-serif" },
  *     "orientation": "portrait",
  *     "spaces": [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
  *   }
@@ -43,7 +46,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 // What a design may set comes from shared lists (also used by the control panel's design editor)
-const { COLOR_KEYS, IMAGE_KEYS } = require('../../public/js/theme-options');
+const { COLOR_KEYS, IMAGE_KEYS, FONT_ROLE_KEYS } = require('../../public/js/theme-options');
+const EXTRA_FONT_ROLES = FONT_ROLE_KEYS.filter((role) => role !== 'display'); // ("display" is the main font: the file `font`)
 const SOUND = require('../../public/js/sound-options');
 const { sniff: sniffSound, MAX_SOUND_BYTES } = require('./sounds');
 
@@ -126,6 +130,7 @@ const sanitizePrize = (input, options) => asThemeError(() => rules.sanitizePrize
 const sanitizePrizeLayout = (input, options) => asThemeError(() => rules.sanitizePrizeLayout(input, options));
 const sanitizeOrientation = (input, options) => asThemeError(() => rules.sanitizeOrientation(input, options));
 const sanitizeSpaces = (input, options) => asThemeError(() => rules.sanitizeSpaces(input, options));
+const sanitizeFontFamilies = (input, options) => asThemeError(() => rules.sanitizeFontFamilies(input, options));
 
 // ------------------------------------------------------------------------------------- files
 
@@ -215,6 +220,9 @@ function writeAtomic(file, data) {
 // The references a design may hold: one fixed name per slot, so a reference can never point anywhere else
 const imageRef = (key) => new RegExp(`^images/${key}\\.(${IMAGE_EXTENSIONS.join('|')})$`);
 const fontRef = new RegExp(`^fonts/font\\.(${FONT_EXTENSIONS.join('|')})$`);
+const fontRoleRef = (role) => new RegExp(`^fonts/${role}\\.(${FONT_EXTENSIONS.join('|')})$`);
+// Every file a design holds (pictures, fonts, sounds): the references, as they are in design.json
+const fileRefs = (design) => [...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : []), ...Object.values(design.fonts || {})];
 const soundRef = (cue) => new RegExp(`^sounds/${cue}\\.(${SOUND_EXTENSIONS.join('|')})$`);
 const extensionOf = (ref) => ref.slice(ref.lastIndexOf('.') + 1);
 
@@ -310,6 +318,13 @@ class ThemeStore {
       if (typeof ref === 'string' && imageRef(key).test(ref) && exists(ref)) design.images[key] = ref;
     }
     if (typeof raw.font === 'string' && fontRef.test(raw.font) && exists(raw.font)) design.font = raw.font;
+    // a font for a group of text, and the fonts to use for it
+    for (const role of EXTRA_FONT_ROLES) {
+      const ref = raw.fonts && raw.fonts[role];
+      if (typeof ref === 'string' && fontRoleRef(role).test(ref) && exists(ref)) (design.fonts ||= {})[role] = ref;
+    }
+    const fontFamilies = sanitizeFontFamilies(raw.fontFamilies);
+    if (Object.keys(fontFamilies).length) design.fontFamilies = fontFamilies;
     for (const cue of SOUND.KEYS) {
       const ref = raw.sounds && raw.sounds[cue];
       if (typeof ref === 'string' && soundRef(cue).test(ref) && exists(ref)) design.sounds[cue] = ref;
@@ -348,6 +363,8 @@ class ThemeStore {
     if ('prizeLayout' in input) design.prizeLayout = sanitizePrizeLayout(input.prizeLayout, { strict: true });
     if ('orientation' in input) design.orientation = sanitizeOrientation(input.orientation, { strict: true });
     if ('spaces' in input) design.spaces = sanitizeSpaces(input.spaces, { strict: true });
+    if ('fontFamilies' in input) design.fontFamilies = sanitizeFontFamilies(input.fontFamilies, { strict: true });
+    if (design.fontFamilies && !Object.keys(design.fontFamilies).length) delete design.fontFamilies;
     if (!design.prizeStyle) delete design.prizeStyle;
     if (!design.prizeLayout) delete design.prizeLayout;
     if (!design.orientation) delete design.orientation;
@@ -398,7 +415,7 @@ class ThemeStore {
   // ---- files
 
   totalBytes(design) {
-    const refs = [...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : [])];
+    const refs = fileRefs(design);
     return refs.reduce((sum, ref) => {
       try { return sum + fs.statSync(path.join(this.folderFor(design.name), ref)).size; } catch { return sum; }
     }, 0);
@@ -453,6 +470,22 @@ class ThemeStore {
     return this.discard(name, (d) => d.font, (d) => { delete d.font; });
   }
 
+  // The font file of a group of text ("names", "numbers"...); "display" is the main font
+  setFontRole(name, role, buffer) {
+    if (!FONT_ROLE_KEYS.includes(role)) throw new ThemeError('There is no such group of text');
+    if (role === 'display') return this.setFont(name, buffer);
+    return this.place(name, (d) => d.fonts && d.fonts[role], buffer, checkFont, (ext) => `fonts/${role}.${ext}`, (d, ref) => { d.fonts = { ...(d.fonts || {}), [role]: ref }; });
+  }
+
+  removeFontRole(name, role) {
+    if (!FONT_ROLE_KEYS.includes(role)) throw new ThemeError('There is no such group of text');
+    if (role === 'display') return this.removeFont(name);
+    return this.discard(name, (d) => d.fonts && d.fonts[role], (d) => {
+      delete d.fonts[role];
+      if (!Object.keys(d.fonts).length) delete d.fonts;
+    });
+  }
+
   setSound(name, cue, buffer) {
     if (!SOUND.KEYS.includes(cue)) throw new ThemeError('There is no such sound');
     return this.place(name, (d) => d.sounds[cue], buffer, (b) => checkSound(b), (ext) => `sounds/${cue}.${ext}`, (d, ref) => { d.sounds[cue] = ref; });
@@ -468,7 +501,7 @@ class ThemeStore {
   assetFile(name, ref) {
     const design = this.get(name);
     if (!design || typeof ref !== 'string') return null;
-    const held = [...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : [])];
+    const held = fileRefs(design);
     if (!held.includes(ref)) return null;
     return { path: path.join(this.folderFor(design.name), ref), mime: MIME[extensionOf(ref)], root: this.folderFor(design.name) };
   }
@@ -489,6 +522,8 @@ class ThemeStore {
     if (design.spaces) resolved.spaces = design.spaces;
     for (const [key, ref] of Object.entries(design.images)) resolved.images[key] = url(ref);
     if (design.font) resolved.font = url(design.font);
+    if (design.fonts) resolved.fonts = Object.fromEntries(Object.entries(design.fonts).map(([role, ref]) => [role, url(ref)]));
+    if (design.fontFamilies) resolved.fontFamilies = design.fontFamilies;
     return resolved;
   }
 
@@ -521,7 +556,7 @@ class ThemeStore {
     const design = this.get(name);
     if (!design) throw new ThemeError('That design does not exist', 404);
     const { version, ...plain } = design;
-    const refs = [...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : [])];
+    const refs = fileRefs(design);
     return { design: plain, files: refs.map((ref) => ({ ref, data: fs.readFileSync(path.join(this.folderFor(design.name), ref)) })) };
   }
 
@@ -579,6 +614,15 @@ class ThemeStore {
         design.images[key] = `images/${key}.${kind.ext}`;
         put(design.images[key], buffer);
       }
+      for (const role of EXTRA_FONT_ROLES) {
+        const buffer = parts.fonts && parts.fonts[role];
+        if (!buffer) continue;
+        const kind = checkFont(buffer);
+        (design.fonts ||= {})[role] = `fonts/${role}.${kind.ext}`;
+        put(design.fonts[role], buffer);
+      }
+      const fontFamilies = sanitizeFontFamilies(parts.fontFamilies);
+      if (Object.keys(fontFamilies).length) design.fontFamilies = fontFamilies;
       if (parts.font) {
         const kind = checkFont(parts.font);
         design.font = `fonts/font.${kind.ext}`;
@@ -621,5 +665,5 @@ class ThemeStore {
 
 module.exports = {
   ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, MIME,
-  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, cleanName, cleanText, folderName
+  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, sanitizeFontFamilies, cleanName, cleanText, folderName
 };

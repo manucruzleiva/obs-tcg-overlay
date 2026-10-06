@@ -6,12 +6,13 @@
  * The picture of a deck is, in this order:
  *   - nothing, when the picture box says "none";
  *   - what the picture box names, when something is written there (so a deck called "Control" can have Gardevoir next to it);
- *   - what the deck text names: the first Pokémon in it ("Team Rocket's Mewtwo ex"), or else the first energy type ("Water Box").
+ *   - what the deck text names: one of the decks that are played the most ("Basic Box" has the Pokémon of its icon), or else the first
+ *     Pokémon in it ("Team Rocket's Mewtwo ex", "Mega Lucario ex"), or else the first energy type ("Water Box").
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./game-data'), require('./pokedex'));
-  else root.OTO_DECK = factory(root.OTO_GAME, root.OTO_POKEDEX);
-}(typeof self !== 'undefined' ? self : this, function (GAME, POKEDEX) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./game-data'), require('./pokedex'), require('./deck-popular'));
+  else root.OTO_DECK = factory(root.OTO_GAME, root.OTO_POKEDEX, root.OTO_DECK_POPULAR);
+}(typeof self !== 'undefined' ? self : this, function (GAME, POKEDEX, POPULAR) {
   const MAX_LENGTH = 40;
   const NO_PICTURE = 'none';
 
@@ -37,7 +38,9 @@
   // preferred, as it says more about a deck than a type does ("Dark Gardevoir").
   function namedBy(text) {
     if (typeof text !== 'string' || !text.trim()) return null;
-    const id = POKEDEX.idOf(text);
+    // a deck that is known by its name ("Basic Box") has the Pokémon of its icon, whatever words are in the name
+    const popular = POPULAR.find(text);
+    const id = popular ? popular.pokemon[0] : POKEDEX.idOf(text);
     if (id) return { kind: 'pokemon', id, name: POKEDEX.nameOf(id), src: spriteUrl(id) };
     const type = energyOf(text);
     return type ? { kind: 'energy', key: type.key, name: `${type.label} energy`, src: type.icon } : null;
@@ -50,9 +53,12 @@
     return namedBy(asked || deck);
   }
 
-  // What the control panel offers while someone types: the energy types and every Pokémon, written for a person
+  // What the control panel offers while someone types: the decks that are played the most, then the energy types and every Pokémon, written
+  // for a person
+  const popularNames = () => POPULAR.NAMES.slice();
   const energyNames = () => GAME.ENERGY_TYPES.map((type) => type.label);
   const pokemonNames = () => POKEDEX.NAMES.map((name, index) => POKEDEX.nameOf(index + 1));
+  const suggestions = () => [...new Set([...popularNames(), ...energyNames(), ...pokemonNames()])];
 
-  return { MAX_LENGTH, NO_PICTURE, ALIASES, namedBy, pictureFor, energyNames, pokemonNames, spriteUrl };
+  return { MAX_LENGTH, NO_PICTURE, ALIASES, namedBy, pictureFor, popularNames, energyNames, pokemonNames, suggestions, spriteUrl };
 }));

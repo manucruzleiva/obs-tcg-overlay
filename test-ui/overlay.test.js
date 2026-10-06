@@ -681,6 +681,70 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('a font for each group of text', () => {
+    const wear = (extra) => page.evaluate((more) => window.oto.applyTheme({ name: 'type', colors: {}, images: {}, sounds: [], ...more }), extra);
+    const family = (selector) => page.$eval(selector, (node) => getComputedStyle(node).fontFamily);
+    const variable = (name) => page.evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+
+    it('is the main font for every group, until a design says otherwise', async () => {
+      const main = await family('.sb-name');
+      for (const selector of ['.sb-wins', '.mon-name']) assert.equal(await family(selector), main, selector);
+      assert.match(main, /Bahnschrift/);
+    });
+
+    it('gives each group the fonts a design lists for it, and what has none keeps the main font', async () => {
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Pikachu', image: IMG, hp: 100 });
+      await wear({ fontFamilies: { names: 'Impact, sans-serif', numbers: 'Georgia', labels: '"Courier New"', banners: 'Verdana', subtitles: 'Tahoma', text: 'Arial' } });
+      assert.match(await family('.sb-name'), /^Impact/);
+      assert.match(await family('.mon-name'), /^Impact/, 'the names of the Pokémon are names too');
+      assert.match(await family('.sb-wins'), /^Georgia/);
+      assert.match(await family('.hp-text'), /^Georgia/, 'and the HP is a number');
+      assert.match(await family('.turn-tag'), /Courier New/);
+      assert.match(await variable('--font-banners'), /^Verdana/);
+      assert.match(await variable('--font-subtitles'), /^Tahoma/);
+      assert.match(await variable('--font-body'), /^Arial/);
+      assert.equal(await variable('--font-display'), '', 'the main font was not touched');
+
+      // only the main font: the groups that have none follow it
+      await wear({ fontFamilies: { display: 'Georgia' } });
+      assert.match(await family('.sb-name'), /^Georgia/);
+      assert.match(await family('.sb-wins'), /^Georgia/);
+      assert.equal(await variable('--font-names'), '');
+
+      // a design that is taken away takes its fonts with it
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.match(await family('.sb-name'), /Bahnschrift/);
+      assert.equal(await variable('--font-display'), '');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('loads the font file of a group, and puts it first in the list of fonts of that group', async () => {
+      // (a font that is part of the app: the flag font)
+      await wear({ fonts: { names: '/assets/fonts/TwemojiCountryFlags.woff2' }, fontFamilies: { names: 'Georgia' } });
+      await page.waitForFunction(() => /OTO Theme names/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      assert.match(await variable('--font-names'), /^"OTO Theme names", Georgia, var\(--font-display\)$/);
+      assert.equal(await page.evaluate(() => [...document.fonts].some((face) => face.family.replace(/"/g, '') === 'OTO Theme names')), true);
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await page.evaluate(() => [...document.fonts].some((face) => face.family.replace(/"/g, '') === 'OTO Theme names')), false, 'the font goes with the design');
+    });
+
+    it('keeps the fonts that were listed when the font file cannot be had, and the main font when nothing was', async () => {
+      await wear({ fonts: { names: '/api/theme/assets/fonts/missing.woff2' }, fontFamilies: { names: 'Georgia' } });
+      await page.waitForFunction(() => /^Georgia/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      assert.match(await family('.sb-name'), /^Georgia/);
+      await wear({ fonts: { numbers: '/api/theme/assets/fonts/missing.woff2' } });
+      await wait(400);
+      assert.equal(await variable('--font-numbers'), '', 'no list and no file: the main font');
+    });
+
+    it('is not mixed up when the design changes while a font is still on its way', async () => {
+      await wear({ fonts: { names: '/assets/fonts/TwemojiCountryFlags.woff2' } });
+      await wear({ fontFamilies: { names: 'Georgia' } });
+      await wait(500);
+      assert.match(await variable('--font-names'), /^Georgia/, 'the last design is the one that counts');
+    });
+  });
+
   describe('Pokémon Tools', () => {
     const names = (side) => page.$$eval(`.trainer-${side} .tools:not([hidden]) .tool`, (nodes) => nodes.map((node) => node.textContent));
 

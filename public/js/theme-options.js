@@ -45,6 +45,20 @@
     ...[1, 2, 3, 4, 5, 6].map((n) => ({ key: `spaceFrame${n}`, label: `Space ${n}: frame`, help: 'Drawn over the reserved space, stretched to fit (a frame with a see-through middle, for example)', space: n }))
   ];
 
+  // The text of the overlay is in groups, and each group can have a font of its own: a font file in the design (fonts/<group>.woff2...) and/or a
+  // list of fonts to use (a CSS font-family, such as "Impact, Arial Black, sans-serif", for fonts that are on the computer that shows the overlay).
+  // Whatever a group does not have, it takes from the main font ("display"), and the small text from the usual font of the page.
+  const FONT_ROLES = [
+    { key: 'display', label: 'Main font', variable: '--font-display', help: 'Names, numbers, labels and announcements, unless a font below says otherwise' },
+    { key: 'names', label: 'Names', variable: '--font-names', help: 'Trainers, Pokémon, feature cards and the Stadium' },
+    { key: 'numbers', label: 'Numbers', variable: '--font-numbers', help: 'The score, the HP and the damage' },
+    { key: 'labels', label: 'Labels and tags', variable: '--font-labels', help: 'The round, TURN, the counters, the locks, conditions, abilities, tools and attacks' },
+    { key: 'banners', label: 'Announcement titles', variable: '--font-banners', help: 'The big words of a banner or an effect: TOP DECK, KNOCKED OUT, PAUSED' },
+    { key: 'subtitles', label: 'Announcement subtitles', variable: '--font-subtitles', help: 'The line under the big words of a banner or an effect' },
+    { key: 'text', label: 'Small text', variable: '--font-body', help: 'Everything else' }
+  ];
+  const FONT_FAMILY_MAX = 160;
+
   // The pieces of the overlay a design can move and resize. `selector` finds them on the overlay's stage
   // (it may match several nodes, which then move together). Nested pieces compound: moving a trainer
   // moves what is in it, and each piece can still be moved on its own.
@@ -183,6 +197,9 @@
     PRIZE_LAYOUT_DEFAULT: 'row',
     PRIZE_CROP_DEFAULT,
     PRIZE_PRESETS,
+    FONT_ROLES,
+    FONT_ROLE_KEYS: FONT_ROLES.map((role) => role.key),
+    FONT_FAMILY_MAX,
     ORIENTATIONS,
     ORIENTATION_KEYS: ORIENTATIONS.map((entry) => entry.key),
     ORIENTATION_DEFAULT,

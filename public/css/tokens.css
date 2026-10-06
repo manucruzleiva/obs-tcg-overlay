@@ -52,6 +52,9 @@
   --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
   --font-flags: "Twemoji Country Flags", var(--font-body);
+  /* A design can give each group of text a font of its own: --font-names, --font-numbers, --font-labels, --font-banners, --font-subtitles
+     (and --font-body for the small text). Until it does they are not set, and each group uses the main font above (see FONT_ROLES in
+     public/js/theme-options.js). */
 
   /* Energy colors (the overlay can replace these with an uploaded icon strip) */
   --energy-grass: #4caf50;

@@ -1412,6 +1412,90 @@ describe('design editor', { skip }, () => {
     });
   });
 
+  describe('the fonts of the groups of text', () => {
+    const tab = () => page.locator('.editor-side .tab[data-tab="fonts"]');
+    const row = (role) => page.locator(`.font-row[data-role="${role}"]`);
+    const draftFamilies = () => page.evaluate(() => JSON.parse(JSON.stringify(window.oto.designEditor.model.draft.fontFamilies)));
+    const frameVar = (name) => overlayFrame().evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+
+    it('has a row for the main font and for each group of text, with what each is for', async () => {
+      await openEditorFor('Type Test');
+      await tab().click();
+      assert.deepEqual(await page.locator('.font-row .font-info strong').allTextContents(), ['Main font', 'Names', 'Numbers', 'Labels and tags', 'Announcement titles', 'Announcement subtitles', 'Small text']);
+      assert.match(await row('names').locator('small').textContent(), /Trainers, Pokémon, feature cards and the Stadium/);
+      assert.equal(await row('names').locator('[data-remove]').isHidden(), true, 'no font file to take off');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('puts the fonts that are typed on the overlay as they are typed, and leaves what is not a list of fonts out', async () => {
+      await openEditorFor('Type Test');
+      await tab().click();
+      await row('names').locator('input').fill('Impact, "Arial Black", sans-serif');
+      assert.deepEqual(await draftFamilies(), { names: 'Impact, "Arial Black", sans-serif' });
+      await page.waitForFunction(() => /^Impact/.test(document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names')));
+      assert.match(await overlayFrame().$eval('.sb-name', (node) => getComputedStyle(node).fontFamily), /^Impact/);
+
+      await row('numbers').locator('input').fill('url(http://x.example/f.woff)');
+      assert.match(await row('numbers').locator('.prompt-complaint').textContent(), /The fonts for "numbers" can use letters, digits/);
+      assert.equal(await row('numbers').locator('input').getAttribute('aria-invalid'), 'true');
+      assert.deepEqual(await draftFamilies(), { names: 'Impact, "Arial Black", sans-serif' }, 'the design keeps what could be used');
+      await row('numbers').locator('input').fill('Georgia');
+      assert.equal(await row('numbers').locator('.prompt-complaint').isHidden(), true);
+
+      // it is in the code, and emptying the box goes back to the main font
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      assert.match(await page.locator('.code-input').inputValue(), /"fontFamilies": \{\s*"names": "Impact, \\"Arial Black\\", sans-serif",\s*"numbers": "Georgia"/);
+      await tab().click();
+      await row('names').locator('input').fill('');
+      assert.deepEqual(await draftFamilies(), { numbers: 'Georgia' });
+      assert.equal(await frameVar('--font-names'), '');
+    });
+
+    it('takes a font file for a group, saved at once, and takes it off again', async () => {
+      await openEditorFor('Type Test');
+      await tab().click();
+      const chooser = page.waitForEvent('filechooser');
+      await row('labels').locator('[data-upload]').click();
+      await (await chooser).setFiles({ name: 'tags.woff2', mimeType: 'font/woff2', buffer: S.WOFF2 });
+      await page.waitForFunction(() => document.querySelector('.font-row[data-role="labels"] .font-file').textContent === 'labels.woff2');
+      assert.equal((await api('GET', '/api/themes/Type%20Test')).json.fonts.labels, 'fonts/labels.woff2');
+      assert.equal(await row('labels').locator('[data-upload]').textContent(), 'Replace the font file');
+      assert.equal(await row('labels').locator('[data-remove]').isVisible(), true);
+
+      // the main font is the design's own "font"
+      const main = page.waitForEvent('filechooser');
+      await row('display').locator('[data-upload]').click();
+      await (await main).setFiles({ name: 'main.woff2', mimeType: 'font/woff2', buffer: S.WOFF2 });
+      await page.waitForFunction(() => document.querySelector('.font-row[data-role="display"] .font-file').textContent === 'font.woff2');
+      assert.equal((await api('GET', '/api/themes/Type%20Test')).json.font, 'fonts/font.woff2');
+
+      await row('labels').locator('[data-remove]').click();
+      await page.waitForFunction(() => document.querySelector('.font-row[data-role="labels"] .font-file').textContent === '');
+      assert.equal((await api('GET', '/api/themes/Type%20Test')).json.fonts, undefined);
+
+      // too big, or not a font
+      const big = page.waitForEvent('filechooser');
+      await row('names').locator('[data-upload]').click();
+      await (await big).setFiles({ name: 'huge.woff2', mimeType: 'font/woff2', buffer: Buffer.alloc(5 * 1024 * 1024) });
+      await page.waitForFunction(() => /larger than 4.5 MB/.test(document.querySelector('.toast').textContent));
+      const wrong = page.waitForEvent('filechooser');
+      await row('names').locator('[data-upload]').click();
+      await (await wrong).setFiles({ name: 'tags.png', mimeType: 'image/png', buffer: S.PNG });
+      await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((toast) => /not a supported font/.test(toast.textContent)));
+      assert.equal((await api('GET', '/api/themes/Type%20Test')).json.fonts, undefined);
+      assert.deepEqual(nativeDialogs, []);
+    });
+
+    it('is saved with the design and read again', async () => {
+      await openEditorFor('Type Test');
+      await tab().click();
+      await row('banners').locator('input').fill('Verdana');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.deepEqual((await api('GET', '/api/themes/Type%20Test')).json.fontFamilies, { banners: 'Verdana' });
+    });
+  });
+
   describe('the live match', () => {
     it('can draw the match as it really is', async () => {
       const producer = server.client({ clientId: 'ui-editor-live', name: 'Maya' });

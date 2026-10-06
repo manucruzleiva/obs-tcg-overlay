@@ -7,7 +7,7 @@
 import { h } from './dom.js';
 
 const RULES = window.OTO_THEME_RULES;
-const KNOWN = ['author', 'description', 'colors', 'layout', 'crop', 'tile', 'prizeStyle', 'prizeLayout', 'orientation', 'spaces'];
+const KNOWN = ['author', 'description', 'colors', 'layout', 'crop', 'tile', 'prizeStyle', 'prizeLayout', 'orientation', 'spaces', 'fontFamilies'];
 const MAX_AUTHOR = 60;
 const MAX_DESCRIPTION = 300;
 
@@ -51,6 +51,7 @@ export function readCode(text) {
     if ('prizeLayout' in parsed) design.prizeLayout = RULES.sanitizePrizeLayout(parsed.prizeLayout, { strict: true });
     if ('orientation' in parsed) design.orientation = RULES.sanitizeOrientation(parsed.orientation, { strict: true });
     if ('spaces' in parsed) design.spaces = RULES.sanitizeSpaces(parsed.spaces, { strict: true });
+    if ('fontFamilies' in parsed) design.fontFamilies = RULES.sanitizeFontFamilies(parsed.fontFamilies, { strict: true });
   } catch (error) {
     if (error instanceof RULES.RuleError) return { error: error.message };
     throw error;
@@ -82,7 +83,7 @@ export class CodePanel {
 
     this.format = h('button', { class: 'btn tiny', type: 'button', onclick: () => this.tidy() }, 'Format');
     this.element = h('div', { class: 'code-panel' },
-      h('p', { class: 'settings-note' }, 'Everything about the look except the pictures, font and sounds. Changes show on the overlay as you type. Pieces of the overlay are listed under "layout", the part of the card that shows under "crop", where the HP bar, the energy and the retreat cost go under "tile", the picture on the prize cards under "prizeStyle" and how they are laid out under "prizeLayout", the screen under "orientation" and the places kept clear for a camera feed under "spaces".'),
+      h('p', { class: 'settings-note' }, 'Everything about the look except the pictures, font and sounds. Changes show on the overlay as you type. Pieces of the overlay are listed under "layout", the part of the card that shows under "crop", where the HP bar, the energy and the retreat cost go under "tile", the picture on the prize cards under "prizeStyle" and how they are laid out under "prizeLayout", the screen under "orientation", the places kept clear for a camera feed under "spaces" and the fonts of each kind of text under "fontFamilies".'),
       h('div', { class: 'code-editor' }, this.gutter, this.input),
       this.status,
       h('div', { class: 'button-row' }, this.format));

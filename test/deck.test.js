@@ -109,6 +109,60 @@ describe('the picture next to a deck', () => {
   });
 });
 
+describe('the decks that are played the most', () => {
+  const POPULAR = require('../public/js/deck-popular');
+
+  it('is a list of decks with the Pokémon of their icon, from Limitless TCG, with where it came from', () => {
+    assert.equal(POPULAR.SOURCE.name, 'Limitless TCG');
+    assert.match(POPULAR.SOURCE.url, /^https:\/\/limitlesstcg\.com\//);
+    assert.match(POPULAR.SOURCE.date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(POPULAR.DECKS.length >= 30);
+    assert.equal(new Set(POPULAR.NAMES).size, POPULAR.NAMES.length, 'each deck once');
+    for (const deck of POPULAR.DECKS) {
+      assert.ok(deck.name && deck.share > 0 && deck.share <= 100, deck.name);
+      assert.ok(deck.pokemon.length >= 1 && deck.pokemon.every((id) => Number.isInteger(id) && id >= 1 && id <= POKEDEX.COUNT), `${deck.name}: ${deck.pokemon}`);
+    }
+    assert.deepEqual(POPULAR.DECKS.map((deck) => deck.share), [...POPULAR.DECKS.map((deck) => deck.share)].sort((a, b) => b - a), 'the most played first');
+  });
+
+  it('has the new decks: the Mega ones, and the ones named after a trainer', () => {
+    for (const name of ['Mega Lucario ex', 'Mega Darkrai ex', 'Mega Lopunny ex', 'Mega Excadrill ex', "N's Zoroark ex", "Cynthia's Garchomp ex", 'Dragapult ex', 'Raging Bolt ex']) {
+      assert.ok(POPULAR.NAMES.includes(name), name);
+    }
+  });
+
+  it('finds a deck however it is written', () => {
+    assert.equal(POPULAR.find('basic box').name, 'Basic Box');
+    assert.equal(POPULAR.find("  N’s  ZOROARK ex ").name, "N's Zoroark ex");
+    assert.equal(POPULAR.find('Dhelmise Hide n Sneak').name, "Dhelmise Hide n' Sneak");
+    for (const nothing of ['Lost Zone Box', '', undefined, null, 7]) assert.equal(POPULAR.find(nothing), null);
+  });
+
+  it('gives a deck the picture of its icon, including the ones that name no Pokémon, and a Mega deck the Pokémon that mega evolves', () => {
+    const picture = (name) => DECK.pictureFor(name, '');
+    assert.equal(picture('Basic Box').id, 1017, 'Ogerpon, the first of its icons');
+    assert.equal(picture('Festival Lead').id, 1011, 'Dipplin');
+    assert.equal(picture('Mega Lucario ex').id, 448);
+    assert.equal(picture('Mega Darkrai ex').id, 491);
+    assert.equal(picture('Mega Darkrai').id, 491, 'and without the ex, or any other way it is written');
+    assert.equal(picture('mega lopunny ex').src, '/img/sprite/428.png');
+    assert.equal(picture("Rocket's Honchkrow").id, 430);
+    // what the picture box says still wins, and "none" is none
+    assert.equal(DECK.pictureFor('Basic Box', 'Pikachu').id, 25);
+    assert.equal(DECK.pictureFor('Basic Box', 'none'), null);
+  });
+
+  it('is offered while typing before the energy types and every Pokémon, with nothing twice', () => {
+    const names = DECK.suggestions();
+    assert.deepEqual(names.slice(0, 3), ['Dragapult ex', "N's Zoroark ex", 'Basic Box']);
+    assert.ok(names.includes('Mega Lucario ex') && names.includes('Mega Darkrai ex'));
+    assert.ok(names.indexOf('Grass') > names.indexOf('Cinccino ex'), 'the energy types come after the decks');
+    assert.ok(names.includes('Charizard') && names.includes('Pecharunt'));
+    assert.equal(new Set(names).size, names.length);
+    assert.deepEqual(DECK.popularNames(), POPULAR.NAMES);
+  });
+});
+
 describe('the deck in the game', () => {
   it('starts with none, and keeps what is set for each trainer', () => {
     const gs = makeGame();

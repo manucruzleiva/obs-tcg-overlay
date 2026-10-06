@@ -18,7 +18,8 @@
  */
 
 const { createZip, readZip, ZipError, MB } = require('./zip');
-const { ThemeError, cleanText, cleanName, folderName, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, MAX_IMAGE_BYTES } = require('./themes');
+const { FONT_ROLE_KEYS } = require('../../public/js/theme-options');
+const { ThemeError, cleanText, cleanName, folderName, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, sanitizeFontFamilies, MAX_IMAGE_BYTES } = require('./themes');
 const { MAX_SOUND_BYTES } = require('./sounds');
 const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
@@ -182,8 +183,10 @@ function unpack(buffer, defaults = null) {
       prizeLayout: rawDesign.prizeLayout,
       orientation: rawDesign.orientation,
       spaces: rawDesign.spaces,
+      fontFamilies: rawDesign.fontFamilies,
       images: {},
       font: null,
+      fonts: {},
       sounds: {}
     };
     const claimed = rawDesign.images && typeof rawDesign.images === 'object' ? rawDesign.images : {};
@@ -192,6 +195,12 @@ function unpack(buffer, defaults = null) {
       if (data) design.images[key] = data;
     }
     design.font = findFile(files, 'fonts', 'font', FONT_EXTENSIONS, rawDesign.font);
+    const claimedFonts = rawDesign.fonts && typeof rawDesign.fonts === 'object' ? rawDesign.fonts : {};
+    for (const role of FONT_ROLE_KEYS) {
+      if (role === 'display') continue;
+      const data = findFile(files, 'fonts', role, FONT_EXTENSIONS, claimedFonts[role]);
+      if (data) design.fonts[role] = data;
+    }
     const claimedSounds = rawDesign.sounds && typeof rawDesign.sounds === 'object' ? rawDesign.sounds : {};
     for (const cue of SOUND.KEYS) {
       const data = findFile(files, 'sounds', cue, SOUND_EXTENSIONS, claimedSounds[cue]);
@@ -202,7 +211,7 @@ function unpack(buffer, defaults = null) {
       if (!/^(images|fonts|sounds)\/[^/]+$/.test(entry)) continue;
       const [folder, file] = entry.split('/');
       const base = file.slice(0, file.lastIndexOf('.'));
-      const wanted = folder === 'images' ? IMAGE_KEYS.includes(base) : folder === 'fonts' ? base === 'font' : SOUND.KEYS.includes(base);
+      const wanted = folder === 'images' ? IMAGE_KEYS.includes(base) : folder === 'fonts' ? base === 'font' || FONT_ROLE_KEYS.includes(base) : SOUND.KEYS.includes(base);
       if (wanted) used.add(entry);
     }
   }
@@ -303,6 +312,8 @@ class PackageService {
         exists: Boolean(this.themes.get(design.name)),
         images: Object.keys(design.images),
         font: Boolean(design.font),
+        fonts: Object.keys(design.fonts || {}),
+        fontFamilies: Object.keys(sanitizeFontFamilies(design.fontFamilies)),
         sounds: Object.keys(design.sounds),
         colors: Object.keys(design.colors).length,
         layout: Object.keys(sanitizeLayout(design.layout)).length,

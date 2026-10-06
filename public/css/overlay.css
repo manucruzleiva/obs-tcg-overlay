@@ -123,7 +123,7 @@ html, body {
 
 .sb-who { min-width: 0; }
 .sb-name {
-  font: 700 36px/1.05 var(--font-display);
+  font: 700 36px/1.05 var(--font-names, var(--font-display));
   letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -189,7 +189,7 @@ html, body {
   margin-left: auto;
   min-width: 78px;
   text-align: center;
-  font: 800 72px/1 var(--font-display);
+  font: 800 72px/1 var(--font-numbers, var(--font-display));
   font-variant-numeric: tabular-nums;
   color: var(--side-color);
   text-shadow: 0 4px 18px var(--shadow);
@@ -208,7 +208,7 @@ html, body {
   border-right: 1px solid var(--border);
 }
 .sb-round {
-  font: 700 22px/1.1 var(--font-display);
+  font: 700 22px/1.1 var(--font-labels, var(--font-display));
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
@@ -216,7 +216,7 @@ html, body {
 }
 .sb-bo {
   margin-top: 6px;
-  font: 600 17px/1 var(--font-display);
+  font: 600 17px/1 var(--font-labels, var(--font-display));
   letter-spacing: 0.24em;
   color: var(--fg-secondary);
 }
@@ -241,7 +241,7 @@ html, body {
   border-radius: 999px;
   background: var(--side-color);
   color: #07101c;
-  font: 800 16px/1.4 var(--font-display);
+  font: 800 16px/1.4 var(--font-labels, var(--font-display));
   letter-spacing: 0.22em;
   box-shadow: 0 0 22px var(--side-color);
 }
@@ -339,7 +339,7 @@ html, body {
   border-radius: 999px;
   background: var(--danger);
   color: #1a0505;
-  font: 800 13px/1.5 var(--font-display);
+  font: 800 13px/1.5 var(--font-labels, var(--font-display));
   letter-spacing: 0.16em;
 }
 .prize-flag:empty { display: none; }
@@ -356,7 +356,7 @@ html, body {
   border-radius: 999px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  font: 700 15px/1 var(--font-display);
+  font: 700 15px/1 var(--font-labels, var(--font-display));
   letter-spacing: 0.12em;
   transition: opacity 0.3s ease;
 }
@@ -379,7 +379,7 @@ html, body {
   border-radius: 6px;
   background: var(--danger);
   color: #1a0505;
-  font: 800 15px/1 var(--font-display);
+  font: 800 15px/1 var(--font-labels, var(--font-display));
   letter-spacing: 0.12em;
 }
 
@@ -417,7 +417,7 @@ html, body {
 .trainer-b .active .details { align-items: flex-end; }
 
 .mon-name {
-  font: 700 32px/1.05 var(--font-display);
+  font: 700 32px/1.05 var(--font-names, var(--font-display));
   letter-spacing: 0.02em;
   text-transform: uppercase;
   text-shadow: 0 2px 12px var(--shadow);
@@ -442,7 +442,7 @@ html, body {
 .hp.low .hp-fill { background: var(--danger); }
 .hp-text {
   margin-top: 6px;
-  font: 700 28px/1 var(--font-display);
+  font: 700 28px/1 var(--font-numbers, var(--font-display));
   font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 10px var(--shadow);
 }
@@ -476,7 +476,7 @@ html, body {
   box-shadow: 0 2px 8px var(--shadow);
   filter: none;
 }
-.energy-more { align-self: center; font: 700 18px var(--font-display); color: var(--fg-secondary); }
+.energy-more { align-self: center; font: 700 18px var(--font-numbers, var(--font-display)); color: var(--fg-secondary); }
 
 /* A Special Energy card: a circle cut out of the card. --ex and --ey are where the middle of the circle is on
    the card and --ed how wide it is (fractions of the card); a design can change them (its "energy" crop). */
@@ -520,7 +520,7 @@ html, body {
   border-radius: 8px;
   background: var(--bg-card);
   border: 1px solid var(--accent);
-  font: 700 17px/1.1 var(--font-display);
+  font: 700 17px/1.1 var(--font-labels, var(--font-display));
   letter-spacing: 0.02em;
   transition: opacity 0.3s ease, border-color 0.3s ease;
 }
@@ -555,7 +555,7 @@ html, body {
   border-left: 3px solid var(--warning);
   border-radius: 6px;
   background: var(--bg-card);
-  font: 700 15px/1.2 var(--font-display);
+  font: 700 15px/1.2 var(--font-labels, var(--font-display));
 }
 .tool-hp { color: var(--success); font-weight: 800; }
 .mon.mini .tools { gap: 4px; }
@@ -574,7 +574,7 @@ html, body {
   border-left: 3px solid var(--accent);
   border-radius: 4px;
   background: var(--bg-card);
-  font: 600 13px/1.2 var(--font-display);
+  font: 600 13px/1.2 var(--font-labels, var(--font-display));
 }
 .attack-line-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attack-line-damage { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -591,7 +591,7 @@ html, body {
   background: var(--c, var(--warning));
   color: var(--ink, #1d1402);
   box-shadow: 0 2px 8px var(--shadow);
-  font: 700 14px/1.3 var(--font-display);
+  font: 700 14px/1.3 var(--font-labels, var(--font-display));
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -702,7 +702,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 800 17px/1 var(--font-display);
+  font: 800 17px/1 var(--font-numbers, var(--font-display));
   letter-spacing: 0.02em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
 }
@@ -767,7 +767,7 @@ html, body {
   justify-content: center;
   width: 100%;
   height: 100%;
-  font: 800 13px/1 var(--font-display);
+  font: 800 13px/1 var(--font-labels, var(--font-display));
   color: var(--ink);
 }
 .has-status-sprite .status-icon.no-icon { background-image: var(--statusSymbols); }
@@ -799,7 +799,7 @@ html, body {
 .features { display: flex; gap: 22px; justify-content: center; align-items: flex-start; }
 .feature { margin: 0; width: 176px; }
 /* the signs between the cards of a combo: the cards are a little smaller to make room */
-.feature-sep { align-self: center; min-width: 28px; text-align: center; font: 800 44px/1 var(--font-display); color: var(--accent); text-shadow: 0 3px 14px var(--shadow); }
+.feature-sep { align-self: center; min-width: 28px; text-align: center; font: 800 44px/1 var(--font-labels, var(--font-display)); color: var(--accent); text-shadow: 0 3px 14px var(--shadow); }
 .features.combo { gap: 10px; }
 .features.combo .feature { width: 150px; }
 .features.combo .feature-img { width: 150px; height: 209px; }
@@ -820,7 +820,7 @@ html, body {
   border: 1px solid var(--border);
   text-align: center;
 }
-.feature-name { font: 700 17px/1.15 var(--font-display); text-transform: uppercase; }
+.feature-name { font: 700 17px/1.15 var(--font-names, var(--font-display)); text-transform: uppercase; }
 
 .stadium { margin: 0 0 0 0; margin-top: auto; text-align: center; }
 /* The part of the Stadium's card that shows (--sa-*, as fractions of the card: x, y, w, h): the picture unless a design says otherwise.
@@ -854,7 +854,7 @@ html, body {
   border-radius: 999px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  font: 700 16px/1.2 var(--font-display);
+  font: 700 16px/1.2 var(--font-names, var(--font-display));
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -911,8 +911,8 @@ html, body {
 .pause-banner[hidden] { display: none; }
 .pause-icon { display: inline-flex; gap: 14px; margin-bottom: 10px; }
 .pause-icon::before, .pause-icon::after { content: ""; width: 16px; height: 54px; border-radius: 4px; background: var(--warning); }
-.pause-title { font: 800 88px/1 var(--font-display); letter-spacing: 0.12em; color: var(--warning); text-shadow: 0 4px 24px var(--shadow); }
-.pause-sub { margin-top: 12px; font: 600 26px/1.2 var(--font-body); letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-secondary); }
+.pause-title { font: 800 88px/1 var(--font-banners, var(--font-display)); letter-spacing: 0.12em; color: var(--warning); text-shadow: 0 4px 24px var(--shadow); }
+.pause-sub { margin-top: 12px; font: 600 26px/1.2 var(--font-subtitles, var(--font-body)); letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-secondary); }
 @keyframes pause-pulse { 50% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.2), 0 30px 80px var(--shadow); } }
 
 /* ---------------------------------------------------------------- toasts */
@@ -946,8 +946,8 @@ html, body {
 .toast-slot.b .toast.out { opacity: 0; transform: translateX(130%); }
 .toast-slot.c .toast.out { opacity: 0; transform: translateY(40px); }
 
-.toast-title { font: 800 48px/1 var(--font-display); letter-spacing: 0.04em; text-transform: uppercase; }
-.toast-sub { margin-top: 8px; font: 500 24px/1.2 var(--font-body); color: var(--fg-secondary); }
+.toast-title { font: 800 48px/1 var(--font-banners, var(--font-display)); letter-spacing: 0.04em; text-transform: uppercase; }
+.toast-sub { margin-top: 8px; font: 500 24px/1.2 var(--font-subtitles, var(--font-body)); color: var(--fg-secondary); }
 
 .toast-topdeck { --toast-color: var(--warning); }
 .toast-attack { --toast-color: var(--danger); }
@@ -978,13 +978,13 @@ html, body {
 .fx-glow { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
 .fx-text { position: relative; text-align: center; margin-top: -130px; }
 .fx-title {
-  font: 800 132px/1 var(--font-display);
+  font: 800 132px/1 var(--font-banners, var(--font-display));
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #fff;
   text-shadow: 0 0 40px var(--fx-color), 0 10px 40px var(--shadow);
 }
-.fx-sub { margin-top: 18px; font: 600 38px/1.2 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fx-color); text-shadow: 0 4px 20px var(--shadow); }
+.fx-sub { margin-top: 18px; font: 600 38px/1.2 var(--font-subtitles, var(--font-display)); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fx-color); text-shadow: 0 4px 20px var(--shadow); }
 
 .fx.in .fx-title { animation: fx-pop 0.7s cubic-bezier(0.2, 1.2, 0.3, 1) both; }
 .fx.in .fx-sub { animation: fx-rise 0.6s 0.15s ease both; }
@@ -1005,7 +1005,7 @@ html, body {
   margin-left: -150px;
   width: 300px;
   text-align: center;
-  font: 800 120px/1 var(--font-display);
+  font: 800 120px/1 var(--font-numbers, var(--font-display));
   color: var(--danger);
   text-shadow: 0 0 30px rgba(248, 113, 113, 0.8), 0 8px 24px var(--shadow);
 }

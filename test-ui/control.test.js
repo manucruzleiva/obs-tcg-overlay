@@ -282,9 +282,11 @@ describe('control panel', { skip }, () => {
       assert.equal(await deck('b').inputValue(), 'Typing', 'the box being typed in is left alone');
     });
 
-    it('offers the energy types and every Pokémon while typing, and none for the picture', async () => {
+    it('offers the decks that are played the most, the energy types and every Pokémon while typing, and none for the picture', async () => {
       const names = await page.$$eval('#deck-names option', (options) => options.map((option) => option.value));
-      assert.deepEqual(names.slice(0, 3), ['Grass', 'Fire', 'Water']);
+      assert.deepEqual(names.slice(0, 3), ['Dragapult ex', "N's Zoroark ex", 'Basic Box']);
+      assert.ok(names.includes('Mega Lucario ex') && names.includes('Mega Darkrai ex'), 'the new Mega decks');
+      assert.ok(names.includes('Grass') && names.includes('Fire') && names.includes('Water'));
       assert.ok(names.includes('Charizard') && names.includes('Pecharunt'));
       assert.ok(names.length > 1030);
       assert.equal(await page.$eval('#deck-pictures option', (option) => option.value), 'none');

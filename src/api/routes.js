@@ -375,6 +375,7 @@ module.exports = (services) => {
   const slots = [
     ['images/:key', (name, req) => themes.setImage(name, req.params.key, req.body), (name, req) => themes.removeImage(name, req.params.key)],
     ['font', (name, req) => themes.setFont(name, req.body), (name) => themes.removeFont(name)],
+    ['fonts/:role', (name, req) => themes.setFontRole(name, req.params.role, req.body), (name, req) => themes.removeFontRole(name, req.params.role)],
     ['sounds/:cue', (name, req) => themes.setSound(name, req.params.cue, req.body), (name, req) => themes.removeSound(name, req.params.cue)]
   ];
   for (const [route, set, unset] of slots) {
