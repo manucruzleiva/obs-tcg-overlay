@@ -933,7 +933,8 @@ describe('settings', { skip }, () => {
       const update = library('Expanded').locator('button', { hasText: 'Update' });
       assert.equal(await update.getAttribute('title'), 'Brings only the cards that are new');
       await update.click();
-      await library('Expanded').locator('.library-done').waitFor();
+      // (the message of the download that made the library is still there until the update says how it went: wait for that one)
+      await library('Expanded').locator('.library-done', { hasText: 'up to date' }).waitFor();
       assert.equal(await library('Expanded').locator('.library-done').textContent(), 'Expanded is up to date: 4 cards. Nothing new.');
       assert.equal(await page.locator('.modal[aria-label="Download the Expanded library?"]').count(), 0, 'no question: it is not a big download');
     });

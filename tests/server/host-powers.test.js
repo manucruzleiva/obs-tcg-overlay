@@ -18,7 +18,11 @@ describe('the host and the other producers', () => {
     host = server.client({ clientId: 'host-client-001', name: 'Host' });
     maya = server.client({ clientId: 'maya-client-001', name: 'Maya', guest: true });
     noah = server.client({ clientId: 'noah-client-001', name: 'Noah', guest: true });
-    await Promise.all([host.ready(), maya.ready(), noah.ready()]);
+    // One after the other: the list of producers is in the order they arrived, and the host is the first (all three together, a slow
+    // machine can let Maya or Noah in before the host)
+    await host.ready();
+    await maya.ready();
+    await noah.ready();
   });
 
   after(() => server.stop());
