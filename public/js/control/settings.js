@@ -149,7 +149,118 @@ function overlayTab(app) {
     switchControl('Scale the overlay to fit the browser source', settings.autoScale !== false, (on) => update({ autoScale: on }),
       { hint: 'Turn off only if the browser source is exactly 1920 × 1080' }));
 
-  return h('div', { class: 'settings-stack' }, visibility, announcements, picture);
+  return h('div', { class: 'settings-stack' }, visibility, screensSection(app), announcements, picture);
+}
+
+// ----------------------------------------------------------------------------------- more overlays
+
+// Every overlay shows the same game. Besides the main one (/overlay) there can be screens: another overlay in OBS with its own design (a vertical
+// one for a phone, say) and its own switches. Each has an address of its own.
+function screensSection(app) {
+  const screens = () => (app.state.settings.screens || []);
+  const body = h('div', { class: 'screen-list' });
+  let designs = [];
+  const save = async (next) => {
+    const result = await app.act('action:settings', { action: 'update', screens: next });
+    if (result.ok) draw();
+  };
+  const change = (id, patch) => save(screens().map((screen) => (screen.id === id ? { ...screen, ...patch } : screen)));
+  const addressOf = (screen) => `${window.location.origin}/overlay?screen=${encodeURIComponent(screen.id)}`;
+
+  const add = async () => {
+    const name = await promptDialog({
+      title: 'Add an overlay', label: 'Name of the overlay', placeholder: 'Vertical', confirmLabel: 'Add', maxLength: DISPLAY.SCREEN_LIMITS.nameLength,
+      message: 'It has an address of its own to put in OBS. Choose its design (a mobile one, for a vertical stream) and what it shows when it is added.',
+      check: (value) => (screens().some((screen) => screen.name.toLowerCase() === value.toLowerCase()) ? 'You have an overlay with that name' : '')
+    });
+    if (!name) return;
+    const id = DISPLAY.screenId(name, screens().map((screen) => screen.id));
+    await save([...screens(), { id, name, design: null, display: {}, sound: false }]);
+  };
+
+  const remove = async (screen) => {
+    if (!(await confirmDialog({ title: `Remove "${screen.name}"?`, message: 'The address of this overlay stops showing anything: the browser source in OBS would be empty.', confirmLabel: 'Remove', danger: true }))) return;
+    await save(screens().filter((entry) => entry.id !== screen.id));
+  };
+
+  const card = (screen) => {
+    const name = h('input', { type: 'text', maxlength: DISPLAY.SCREEN_LIMITS.nameLength, value: screen.name, 'aria-label': `Name of the overlay ${screen.name}` });
+    name.addEventListener('change', () => { if (name.value.trim() && name.value.trim() !== screen.name) change(screen.id, { name: name.value.trim() }); else name.value = screen.name; });
+    const design = h('select', { 'aria-label': `Design of ${screen.name}` },
+      h('option', { value: '' }, 'The same as the main overlay'),
+      designs.map((entry) => h('option', { value: entry }, entry)),
+      // a design that is gone is still said
+      screen.design && !designs.includes(screen.design) && h('option', { value: screen.design }, `${screen.design} (not found)`));
+    design.value = screen.design || '';
+    design.addEventListener('change', () => change(screen.id, { design: design.value || null }));
+    const sound = switchControl('Plays the sound effects', screen.sound === true, (on) => change(screen.id, { sound: on }), { hint: 'The main overlay plays them: two overlays together would play every sound twice' });
+    const overrides = Object.keys(screen.display || {}).length;
+    return h('div', { class: 'screen-card', dataset: { screen: screen.id } },
+      h('div', { class: 'screen-head' }, name,
+        h('button', { class: 'round-btn small', type: 'button', title: 'Remove this overlay', 'aria-label': `Remove ${screen.name}`, onclick: () => remove(screen) }, icon('trash', 14))),
+      h('div', { class: 'screen-address' },
+        h('code', {}, addressOf(screen)),
+        h('button', { class: 'btn tiny', type: 'button', onclick: async () => { await app.copyText(addressOf(screen)); app.toast('Address copied. Paste it in a browser source in OBS.', 'success'); } }, 'Copy'),
+        h('button', { class: 'btn tiny', type: 'button', onclick: () => window.open(addressOf(screen), '_blank') }, 'Open')),
+      h('label', { class: 'field' }, h('span', {}, 'Design'), design),
+      h('div', { class: 'screen-options' },
+        h('button', { class: 'btn', type: 'button', onclick: () => openScreenOptions(app, screen.id, draw) }, overrides ? `What it shows (${overrides} different)` : 'What it shows'),
+        h('small', {}, overrides ? 'Different from the main overlay in some things' : 'The same as the main overlay')),
+      sound);
+  };
+
+  const draw = () => {
+    const list = screens();
+    replace(body,
+      h('div', { class: 'screen-card main' }, h('strong', {}, 'Main overlay'), h('div', { class: 'screen-address' }, h('code', {}, `${window.location.origin}/overlay`),
+        h('button', { class: 'btn tiny', type: 'button', onclick: async () => { await app.copyText(`${window.location.origin}/overlay`); app.toast('Address copied.', 'success'); } }, 'Copy'))),
+      list.map(card),
+      h('div', { class: 'button-row' }, h('button', { class: 'btn', type: 'button', disabled: list.length >= DISPLAY.SCREEN_LIMITS.max || undefined, onclick: add }, icon('plus', 16), 'Add an overlay'),
+        list.length >= DISPLAY.SCREEN_LIMITS.max && h('small', {}, `Up to ${DISPLAY.SCREEN_LIMITS.max} more`)));
+  };
+
+  // the designs there are, for the choice of a design
+  draw();
+  fetch('/api/themes').then((response) => response.json()).then((data) => { designs = data.names || []; draw(); }).catch(() => {});
+
+  return section('More overlays',
+    note('Every overlay shows the same game. Add one for a second stream, a vertical one for a phone for example: it has an address of its own to use in OBS, a design of its own (a mobile design is tall) and its own switches.'),
+    body);
+}
+
+// What one of the extra overlays shows: for each piece of the overlay the same as the main overlay, or shown, or hidden
+function openScreenOptions(app, id, redraw = () => {}) {
+  const find = () => (app.state.settings.screens || []).find((screen) => screen.id === id);
+  const screen = find();
+  if (!screen) return;
+  const body = h('div', { class: 'option-groups' });
+  const set = async (key, value) => {
+    const current = find();
+    if (!current) return;
+    const display = { ...current.display };
+    if (value === 'same') delete display[key]; else display[key] = value === 'show';
+    await app.act('action:settings', { action: 'update', screens: (app.state.settings.screens || []).map((entry) => (entry.id === id ? { ...entry, display } : entry)) });
+    redraw();
+  };
+  for (const group of DISPLAY.GROUPS) {
+    body.appendChild(h('fieldset', { class: 'option-group' }, h('legend', {}, group.label), group.options.map((option) => {
+      const mine = screen.display[option.key];
+      const select = h('select', { 'aria-label': option.label, dataset: { option: option.key } },
+        h('option', { value: 'same' }, `Same as the main overlay (${(app.state.settings.display || {})[option.key] === false ? 'hidden' : 'shown'})`),
+        h('option', { value: 'show' }, 'Shown'),
+        h('option', { value: 'hide' }, 'Hidden'));
+      select.value = mine === undefined ? 'same' : mine ? 'show' : 'hide';
+      select.addEventListener('change', () => set(option.key, select.value));
+      return h('label', { class: 'screen-option' }, h('span', {}, option.label), select);
+    })));
+  }
+  openModal({
+    title: `What "${screen.name}" shows`, subtitle: 'Anything left on "the same" follows the main overlay', size: 'lg', name: 'screen-options', stacked: true, body, onClose: redraw,
+    footer: [
+      h('button', { class: 'btn', type: 'button', onclick: async () => { const current = find(); if (current) await app.act('action:settings', { action: 'update', screens: (app.state.settings.screens || []).map((entry) => (entry.id === id ? { ...entry, display: {} } : entry)) }); closeModal(); } }, 'Make it all the same as the main overlay'),
+      h('button', { class: 'btn primary', type: 'button', onclick: closeModal }, 'Done')
+    ]
+  });
 }
 
 // --------------------------------------------------------------------------------------- sounds

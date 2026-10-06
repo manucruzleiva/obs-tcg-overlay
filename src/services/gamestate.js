@@ -128,6 +128,8 @@ class GameStateService {
         cardLanguage: 'en',
         // which service builds the card libraries (see catalog.js)
         librarySource: 'pokemontcg',
+        // more overlays for this controller: [{ id, name, design, display, sound }] (see DISPLAY.cleanScreens)
+        screens: [],
         // the keys of the card services: secrets (see SECRET_SETTINGS)
         apiKey: '',
         scrydexKey: '',
@@ -233,6 +235,7 @@ class GameStateService {
     // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
     if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
     if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
+    merged.settings.screens = DISPLAY.cleanScreens(merged.settings.screens);
     if (!GAME.CARD_SERVICES.some((service) => service.key === merged.settings.librarySource)) merged.settings.librarySource = 'pokemontcg';
     for (const name of GAME.SECRET_SETTINGS) if (!GAME.isSecretValue(merged.settings[name])) merged.settings[name] = '';
     for (const side of ['trainerA', 'trainerB']) {
@@ -854,7 +857,9 @@ class GameStateService {
   updateSettings(patch) {
     const defaults = this.getDefaultState().settings;
     for (const [key, value] of Object.entries(patch || {})) {
-      if (key === 'display') {
+      if (key === 'screens') {
+        this.state.settings.screens = DISPLAY.cleanScreens(value);
+      } else if (key === 'display') {
         // Individual overlay switches: merge, ignoring unknown keys and non-booleans
         for (const [option, shown] of Object.entries(value || {})) {
           if (DISPLAY.KEYS.includes(option) && typeof shown === 'boolean') {

@@ -165,12 +165,15 @@ function applyApiSettings(state) {
   pokemonTCG.setCredentials({ scrydexKey: state.settings.scrydexKey, scrydexTeam: state.settings.scrydexTeam });
 }
 
+let authService = null; // the control panel password (the desktop app sets and removes it from its tray menu)
+
 async function initialize() {
   await db.init();
   gameState = new GameStateService(db, pokemonTCG);
   applyApiSettings(gameState.state);
 
   const auth = new Auth(db);
+  authService = auth;
   if (auth.resetIfRequested()) getLogger().warn('The control panel password was removed (OTO_RESET_PASSWORD=1)');
   const dataDir = path.dirname(db.dbPath);
   const themes = new ThemeStore(path.join(dataDir, 'themes'), db);
@@ -387,4 +390,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-module.exports = { app, server, io, getGameState: () => gameState, shutdown, portCheck };
+// Is there a control panel password, and where does it come from ('stored' in the data of OTO, or 'environment': OTO_PASSWORD)
+const passwordStatus = () => (authService ? { enabled: authService.isEnabled(), source: authService.source() } : { enabled: false, source: null });
+// Set, change or (with an empty text) remove the control panel password; everybody who was signed in has to sign in again
+const setPassword = (password) => {
+  if (!authService) throw new Error('OTO is not ready yet');
+  authService.setPassword(password);
+};
+
+module.exports = { app, server, io, getGameState: () => gameState, shutdown, portCheck, passwordStatus, setPassword };

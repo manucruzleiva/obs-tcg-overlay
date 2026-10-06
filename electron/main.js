@@ -146,6 +146,101 @@ function shareLinkItems() {
   });
 }
 
+// ---- the control panel password: the host (the person who runs OTO) sets, changes and removes it here
+
+let passwordWindow = null;
+
+function controlPasswordStatus() {
+  return serverModule && typeof serverModule.passwordStatus === 'function' ? serverModule.passwordStatus() : { enabled: false, source: null };
+}
+
+// What the tray menu says about the password, and what can be done
+function passwordMenuItems() {
+  const { enabled, source } = controlPasswordStatus();
+  return [
+    {
+      label: source === 'environment' ? 'Set by OTO_PASSWORD: it cannot be changed here' : enabled ? 'A password is set' : 'No password: anyone who opens the link can produce',
+      enabled: false
+    },
+    { label: enabled ? 'Change the password…' : 'Set a password…', enabled: source !== 'environment', click: openPasswordWindow },
+    { label: 'Remove the password…', enabled: source === 'stored', click: confirmRemovePassword }
+  ];
+}
+
+// A small window that asks for the password twice (the page cannot do anything but save it or close)
+function openPasswordWindow() {
+  if (passwordWindow) {
+    passwordWindow.show();
+    passwordWindow.focus();
+    return;
+  }
+  passwordWindow = new BrowserWindow({
+    width: 440,
+    height: 400,
+    title: 'OTO - Control panel password',
+    icon: APP_ICON,
+    parent: mainWindow && mainWindow.isVisible() ? mainWindow : undefined,
+    modal: Boolean(mainWindow && mainWindow.isVisible()),
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    autoHideMenuBar: true,
+    show: false,
+    backgroundColor: '#0f1420',
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'password-preload.js') }
+  });
+  if (process.platform !== 'darwin') passwordWindow.removeMenu();
+  passwordWindow.once('ready-to-show', () => passwordWindow && passwordWindow.show());
+  passwordWindow.on('closed', () => { passwordWindow = null; });
+  passwordWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  passwordWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  passwordWindow.loadFile(path.join(__dirname, 'password.html'));
+}
+
+// Save the password that the small window sends. Everybody who was signed in has to sign in again, this window of the app too.
+function saveControlPassword(password) {
+  if (typeof password !== 'string' || password === '') return { ok: false, error: 'Write the password.' };
+  try {
+    serverModule.setPassword(password);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+  tellPasswordChanged('The control panel now asks for a password. Sign in again, here and on the other devices.');
+  return { ok: true };
+}
+
+// Take the password away: the control panel is open to anyone who has the link again
+function removeControlPassword() {
+  try {
+    serverModule.setPassword('');
+  } catch (error) {
+    dialog.showErrorBox('The password was not removed', error.message);
+    return false;
+  }
+  tellPasswordChanged('The control panel no longer asks for a password.');
+  return true;
+}
+
+async function confirmRemovePassword() {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Remove the password',
+    message: 'Remove the control panel password?',
+    detail: 'Anyone who has the link to the control panel, on this network, will be able to produce without it.',
+    buttons: ['Remove the password', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1
+  });
+  if (response === 0) removeControlPassword();
+}
+
+// The window of the app is signed out when the password changes: it shows the sign-in page again
+function tellPasswordChanged(message) {
+  if (tray) tray.setContextMenu(buildTrayMenu());
+  if (mainWindow) mainWindow.webContents.reload();
+  if (Notification.isSupported()) new Notification({ title: 'OTO', body: message }).show();
+}
+
 // Build the tray context menu (includes the current update action, if any)
 function buildTrayMenu() {
   const updateItems = updater.getMenuItems();
@@ -162,6 +257,7 @@ function buildTrayMenu() {
       }
     },
     { label: 'Copy Control Link for Other Devices', submenu: shareLinkItems() },
+    { label: 'Control panel password', submenu: passwordMenuItems() },
     { type: 'separator' },
     {
       label: 'Keep running in tray when window is closed',
@@ -512,6 +608,17 @@ ipcMain.handle('take-opened-packages', () => {
   return pendingPackages.splice(0);
 });
 
+ipcMain.handle('password:save', (event, password) => {
+  // only the small password window may ask for this
+  if (!passwordWindow || event.sender !== passwordWindow.webContents) return { ok: false, error: 'Not allowed.' };
+  const result = saveControlPassword(password);
+  if (result.ok) passwordWindow.close();
+  return result;
+});
+ipcMain.on('password:cancel', (event) => {
+  if (passwordWindow && event.sender === passwordWindow.webContents) passwordWindow.close();
+});
+
 ipcMain.handle('get-app-settings', () => settings.getAll());
 
 // The page may only change preferences meant for the user, not internal flags
@@ -520,4 +627,7 @@ ipcMain.handle('set-app-setting', (event, key, value) => {
   return settings.getAll();
 });
 
-module.exports = { app, createMainWindow, createOverlayWindow, backUpAndReset, restartServer };
+module.exports = { app, createMainWindow, createOverlayWindow, backUpAndReset, restartServer, buildTrayMenu, openPasswordWindow, removeControlPassword };
+
+// The tests of the desktop app reach the tray menu and the password window through this (it is not there in the app people use)
+if (process.env.OTO_TEST_HOOKS === '1') global.otoMain = module.exports;

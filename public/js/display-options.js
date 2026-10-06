@@ -78,9 +78,48 @@
     }
   ];
 
+  // More overlays for one controller (a vertical one for a phone next to the usual wide one, say): each is an address of the overlay,
+  // /overlay?screen=<id>, with a design of its own (or the one on air), its own switches (only what it says differently from the main overlay)
+  // and whether it plays the sound effects (the main overlay does: two of them would play every sound twice).
+  const SCREEN_LIMITS = { max: 3, nameLength: 24, idPattern: /^[a-z0-9-]{1,24}$/ };
+
   const KEYS = GROUPS.flatMap((group) => group.options.map((option) => option.key));
+
+  // What is kept of a list of screens (from a save, or sent by a page): at most SCREEN_LIMITS.max, each { id, name, design, display, sound }
+  function cleanScreens(list) {
+    if (!Array.isArray(list)) return [];
+    const screens = [];
+    const seen = new Set();
+    for (const raw of list) {
+      if (screens.length >= SCREEN_LIMITS.max) break;
+      if (!raw || typeof raw !== 'object') continue;
+      const id = typeof raw.id === 'string' && SCREEN_LIMITS.idPattern.test(raw.id) ? raw.id : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const display = {};
+      for (const [key, shown] of Object.entries(raw.display && typeof raw.display === 'object' ? raw.display : {})) {
+        if (KEYS.includes(key) && typeof shown === 'boolean') display[key] = shown;
+      }
+      screens.push({
+        id,
+        name: (typeof raw.name === 'string' ? raw.name.trim() : '').slice(0, SCREEN_LIMITS.nameLength) || id,
+        design: typeof raw.design === 'string' && raw.design.trim() ? raw.design.trim().slice(0, 40) : null,
+        display,
+        sound: raw.sound === true
+      });
+    }
+    return screens;
+  }
+
+  // An id for a new screen from its name ("Vertical stream" is "vertical-stream"), that is not one of `taken`
+  function screenId(name, taken = []) {
+    const base = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20) || 'screen';
+    let id = base;
+    for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+    return id;
+  }
   const STYLE_KEYS = GROUPS.flatMap((group) => group.options).filter((option) => option.style).map((option) => option.key);
   const DEFAULTS = Object.fromEntries(GROUPS.flatMap((group) => group.options).map((option) => [option.key, !option.off]));
 
-  return { GROUPS, KEYS, STYLE_KEYS, DEFAULTS };
+  return { GROUPS, KEYS, STYLE_KEYS, DEFAULTS, SCREEN_LIMITS, cleanScreens, screenId };
 }));

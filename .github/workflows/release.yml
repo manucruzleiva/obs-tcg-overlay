@@ -47,8 +47,24 @@ jobs:
             exit 1
           fi
 
-      # Builds the NSIS installer (self-updating) and the portable exe, plus latest.yml
+      # Builds the NSIS installer (self-updating) and the portable exe, plus latest.yml.
+      # Code signing: when the repository has the two secrets below, the .exe files are signed; without them they are built unsigned, as always
+      # (see docs/SIGNING.md). WIN_CSC_LINK is the certificate (a .pfx, as a link or as base64 text) and WIN_CSC_KEY_PASSWORD its password.
       - run: npm run dist
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Say whether the files are signed
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem dist/*.exe) {
+            $signature = Get-AuthenticodeSignature $file
+            Write-Host ("{0}: {1}" -f $file.Name, $signature.Status)
+            if ($env:REQUIRE_SIGNING -eq 'true' -and $signature.Status -ne 'Valid') { throw "$($file.Name) is not signed" }
+          }
+        env:
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING }}
 
       - name: Check the release files exist
         shell: bash

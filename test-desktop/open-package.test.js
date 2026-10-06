@@ -45,7 +45,7 @@ describe('desktop app', { skip }, () => {
     dir = fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'desktop-'));
     port = await freePort();
     // The shell that runs the tests may have ELECTRON_RUN_AS_NODE set (VS Code does): Electron would then start as plain Node
-    env = { ...process.env, OTO_DATA_DIR: path.join(dir, 'data'), OTO_PORT: String(port), OBS_TCG_DISABLE_UPDATES: '1' };
+    env = { ...process.env, OTO_DATA_DIR: path.join(dir, 'data'), OTO_PORT: String(port), OBS_TCG_DISABLE_UPDATES: '1', OTO_TEST_HOOKS: '1' };
     delete env.ELECTRON_RUN_AS_NODE;
   });
 
@@ -112,6 +112,55 @@ describe('desktop app', { skip }, () => {
     const answer = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(4000) });
     assert.equal(answer.status, 200, 'the service still answers');
     assert.equal((await api('/api/state')).trainerA.prizes.count, 6, 'and the game is still there');
+  });
+
+  it('lets the host set, change and remove the control panel password from the tray menu', async () => {
+    const entries = () => app.evaluate(() => globalThis.otoMain.buildTrayMenu().items.find((item) => item.label === 'Control panel password').submenu.items.map((item) => ({ label: item.label, enabled: item.enabled })));
+    const status = async () => (await api('/api/auth/status'));
+    assert.deepEqual(await entries(), [
+      { label: 'No password: anyone who opens the link can produce', enabled: false },
+      { label: 'Set a password…', enabled: true },
+      { label: 'Remove the password…', enabled: false }
+    ]);
+    assert.equal((await status()).required, false);
+
+    // the small window asks twice, and says when they are not the same
+    const opened = app.waitForEvent('window');
+    await app.evaluate(() => globalThis.otoMain.openPasswordWindow());
+    const small = await opened;
+    await small.waitForSelector('#password');
+    await small.fill('#password', 'let-me-in');
+    await small.fill('#repeat', 'something else');
+    await small.click('#save');
+    await small.waitForFunction(() => document.getElementById('error').textContent.includes('not the same'));
+    assert.equal((await status()).required, false, 'nothing was saved');
+    await small.fill('#repeat', 'let-me-in');
+    const closed = small.waitForEvent('close');
+    await small.click('#save');
+    await closed;
+    assert.equal((await status()).required, true);
+    assert.deepEqual((await entries()).map((entry) => [entry.label, entry.enabled]), [['A password is set', false], ['Change the password…', true], ['Remove the password…', true]]);
+
+    // the control panel asks for it now (the page of the app is sent to the sign-in page)
+    const refused = await fetch(`http://127.0.0.1:${port}/api/state`);
+    assert.equal(refused.status, 401, 'the API asks for it');
+    await window.waitForSelector('input[type="password"]', { timeout: 15000 });
+
+    // Escape leaves the small window and changes nothing
+    const again = app.waitForEvent('window');
+    await app.evaluate(() => globalThis.otoMain.openPasswordWindow());
+    const second = await again;
+    await second.waitForSelector('#password');
+    const gone = second.waitForEvent('close');
+    await second.keyboard.press('Escape').catch(() => {}); // (the window is gone before the key press is over)
+    await gone;
+    assert.equal((await status()).required, true);
+
+    // removed from the menu, the control panel is open again
+    assert.equal(await app.evaluate(() => globalThis.otoMain.removeControlPassword()), true);
+    assert.equal((await status()).required, false);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/state`)).status, 200);
+    await window.waitForSelector('.trainer-panel.side-a', { timeout: 20000 });
   });
 
   // what the installer does before it replaces the files

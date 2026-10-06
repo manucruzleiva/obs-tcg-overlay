@@ -375,6 +375,18 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .tool-chip:hover { border-color: var(--danger); color: var(--fg-primary); }
 .tool-chip .tool-hp { color: var(--success); font-weight: 700; }
 .item-mode { margin-bottom: 10px; }
+/* more overlays: the screens of one controller */
+.screen-list { display: flex; flex-direction: column; gap: 10px; }
+.screen-card { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); display: flex; flex-direction: column; gap: 10px; }
+.screen-card.main { gap: 6px; }
+.screen-head { display: flex; align-items: center; gap: 8px; }
+.screen-head input { flex: 1; min-width: 0; }
+.screen-address { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.screen-address code { padding: 3px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 12px; word-break: break-all; }
+.screen-options { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.screen-options small, .screen-list small { color: var(--fg-muted); }
+.screen-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 13px; }
+.screen-option select { max-width: 240px; }
 /* knocking out several Pokémon: what each is worth */
 .ko-chosen { margin-top: 10px; }
 .ko-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 13px; }

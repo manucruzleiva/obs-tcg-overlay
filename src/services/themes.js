@@ -508,10 +508,11 @@ class ThemeStore {
 
   // The design as the overlay needs it: colors, and an address for each picture and the font
   // (cues with a sound of their own are listed; the sounds themselves go through /api/sounds)
-  resolved(name) {
+  // `byName`: the addresses of the files say which design they are of (an overlay screen that wears a design that is not the one on air)
+  resolved(name, { byName = false } = {}) {
     const design = this.get(name);
     if (!design) return null;
-    const url = (ref) => `/api/theme/assets/${ref}?v=${design.version}`;
+    const url = (ref) => `/api/theme/assets/${ref}?v=${design.version}${byName ? `&design=${encodeURIComponent(design.name)}` : ''}`;
     const resolved = { name: design.name, colors: design.colors, images: {}, sounds: Object.keys(design.sounds) };
     if (design.layout) resolved.layout = design.layout;
     if (design.crop) resolved.crop = design.crop;

@@ -681,6 +681,92 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('another overlay for the same controller', () => {
+    const api = (method, route, body) => fetch(`${server.base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const screens = (list) => send('action:settings', { action: 'update', screens: list });
+    const screen = (extra = {}) => ({ id: 'vertical', name: 'Vertical', design: null, display: {}, sound: false, ...extra });
+    const stage = (target) => target.$eval('#stage', (node) => ({ w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait') }));
+    let second;
+    afterEach(async () => { if (second) await second.context().close(); second = null; });
+    const open = async (id = 'vertical', viewport = { width: 1080, height: 1920 }) => {
+      second = await openPage(browser, `${server.base}/overlay?screen=${id}`, { viewport });
+      await second.waitForSelector('.trainer-a .active .mon:not([hidden])');
+      return second;
+    };
+
+    it('shows the same game, with the design of its own, while the main overlay keeps its look', async () => {
+      await api('PUT', '/api/themes/Phone%20Screen', { colors: { '--accent': '#445566' }, orientation: 'portrait' });
+      await screens([screen({ design: 'Phone Screen' })]);
+      const phone = await open();
+      assert.deepEqual(await stage(phone), { w: 1080, h: 1920, portrait: true });
+      assert.equal(await phone.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '#445566');
+      assert.equal(await phone.locator('.trainer-a .sb-name, .sb-a .sb-name').first().textContent(), 'Ash', 'the same game');
+      // the main overlay is as it was
+      assert.deepEqual(await stage(page), { w: 1920, h: 1080, portrait: false });
+      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+
+      // what the game does, both show
+      await send('action:trainerA', { action: 'setName', name: 'Misty' });
+      await phone.waitForFunction(() => document.querySelector('.sb-a .sb-name').textContent === 'Misty');
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-name').textContent === 'Misty');
+      assert.deepEqual(page.problems, []);
+      assert.deepEqual(phone.problems, []);
+    });
+
+    it('is the design on air while the screen has none of its own, and follows the one on air when that changes', async () => {
+      await api('PUT', '/api/themes/On%20Air', { colors: { '--accent': '#112233' } });
+      await screens([screen()]);
+      const other = await open('vertical', { width: 1280, height: 720 });
+      assert.equal(await other.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+      await api('POST', '/api/theme/active', { name: 'On Air' });
+      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
+      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
+      await api('POST', '/api/theme/active', { name: null });
+      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '');
+    });
+
+    it('changes its design when the settings say so, without being reloaded, and goes back when the design is taken off', async () => {
+      await api('PUT', '/api/themes/Tall', { colors: {}, orientation: 'portrait' });
+      await screens([screen()]);
+      const phone = await open();
+      assert.equal((await stage(phone)).portrait, false);
+      await screens([screen({ design: 'Tall' })]);
+      await phone.waitForFunction(() => document.getElementById('stage').classList.contains('portrait'));
+      await screens([screen({ design: null })]);
+      await phone.waitForFunction(() => !document.getElementById('stage').classList.contains('portrait'));
+    });
+
+    it('has its own switches: what it says is shown or hidden there, and the rest is the main overlay\'s', async () => {
+      await screens([screen({ display: { scoreboard: false, hpBars: false } })]);
+      const phone = await open('vertical', { width: 1280, height: 720 });
+      const hidden = (target, selector) => target.$eval(selector, (node) => Boolean(node.closest('.opt-off')));
+      await phone.waitForFunction(() => document.querySelector('.scoreboard').classList.contains('opt-off'));
+      assert.equal(await hidden(phone, '.scoreboard'), true);
+      assert.equal(await hidden(page, '.scoreboard'), false, 'the main overlay still has its scoreboard');
+      assert.equal(await phone.$eval('.trainer-a .active .hp', (node) => Boolean(node.closest('.opt-off') || node.classList.contains('opt-off'))), true);
+
+      // the main overlay's own switch for something else reaches the screen, and what the screen says wins
+      await send('action:settings', { action: 'update', display: { activePokemon: false, scoreboard: true } });
+      await phone.waitForFunction(() => document.querySelector('.trainer-a .active').classList.contains('opt-off'));
+      assert.equal(await hidden(phone, '.scoreboard'), true, 'the screen says hidden, whatever the main one says');
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active').classList.contains('opt-off'));
+    });
+
+    it('plays no sound unless its settings say it does (the main overlay does), and a screen that is not there is silent', async () => {
+      await screens([screen()]);
+      const phone = await open('vertical', { width: 800, height: 450 });
+      const plays = (target) => target.evaluate(() => window.oto.playsSound(window.oto.state));
+      assert.equal(await plays(phone), false);
+      assert.equal(await plays(page), true);
+      await screens([screen({ sound: true })]);
+      await phone.waitForFunction(() => window.oto.playsSound(window.oto.state));
+      await screens([]);
+      await phone.waitForFunction(() => !window.oto.playsSound(window.oto.state));
+      // and with no screen of that name it is the main overlay's look, with the main overlay's switches
+      assert.equal(await phone.$eval('.scoreboard', (node) => node.classList.contains('opt-off')), false);
+    });
+  });
+
   describe('a font for each group of text', () => {
     const wear = (extra) => page.evaluate((more) => window.oto.applyTheme({ name: 'type', colors: {}, images: {}, sounds: [], ...more }), extra);
     const family = (selector) => page.$eval(selector, (node) => getComputedStyle(node).fontFamily);

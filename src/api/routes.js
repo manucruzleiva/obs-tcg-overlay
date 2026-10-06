@@ -8,7 +8,7 @@
 
 const express = require('express');
 const { publicState } = require('../session');
-const { ThemeError } = require('../services/themes');
+const { ThemeError, folderName } = require('../services/themes');
 const { getLanAddresses, isShared } = require('../services/network');
 const { SoundError, MAX_SOUND_BYTES } = require('../services/sounds');
 const { CatalogError } = require('../services/catalog');
@@ -99,15 +99,30 @@ module.exports = (services) => {
   };
 
   // The design the overlay should wear (null means the built-in look), with an address for each of its files
-  publicRouter.get('/theme', (req, res) => {
+  // (an overlay can be one of the screens of this controller: /overlay?screen=<id>, with a design of its own, or the one on air when it has none)
+  const screenDesign = (screenId) => {
+    const screens = (gameState.state.settings && gameState.state.settings.screens) || [];
+    const screen = typeof screenId === 'string' ? screens.find((entry) => entry.id === screenId) : null;
+    const own = screen && screen.design ? themes.get(screen.design) : null;
+    return own || themes.active();
+  };
+  // The names of the designs that an overlay may ask the files of: the one on air and the ones the screens wear
+  const designsInUse = () => {
     const active = themes.active();
-    res.json({ name: active ? active.name : null, theme: active ? themes.resolved(active.name) : null });
+    const names = ((gameState.state.settings && gameState.state.settings.screens) || []).map((screen) => screen.design).filter(Boolean);
+    return [...(active ? [active.name] : []), ...names].map((name) => folderName(name));
+  };
+  publicRouter.get('/theme', (req, res) => {
+    const design = screenDesign(req.query.screen);
+    const active = themes.active();
+    res.json({ name: design ? design.name : null, theme: design ? themes.resolved(design.name, { byName: !active || folderName(design.name) !== folderName(active.name) }) : null });
   });
-  // The pictures and font of the design on air (the overlay loads them without signing in)
+  // The pictures and font of the design on air, or of a design a screen wears (the overlay loads them without signing in)
   publicRouter.get('/theme/assets/:folder/:file', (req, res) => {
     const { folder, file } = req.params;
-    const active = themes.active();
-    const found = active && ['images', 'fonts'].includes(folder) ? themes.assetFile(active.name, `${folder}/${file}`) : null;
+    const asked = typeof req.query.design === 'string' && designsInUse().includes(folderName(req.query.design)) ? themes.get(req.query.design) : null;
+    const design = asked || themes.active();
+    const found = design && ['images', 'fonts'].includes(folder) ? themes.assetFile(design.name, `${folder}/${file}`) : null;
     if (!found) return res.status(404).json({ error: 'Not found' });
     sendAsset(res, found, `${folder}/${file}`);
   });
@@ -327,7 +342,7 @@ module.exports = (services) => {
   // Designs (called themes here). Editing the one on air updates the overlay right away: the look, and
   // the sounds, since a design brings its own.
   const designChanged = (name) => {
-    if (!themes.isActive(name)) return;
+    if (!themes.isActive(name) && !designsInUse().includes(folderName(name))) return;
     io.emit('theme:changed');
     io.emit('sounds:changed');
   };

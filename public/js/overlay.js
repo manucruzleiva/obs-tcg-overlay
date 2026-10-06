@@ -327,6 +327,9 @@
       // "editor" is the copy inside the design editor: it draws what the editor sends and talks to no server
       const params = new URLSearchParams(window.location.search);
       this.editor = params.has('editor');
+      // one of the screens of this controller (another overlay in OBS, with a design of its own): its id is in the address
+      this.screenId = params.get('screen') || '';
+      this.screenDesign = null; // the design its settings say, as it was when the design was loaded
 
       this.build();
       this.tile = tileOf(null);
@@ -353,11 +356,33 @@
       this.sfx = new window.OTO_SFX.Engine();
       if (role === 'overlay') {
         this.socket.on('sfx', (message) => {
-          if (this.state) this.sfx.play(message.cue, this.state.settings.sound);
+          // (the screens besides the main overlay are silent unless their settings say they play the sounds: two of them would play every sound twice)
+          if (this.state && this.playsSound(this.state)) this.sfx.play(message.cue, this.state.settings.sound);
         });
         this.socket.on('sounds:changed', () => this.loadSounds());
         this.loadSounds();
       }
+    }
+
+    // ---- screens
+
+    // The settings of this page's screen (null for the main overlay, and for a screen that does not exist any more)
+    screenOf(state) {
+      if (!this.screenId || !state || !state.settings) return null;
+      return (state.settings.screens || []).find((screen) => screen.id === this.screenId) || null;
+    }
+
+    // What this page shows or hides: the switches of the overlay, with what the screen says differently
+    displayOf(state) {
+      const own = (state && state.settings && state.settings.display) || DISPLAY.DEFAULTS;
+      const screen = this.screenOf(state);
+      return screen ? Object.assign({}, own, screen.display) : own;
+    }
+
+    playsSound(state) {
+      if (!this.screenId) return true;
+      const screen = this.screenOf(state);
+      return Boolean(screen && screen.sound === true);
     }
 
     // The status icons are files in the assets folder too. One that is not there is drawn as a colored disc with a letter.
@@ -562,7 +587,7 @@
 
     // The bench is a row under the Active Pokémon when the producer asks for it, and always on a tall screen (there is no room at the side)
     syncBenchRow() {
-      const display = (this.state && this.state.settings && this.state.settings.display) || DISPLAY.DEFAULTS;
+      const display = this.displayOf(this.state);
       this.stage.classList.toggle('bench-row', this.portrait || display.benchRow === true);
     }
 
@@ -592,7 +617,13 @@
     update(state) {
       const previous = this.state;
       this.state = state;
-      const display = (state.settings && state.settings.display) || DISPLAY.DEFAULTS;
+      const display = this.displayOf(state);
+      // the design this screen wears can be changed from the control panel: the page asks for it again
+      if (!this.editor && this.screenId) {
+        const wanted = (this.screenOf(state) || {}).design || '';
+        if (this.screenDesign !== null && wanted !== this.screenDesign) this.loadTheme(state);
+        this.screenDesign = wanted;
+      }
 
       this.stage.style.opacity = String(Math.max(0, Math.min(100, state.settings.overlayOpacity)) / 100);
       if (!previous || previous.settings.autoScale !== state.settings.autoScale) this.fit();
@@ -755,7 +786,7 @@
     // ---- announcements
 
     announce(announcement) {
-      const display = (this.state && this.state.settings.display) || DISPLAY.DEFAULTS;
+      const display = this.displayOf(this.state);
       if (announcement.toast && announcement.toastMs > 0 && display.toasts !== false) this.showToast(announcement);
       if (announcement.animation && announcement.animationMs > 0 && display.animations !== false) this.showEffect(announcement);
     }
@@ -887,7 +918,7 @@
 
     async loadTheme() {
       try {
-        const response = await fetch('/api/theme', { cache: 'no-store' });
+        const response = await fetch(`/api/theme${this.screenId ? `?screen=${encodeURIComponent(this.screenId)}` : ''}`, { cache: 'no-store' });
         const data = await response.json();
         this.applyTheme(data.theme);
       } catch (error) {

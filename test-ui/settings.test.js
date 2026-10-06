@@ -149,6 +149,89 @@ describe('settings', { skip }, () => {
     await page.waitForSelector(`.theme-head h3:has-text("${name}")`);
   }
 
+  describe('more overlays', () => {
+    const cards = () => page.locator('.screen-card:not(.main)');
+    const screensNow = async () => (await call('GET', '/api/state')).json.settings.screens;
+
+    it('adds an overlay with an address of its own, and says how to use it', async () => {
+      await openSettings('Overlay');
+      assert.match(await page.locator('.screen-card.main code').textContent(), /\/overlay$/);
+      assert.equal(await cards().count(), 0);
+      await page.getByRole('button', { name: 'Add an overlay' }).click();
+      const ask = page.locator('.modal[aria-label="Add an overlay"]');
+      await ask.waitFor();
+      await ask.locator('input').fill('Vertical stream');
+      await ask.getByRole('button', { name: 'Add', exact: true }).click();
+      await cards().first().waitFor();
+      assert.deepEqual(await screensNow(), [{ id: 'vertical-stream', name: 'Vertical stream', design: null, display: {}, sound: false }]);
+      assert.match(await cards().first().locator('code').textContent(), /\/overlay\?screen=vertical-stream$/);
+      assert.equal(await cards().first().locator('select').inputValue(), '', 'the same design as the main overlay');
+      assert.match(await cards().first().locator('.screen-options small').textContent(), /The same as the main overlay/);
+
+      // a name that is taken is not added twice
+      await page.getByRole('button', { name: 'Add an overlay' }).click();
+      await ask.locator('input').fill('vertical STREAM');
+      assert.match(await ask.locator('.prompt-complaint').textContent(), /already have an overlay with that name|You have an overlay with that name/);
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('gives it a design, a name, the sounds, and what it shows differently, and takes it away again', async () => {
+      await call('PUT', '/api/themes/Tall%20Look', { colors: {}, orientation: 'portrait' });
+      await openSettings('Overlay');
+      await page.getByRole('button', { name: 'Add an overlay' }).click();
+      const ask = page.locator('.modal[aria-label="Add an overlay"]');
+      await ask.locator('input').fill('Phone');
+      await ask.getByRole('button', { name: 'Add', exact: true }).click();
+      await cards().first().waitFor();
+      await page.waitForFunction(() => [...document.querySelectorAll('.screen-card select option')].some((option) => option.value === 'Tall Look'));
+
+      await cards().first().locator('select').selectOption('Tall Look');
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.screens[0].design === 'Tall Look');
+      await cards().first().locator('input[type="text"]').fill('Mobile');
+      await cards().first().locator('input[type="text"]').press('Tab');
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.screens[0].name === 'Mobile');
+      await cards().first().locator('.switch', { hasText: 'Plays the sound effects' }).click();
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.screens[0].sound === true);
+      assert.equal((await screensNow())[0].id, 'phone', 'the address does not change with the name');
+
+      // what it shows
+      await cards().first().getByRole('button', { name: 'What it shows' }).click();
+      const dialog = page.locator('.modal[aria-label^="What"]');
+      await dialog.waitFor();
+      const option = (key) => dialog.locator(`select[data-option="${key}"]`);
+      assert.match(await option('scoreboard').locator('option').first().textContent(), /Same as the main overlay \(shown\)/);
+      await option('scoreboard').selectOption('hide');
+      await option('hpBars').selectOption('show');
+      await page.waitForFunction(async () => Object.keys((await (await fetch('/api/state')).json()).settings.screens[0].display).length === 2);
+      assert.deepEqual((await screensNow())[0].display, { scoreboard: false, hpBars: true });
+      await option('hpBars').selectOption('same');
+      await page.waitForFunction(async () => Object.keys((await (await fetch('/api/state')).json()).settings.screens[0].display).length === 1);
+      await dialog.getByRole('button', { name: 'Done' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      assert.match(await cards().first().locator('.screen-options button').textContent(), /What it shows \(1 different\)/);
+
+      // it is taken away after asking
+      await cards().first().getByRole('button', { name: 'Remove Mobile' }).click();
+      await page.locator('.modal[aria-label^="Remove"]').getByRole('button', { name: 'Remove', exact: true }).click();
+      await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.screens.length === 0);
+      assert.equal(await cards().count(), 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is at most three, and says so', async () => {
+      await call('POST', '/api/theme/active', { name: null });
+      const producer = await freshProducer();
+      await producer.act('action:settings', { action: 'update', screens: ['a', 'b', 'c'].map((id) => ({ id, name: id.toUpperCase(), design: null, display: {}, sound: false })) });
+      producer.close();
+      await page.waitForFunction(() => window.oto.state.settings.screens.length === 3);
+      await openSettings('Overlay');
+      assert.equal(await cards().count(), 3);
+      assert.equal(await page.getByRole('button', { name: 'Add an overlay' }).isDisabled(), true);
+      assert.match(await page.locator('.screen-list small').last().textContent(), /Up to 3 more/);
+    });
+  });
+
   describe('a copy of the built-in look', () => {
     it('makes a design with every color and the usual fonts written out, to learn from, and opens it in the editor', async () => {
       await openSettings('Look');
