@@ -262,8 +262,12 @@ async function initialize() {
   app.use('/api', publicRouter);
   app.use('/api', gate, protectedRouter);
 
+  // The pages are sent relative to their folder (`root`): the folders above it, wherever the app was put (a hidden ".local" or ".apps" in the path,
+  // for example), are none of the dotfile check's business, which would otherwise answer 404 for every page
+  const sendPage = (res, folder, name) => res.sendFile(name, { root: folder });
+
   // The control panel (page and files) sits behind the gate
-  app.get('/control', gate, (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'control', 'index.html')));
+  app.get('/control', gate, (req, res) => sendPage(res, path.join(PUBLIC_DIR, 'control'), 'index.html'));
   app.use('/control', gate, express.static(path.join(PUBLIC_DIR, 'control'), { index: false }));
 
   // Everything else in /public (overlay, sign-in page, scripts, styles) is open
@@ -275,8 +279,8 @@ async function initialize() {
   // ask for /favicon.ico by themselves.
   // (OTO_ASSETS_DIR is for the tests: a folder with some of the pictures missing)
   const ASSETS_DIR = process.env.OTO_ASSETS_DIR || path.join(__dirname, '..', 'assets');
-  app.get('/logo.gif', (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.gif')));
-  app.get(['/logo.ico', '/favicon.ico'], (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.ico')));
+  app.get('/logo.gif', (req, res) => sendPage(res, ASSETS_DIR, 'logo.gif'));
+  app.get(['/logo.ico', '/favicon.ico'], (req, res) => sendPage(res, ASSETS_DIR, 'logo.ico'));
   // The icons of the energy types and of the special conditions are files that may not be there: the folders can be deleted, and an icon
   // may not be made yet (Confused). The pages draw a plain disc for one that is missing. For the name of an icon that is known but has no
   // file the answer is 204 (nothing here), which tells them just the same without an error in the browser's console and a warning in the
@@ -323,10 +327,10 @@ async function initialize() {
   });
   app.get('/login', (req, res) => {
     if (!auth.isEnabled() || auth.isAuthorized(req.headers.cookie)) return res.redirect('/control');
-    res.sendFile(path.join(PUBLIC_DIR, 'login', 'index.html'));
+    sendPage(res, path.join(PUBLIC_DIR, 'login'), 'index.html');
   });
   app.get('/overlay', (req, res) => {
-    res.sendFile(path.join(PUBLIC_DIR, 'overlay', 'index.html'));
+    sendPage(res, path.join(PUBLIC_DIR, 'overlay'), 'index.html');
   });
   app.get('/', (req, res) => {
     res.redirect('/control');

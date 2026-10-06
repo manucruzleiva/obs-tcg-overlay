@@ -324,7 +324,8 @@ class Client {
 }
 
 // `prepare(dir)` runs before the server starts, to put files in its data folder (a design from an older version, say)
-async function startServer({ env = {}, label = 'srv', prepare } = {}) {
+// `appRoot` is the folder the app is started from (the project, unless a test puts a copy somewhere else)
+async function startServer({ env = {}, label = 'srv', prepare, appRoot = ROOT } = {}) {
   fs.mkdirSync(SCRATCH, { recursive: true });
   const dir = fs.mkdtempSync(path.join(SCRATCH, `${label}-`));
   if (prepare) prepare(dir);
@@ -332,10 +333,11 @@ async function startServer({ env = {}, label = 'srv', prepare } = {}) {
   const base = `http://127.0.0.1:${port}`;
   let logs = '';
 
-  const child = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
-    cwd: ROOT,
+  const child = spawn(process.execPath, [path.join(appRoot, 'src', 'server.js')], {
+    cwd: appRoot,
     env: {
       ...process.env,
+      NODE_PATH: path.join(ROOT, 'node_modules'), // (a copy of the app finds the packages of the project)
       PORT: String(port),
       HOST: '127.0.0.1',
       DB_PATH: path.join(dir, 'overlay.sqlite'),
@@ -374,6 +376,7 @@ async function startServer({ env = {}, label = 'srv', prepare } = {}) {
   const clients = [];
   return {
     base,
+    appRoot,
     port,
     dir,
     logs: () => logs,
