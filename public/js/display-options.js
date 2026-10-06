@@ -5,7 +5,7 @@
  * the server uses DEFAULTS as the starting settings, the control panel builds its
  * "Overlay visibility" switches from GROUPS, and the overlay maps each key to a CSS class.
  * Everything shows by default except the options marked `off: true`.
- * An option marked `style: true` is not a piece of the overlay but a way to draw one (the nationality as a flag): "Show everything"
+ * An option marked `style: true` is not a piece of the overlay but a way to draw one (the nationality as a flag, the bench in a row): "Show everything"
  * and "Minimal" leave it as it is, and the design editor draws it the way the live overlay does.
  */
 (function (root, factory) {
@@ -49,11 +49,13 @@
       options: [
         { key: 'activePokemon', label: 'Active Pokémon' },
         { key: 'benchPokemon', label: 'Bench' },
+        { key: 'benchRow', label: 'Bench in a row under the Active Pokémon instead of stacked at the side', off: true, style: true },
         { key: 'pokemonNames', label: 'Pokémon names' },
         { key: 'hpBars', label: 'HP bars and numbers' },
         { key: 'attachments', label: 'Attached energy and tools' },
         { key: 'retreatCost', label: 'Retreat cost' },
         { key: 'abilityTokens', label: 'Ability tokens (ready / used)' },
+        { key: 'benchAttacks', label: 'Attacks of the benched Pokémon (name and damage)', off: true },
         { key: 'statusConditions', label: 'Status conditions' }
       ]
     },
@@ -61,6 +63,7 @@
       id: 'table',
       label: 'Table',
       options: [
+        { key: 'spaces', label: 'Frames of the reserved spaces (camera feeds and the like)' },
         { key: 'stadium', label: 'Stadium card' },
         { key: 'featureCards', label: 'Feature cards' }
       ]

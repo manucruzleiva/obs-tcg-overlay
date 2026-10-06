@@ -20,7 +20,7 @@ export class TilePanel {
   build() {
     const groups = GROUPS.map(([kind, label]) => h('fieldset', { class: 'tile-group', dataset: { kind } },
       h('legend', {}, label),
-      THEME.TILE_PARTS.map((part) => {
+      THEME.tilePartsOf(kind).map((part) => {
         const select = h('select', { 'aria-label': `${label}: ${part.label}`, dataset: { part: part.key } },
           part.places.map((place) => h('option', { value: place }, THEME.TILE_PLACES[place])));
         select.addEventListener('change', () => this.model.setTile(kind, part.key, select.value, { source: 'tile' }));
@@ -33,14 +33,19 @@ export class TilePanel {
       THEME.PRIZE_STYLES.map((style) => h('option', { value: style.key }, style.label)));
     this.prize.addEventListener('change', () => this.model.setPrize(this.prize.value, { source: 'tile' }));
     this.prizeHelp = h('p', { class: 'settings-note prize-help' });
+    // and how the six are laid out
+    this.layout = h('select', { 'aria-label': 'Layout of the prize cards', dataset: { part: 'prizeLayout' } },
+      THEME.PRIZE_LAYOUTS.map((layout) => h('option', { value: layout.key }, layout.label)));
+    this.layout.addEventListener('change', () => this.model.setPrizeLayout(this.layout.value, { source: 'tile' }));
     const prizes = h('fieldset', { class: 'tile-group', dataset: { kind: 'prizes' } },
       h('legend', {}, 'Prize cards'),
       h('label', { class: 'tile-field' }, h('span', {}, 'Picture'), this.prize),
+      h('label', { class: 'tile-field' }, h('span', {}, 'Layout'), this.layout),
       this.prizeHelp);
 
     this.reset = h('button', { class: 'btn tiny', type: 'button', onclick: () => this.model.update({ tile: {} }, { source: 'tile' }) }, 'Use the usual places');
     this.element = h('div', { class: 'tile-panel' },
-      h('p', { class: 'settings-note' }, 'Each Pokémon shows the picture of its card (choose which part on the Card crop tab). Choose where its HP bar, the energy attached to it and its retreat cost go: on the picture, or below it.'),
+      h('p', { class: 'settings-note' }, 'Each Pokémon shows the picture of its card (choose which part on the Card crop tab). Choose where its HP bar, the energy attached to it and its status icons go, and the retreat cost of the Active Pokémon (the bench does not show it): on the picture, or below it.'),
       groups,
       h('div', { class: 'button-row' }, this.reset),
       prizes);
@@ -49,7 +54,7 @@ export class TilePanel {
   refresh() {
     for (const [kind] of GROUPS) {
       const tile = this.model.tileOf(kind);
-      for (const part of THEME.TILE_PARTS) {
+      for (const part of THEME.tilePartsOf(kind)) {
         const select = this.selects.get(`${kind}.${part.key}`);
         if (document.activeElement !== select) select.value = tile[part.key];
       }
@@ -58,9 +63,10 @@ export class TilePanel {
 
     const style = this.model.prizeOf();
     if (document.activeElement !== this.prize) this.prize.value = style;
+    if (document.activeElement !== this.layout) this.layout.value = this.model.prizeLayoutOf();
     const chosen = THEME.PRIZE_STYLES.find((item) => item.key === style);
     this.prizeHelp.textContent = chosen && chosen.picture
       ? `The picture is the one in ${chosen.help}; a plain drawing shows when there is none. Prize cards that are taken fade out, as always.`
-      : 'The design\'s own prize card back or card back picture, or the built-in one. Prize cards that are taken fade out, as always.';
+      : 'The design\'s own prize card back or card back picture, or the English card back when it has none. Prize cards that are taken fade out, as always.';
   }
 }

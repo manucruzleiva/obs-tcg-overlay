@@ -6,6 +6,7 @@ const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const GameStateService = require('../src/services/gamestate');
+const GAME = require('../public/js/game-data');
 const actions = require('../src/actions');
 const announcements = require('../src/services/announcements');
 
@@ -46,7 +47,10 @@ describe('GameStateService', () => {
     assert.equal(state.settings.display.vstarMarker, false, 'and so is the VSTAR marker');
     assert.equal(state.settings.display.supporterCounter, true, 'the others show');
     assert.equal(state.settings.display.nationalityFlag, false, 'the nationality is text until the producer chooses flags');
-    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag'].includes(key)));
+    assert.equal(state.settings.display.benchRow, false, 'the bench is stacked at the side until the producer asks for a row');
+    assert.equal(state.settings.display.benchAttacks, false, 'the attacks of the benched Pokémon are not shown until the producer asks for them');
+    assert.equal(state.settings.display.spaces, true, 'the frames of the reserved spaces show');
+    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag', 'benchRow', 'benchAttacks'].includes(key)));
   });
 
   it('keeps the GX attack and the VSTAR Power as markers that can be used once per game, back when the game ends', () => {
@@ -205,10 +209,11 @@ describe('GameStateService', () => {
     gs.setLock('trainerA', 'itemLock', false);
     assert.equal(gs.state.trainerA.locks.itemLock, false);
 
-    gs.setPrizesHidden('trainerB');
-    assert.equal(gs.state.trainerB.prizes.hidden, true);
+    assert.equal(gs.state.trainerB.prizes.hidden, true, 'the prize cards are face down until they are shown');
     gs.setPrizesHidden('trainerB');
     assert.equal(gs.state.trainerB.prizes.hidden, false, 'with no value it toggles');
+    gs.setPrizesHidden('trainerB');
+    assert.equal(gs.state.trainerB.prizes.hidden, true);
   });
 
   it('keeps a penalty as a number of prize cards, from none to all six', () => {
@@ -632,14 +637,46 @@ describe('GameStateService', () => {
     for (let i = 0; i < 60; i++) gs.toggleFavorite(`card-${i}`);
     assert.equal(gs.state.favoriteCardIds.length, 50);
 
-    for (let i = 0; i < 12; i++) gs.addFeatureCard({ cardId: `f${i}`, name: `F${i}`, image: IMG, note: 'a note is no longer kept' });
-    assert.equal(gs.state.featureCards.length, 10);
+    for (let i = 0; i < 16; i++) gs.addFeatureCard({ cardId: `f${i}`, name: `F${i}`, image: IMG, note: 'a note is no longer kept' });
+    assert.equal(gs.state.featureCards.length, 14);
+    assert.deepEqual(gs.state.featureCards.map((card) => card.name).slice(0, 2), ['F2', 'F3'], 'the oldest go when there are too many');
+    assert.equal(gs.state.featureCards.at(-1).name, 'F15', 'and the newest is the last one');
     assert.ok(gs.state.featureCards.every((card) => !('note' in card)), 'a feature card has no note');
     const { id } = gs.state.featureCards[3];
     gs.removeFeatureCard({ id });
     assert.equal(gs.state.featureCards.some((card) => card.id === id), false);
     gs.removeFeatureCard({ id: 'does-not-exist' });
-    assert.equal(gs.state.featureCards.length, 9);
+    assert.equal(gs.state.featureCards.length, 13);
+  });
+
+  it('keeps a sign between feature cards (+, →, = or or) in the order it was added, and ignores any other', () => {
+    assert.deepEqual(GAME.FEATURE_SEPARATORS.map((one) => one.symbol), ['+', '→', '=', 'or']);
+    gs.addFeatureCard({ cardId: 'a', name: 'Boss Orders', image: IMG });
+    gs.addFeatureSeparator('+');
+    gs.addFeatureCard({ cardId: 'b', name: 'Ultra Ball', image: IMG });
+    gs.addFeatureSeparator('→');
+    gs.addFeatureSeparator('nonsense');
+    gs.addFeatureSeparator(undefined);
+    assert.deepEqual(gs.state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', '+', 'Ultra Ball', '→']);
+    const sign = gs.state.featureCards[1];
+    assert.equal(typeof sign.id, 'string');
+    assert.ok(!('name' in sign) && !('image' in sign), 'a sign is not a card');
+    gs.removeFeatureCard({ id: sign.id });
+    assert.deepEqual(gs.state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', 'Ultra Ball', '→'], 'a sign can be taken away like a card');
+    gs.clearFeatureCards();
+    assert.deepEqual(gs.state.featureCards, []);
+  });
+
+  it('loads the feature cards and signs it knows, and drops anything else from a file written by hand', () => {
+    const saved = makeGame().state;
+    saved.featureCards = [
+      { id: 's1', separator: '+', addedAt: 1 }, { id: 'c1', cardId: 'a', name: 'Boss Orders', image: IMG, addedAt: 2 },
+      { id: 's2', separator: 'maybe', addedAt: 3 }, 'junk', null, 7, { id: 'x' }, { id: 'c2', cardId: 'b', name: 'Ultra Ball', image: IMG, addedAt: 4 }
+    ];
+    const loaded = makeGame({ saved });
+    assert.deepEqual(loaded.state.featureCards.map((entry) => entry.separator || entry.name), ['+', 'Boss Orders', 'Ultra Ball']);
+    saved.featureCards = 'nothing';
+    assert.deepEqual(makeGame({ saved }).state.featureCards, []);
   });
 
   it('drops the note of a feature card saved before they had none', () => {
@@ -704,6 +741,16 @@ describe('the cards on the prizes', () => {
   const cardsOf = (side) => gs.state[side].prizes.cards;
   const NONE = [null, null, null, null, null, null];
   const choose = (side, cards) => actions.resolve(`action:${side}`, { action: 'prizeCardsSet', cards });
+
+  it('hides the prize cards again for a new game, which has new prizes', () => {
+    gs.setPrizesHidden('trainerA', false);
+    gs.setPrizesHidden('trainerB', false);
+    gs.nextGame();
+    assert.deepEqual([gs.state.trainerA.prizes.hidden, gs.state.trainerB.prizes.hidden], [true, true]);
+    gs.setPrizesHidden('trainerA', false);
+    gs.startGame();
+    assert.equal(gs.state.trainerA.prizes.hidden, true);
+  });
 
   it('starts with no card chosen for any prize card', () => {
     assert.deepEqual(cardsOf('trainerA'), NONE);

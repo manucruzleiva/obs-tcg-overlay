@@ -38,11 +38,38 @@ function stadiumCardArt(name, hue, w, h) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+// A Special Energy card, drawn like a real one: "Special Energy" and "ENERGY" in the top row, the title under it, a wide picture window (bigger
+// than a Pokémon's: the usual circle is as wide as it is tall, in the middle of it) and the rules under it.
+function energyCardArt(name, hue, w, h) {
+  const window_ = window.OTO_THEME.ENERGY_ART;
+  const art = { x: window_.x * w, y: window_.y * h, w: window_.w * w, h: window_.h * h };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},12%,80%)"/><stop offset="1" stop-color="hsl(${hue},10%,58%)"/></linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="70%"><stop offset="0" stop-color="hsl(${(hue + 160) % 360},80%,72%)"/><stop offset="1" stop-color="hsl(${hue},70%,26%)"/></radialGradient>
+  </defs>
+  <rect width="${w}" height="${h}" rx="16" fill="url(#frame)"/>
+  <text x="20" y="22" font-family="Arial, sans-serif" font-weight="700" font-style="italic" font-size="14" fill="#333">Special Energy</text>
+  <text x="${w - 20}" y="22" font-family="Arial, sans-serif" font-weight="800" font-size="15" fill="#555" text-anchor="end" letter-spacing="2">ENERGY</text>
+  <text x="18" y="52" font-family="Arial, sans-serif" font-weight="700" font-size="22" fill="#222">${escape(name)}</text>
+  <rect x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" fill="url(#glow)"/>
+  <circle cx="${art.x + art.w * 0.5}" cy="${art.y + art.h * 0.5}" r="${art.h * 0.3}" fill="hsl(${hue},20%,92%)" stroke="#fff" stroke-width="3"/>
+  <path d="M${art.x + art.w * 0.5} ${art.y + art.h * 0.28} l${art.h * 0.07} ${art.h * 0.16} l${art.h * 0.17} 0 l-${art.h * 0.14} ${art.h * 0.1} l${art.h * 0.05} ${art.h * 0.17} l-${art.h * 0.15} -${art.h * 0.1} l-${art.h * 0.15} ${art.h * 0.1} l${art.h * 0.05} -${art.h * 0.17} l-${art.h * 0.14} -${art.h * 0.1} l${art.h * 0.17} 0 z" fill="#333"/>
+  <rect x="14" y="${h * 0.665}" width="${w - 28}" height="${h * 0.25}" rx="6" fill="hsl(${hue},12%,88%)"/>
+  <rect x="26" y="${h * 0.7}" width="${w - 52}" height="9" rx="3" fill="#0002"/>
+  <rect x="26" y="${h * 0.7 + 20}" width="${w - 52}" height="9" rx="3" fill="#0002"/>
+  <rect x="26" y="${h * 0.7 + 40}" width="${(w - 52) * 0.8}" height="9" rx="3" fill="#0002"/>
+  <rect x="26" y="${h * 0.7 + 60}" width="${(w - 52) * 0.5}" height="9" rx="3" fill="#0002"/>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 // A card picture as a data: address, 300 x 418 like the real ones
 export function cardArt(name, hue, kind = 'Basic') {
   const w = 300;
   const h = 418;
   if (kind === 'Stadium') return stadiumCardArt(name, hue, w, h);
+  if (kind === 'Special Energy') return energyCardArt(name, hue, w, h);
   const art = { x: ART_WINDOW.x * w, y: ART_WINDOW.y * h, w: ART_WINDOW.w * w, h: ART_WINDOW.h * h };
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
   <defs>
@@ -106,9 +133,9 @@ export function sampleState(base) {
     specialEnergies: [special('Double Turbo Energy', 210), special('Jet Energy', 190)],
     abilities: [{ name: 'Static', used: false, scope: 'turn' }, { name: 'Volt Switch', used: true, scope: 'turn' }]
   });
-  a.bench = a.bench.map((slot, index) => (index === 0 ? mon(0, 'Eevee', 30, 60, 60, { energies: ['colorless'], retreat: 1 })
+  a.bench = a.bench.map((slot, index) => (index === 0 ? mon(0, 'Eevee', 30, 60, 60, { energies: ['colorless'], retreat: 1, attacks: [{ name: 'Rear Kick', damage: '30' }] })
     : index === 1 ? mon(1, 'Pichu', 55, 20, 40)
-      : index === 2 ? mon(2, 'Raichu', 45, 90, 130, { energies: ['lightning', 'lightning'], specialEnergies: [special('Gift Energy', 330)], retreat: 2 })
+      : index === 2 ? mon(2, 'Raichu', 45, 90, 130, { energies: ['lightning', 'lightning'], specialEnergies: [special('Gift Energy', 330)], retreat: 2, attacks: [{ name: 'Volt Tackle', damage: '120' }] })
         : slot));
 
   const b = state.trainerB;
@@ -121,12 +148,13 @@ export function sampleState(base) {
     energies: ['fire', 'fire', 'fire', 'fire'], status: ['burned', 'trapped'],
     abilities: [{ name: 'Infernal Reign', used: false, scope: 'game' }]
   });
-  b.bench = b.bench.map((slot, index) => (index === 0 ? mon(0, 'Charmander', 12, 70, 70, { energies: ['fire'], retreat: 1 })
+  b.bench = b.bench.map((slot, index) => (index === 0 ? mon(0, 'Charmander', 12, 70, 70, { energies: ['fire'], retreat: 1, attacks: [{ name: 'Ember', damage: '30' }] })
     : index === 1 ? mon(1, 'Growlithe', 25, 60, 90, { retreat: 2 }) : slot));
 
   state.stadium = { cardId: 'sample-stadium', name: 'Area Zero', image: cardArt('Area Zero', 200, 'Stadium'), inPlay: true };
   state.featureCards = [
     { id: 'f1', cardId: 'sample-f1', name: 'Boss Orders', image: cardArt('Boss Orders', 280, 'Supporter') },
+    { id: 'fs', separator: '+' },
     { id: 'f2', cardId: 'sample-f2', name: 'Ultra Ball', image: cardArt('Ultra Ball', 190, 'Item') }
   ];
   state.matchScore = { trainerAWins: 1, trainerBWins: 0, bestOf: 3 };

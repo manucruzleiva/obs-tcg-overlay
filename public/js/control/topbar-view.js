@@ -22,7 +22,7 @@ export class TopBar {
 
     this.undoButton = h('button', { class: 'icon-btn', type: 'button', title: 'Undo (Ctrl+Z)', 'aria-label': 'Undo', onclick: () => app.undo() }, icon('undo'));
     this.redoButton = h('button', { class: 'icon-btn', type: 'button', title: 'Redo (Ctrl+Y)', 'aria-label': 'Redo', onclick: () => app.redo() }, icon('redo'));
-    this.draftButton = h('button', { class: 'btn draft-toggle', type: 'button', title: 'Make changes privately, then send them all to the overlay at once', onclick: () => app.toggleDraft() },
+    this.draftButton = h('button', { class: 'btn draft-toggle', type: 'button', title: 'Make changes together with the other producers without the overlay showing them, then send them all at once', onclick: () => app.toggleDraft() },
       icon('send', 16), h('span', {}, 'Edit & send'));
 
     this.root = h('header', { class: 'topbar' },
@@ -50,7 +50,7 @@ export class TopBar {
   updatePresence(presence, you) {
     replace(this.people, presence.producers.map((person) => {
       const mine = you && person.clientId === you.clientId;
-      return h('span', { class: `person${person.drafting ? ' drafting' : ''}${mine ? ' me' : ''}`, title: `${person.name}${mine ? ' (you)' : ''}${person.drafting ? ' is editing a draft' : ''}` },
+      return h('span', { class: `person${person.drafting ? ' drafting' : ''}${mine ? ' me' : ''}`, title: `${person.name}${mine ? ' (you)' : ''}${person.drafting ? ' is editing the draft' : ''}` },
         h('span', { class: 'avatar', style: { background: personColor(person.clientId) } }, initials(person.name)),
         h('span', { class: 'person-name' }, person.name));
     }));
@@ -102,7 +102,7 @@ export class DraftBanner {
     this.count = h('strong', {});
     this.root = h('div', { class: 'draft-banner', hidden: true, role: 'region', 'aria-label': 'Draft' },
       h('div', { class: 'draft-main' },
-        h('span', { class: 'draft-title' }, icon('send', 16), 'Draft: nothing here is on the overlay yet'),
+        h('span', { class: 'draft-title' }, icon('send', 16), 'Draft, shared with the other producers: nothing here is on the overlay yet'),
         h('span', { class: 'draft-count' }, this.count),
         h('span', { class: 'spacer' }),
         h('button', { class: 'btn', type: 'button', onclick: () => app.discardDraft() }, 'Discard'),
@@ -116,6 +116,7 @@ export class DraftBanner {
     const changes = draft.changes || [];
     this.count.textContent = changes.length === 0 ? 'No changes yet' : `${changes.length} change${changes.length === 1 ? '' : 's'}`;
     replace(this.list, changes.map((change) => h('li', { class: change.conflict ? 'conflict' : '' },
+      change.by && h('span', { class: 'draft-by' }, `${change.by}: `),
       change.label,
       change.conflict && h('span', { class: 'conflict-note' }, change.conflict.by ? ` · ${change.conflict.by} changed this since` : ' · no longer applies'))));
   }

@@ -726,6 +726,16 @@ const CARD = {
     }),
     label: (gs, side, p) => `Feature card added: ${p.name}`
   },
+  addFeatureSeparator: {
+    targets: () => ['featureCards'],
+    run: (gs, side, p) => {
+      if (!GAME.FEATURE_SEPARATORS.some((one) => one.symbol === p.symbol)) {
+        throw new ActionError(`the sign between feature cards can be: ${GAME.FEATURE_SEPARATORS.map((one) => one.symbol).join(', ')}`);
+      }
+      gs.addFeatureSeparator(p.symbol);
+    },
+    label: (gs, side, p) => `Feature separator added: ${p.symbol}`
+  },
   removeFeatureCard: {
     targets: () => ['featureCards'],
     run: (gs, side, p) => gs.removeFeatureCard({
@@ -874,7 +884,9 @@ async function prepare(gs, event, payload) {
     gs.pokemonTCG.getCard(payload.cardId, { source: supplied && supplied.source, language: supplied && supplied.language }).catch(() => null),
     new Promise((resolve) => setTimeout(() => resolve(null), DETAILS_TIMEOUT_MS).unref())
   ]);
-  if (!details) return payload;
+  // The card service did not answer in time: the Pokémon is put there now, and the attacks and the retreat cost are looked for in the
+  // background and filled in when they come (see Session.fillDetailsLater)
+  if (!details) return payload.target === 'stadium' ? payload : { ...payload, detailsLater: true };
   return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities, attacks: details.attacks, retreat: details.retreat } : details };
 }
 

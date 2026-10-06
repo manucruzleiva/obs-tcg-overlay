@@ -36,7 +36,7 @@ const respond = (status, body = {}, headers = {}) => ({ __response: true, status
 async function startMockCardApi(routes = {}) {
   const requests = [];
   const headers = [];
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     requests.push(req.url);
     headers.push(req.headers);
     const match = Object.keys(routes).find((prefix) => req.url.startsWith(prefix));
@@ -44,7 +44,8 @@ async function startMockCardApi(routes = {}) {
       res.statusCode = 404;
       return res.end('{}');
     }
-    const answer = typeof routes[match] === 'function' ? routes[match](req.url) : routes[match];
+    // (a route may answer later: it returns a promise)
+    const answer = await (typeof routes[match] === 'function' ? routes[match](req.url) : routes[match]);
     res.setHeader('Content-Type', 'application/json');
     if (answer && answer.__response) {
       res.statusCode = answer.status;
@@ -218,7 +219,7 @@ class Client {
 
     for (const event of [
       'state:full', 'state:update', 'action:applied', 'action:rejected', 'announce', 'presence', 'activity',
-      'activity:history', 'you', 'draft:state', 'draft:sent', 'draft:conflicts', 'theme:changed',
+      'activity:history', 'you', 'draft:state', 'draft:sent', 'draft:closed', 'draft:conflicts', 'theme:changed',
       'sfx', 'sounds:changed', 'catalog:progress'
     ]) {
       this.socket.on(event, (data) => this.record(event, data));

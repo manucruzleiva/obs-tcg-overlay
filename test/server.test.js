@@ -18,6 +18,13 @@ describe('server', () => {
 
   before(async () => {
     api = await startMockCardApi({
+      // a card service that is slow to answer (slower than a pick waits for it)
+      '/cards/sv9-slow': (url) => new Promise((resolve) => setTimeout(() => resolve({
+        data: {
+          id: url.split('/cards/')[1].split('?')[0], name: 'Slowpoke', supertype: 'Pokémon', hp: '80', set: { id: 'sv9', name: 'Test' }, images: { large: IMG, small: IMG },
+          attacks: [{ name: 'Yawn', damage: '' }, { name: 'Headbutt', damage: '30' }], convertedRetreatCost: 2
+        }
+      }), 3200)),
       '/cards/sv9-9': { data: { id: 'sv9-9', name: 'Uncached', supertype: 'Pokémon', hp: '40', set: { id: 'sv9', name: 'Test' }, images: { large: IMG } } },
       '/cards/sv1-1': {
         data: {
@@ -257,6 +264,36 @@ describe('server', () => {
     assert.equal(state.trainerA.bench[0].retreat, 0);
     assert.equal((await trainer('trainerA', { action: 'setRetreat', slot: 0, cost: 9 })).ok, false);
     assert.equal((await trainer('trainerA', { action: 'setRetreat', slot: 0, cost: 'free' })).ok, false);
+  });
+
+  it('puts a Pokémon down at once when the card service is slow, and fills in its attacks and retreat cost when they arrive', async () => {
+    const filled = producer.expect('state:update', (s) => s.trainerA.active.attacks.length > 0, 15000);
+    const said = producer.expect('activity', (entry) => /attacks and retreat cost from the card/.test(entry.label), 15000);
+    const picked = await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv9-slow', cardData: { id: 'sv9-slow', name: 'Slowpoke', hp: '80', images: { large: IMG } } });
+    assert.equal(picked.ok, true);
+    assert.equal(picked.state.trainerA.active.name, 'Slowpoke', 'there at once');
+    assert.deepEqual([picked.state.trainerA.active.attacks.length, picked.state.trainerA.active.retreat], [0, 0], 'without what the card service has not told yet');
+
+    const later = await filled;
+    assert.deepEqual(later.trainerA.active.attacks.map((attack) => [attack.name, attack.damage]), [['Yawn', 0], ['Headbutt', 30]]);
+    assert.equal(later.trainerA.active.retreat, 2);
+    const entry = await said;
+    assert.equal(entry.label, 'Slowpoke: attacks and retreat cost from the card');
+    assert.equal(entry.by.name, 'Card service');
+
+    // it is no step of the history: one undo takes the Pokémon away, not just its attacks
+    const undone = await producer.act('action:undo', {});
+    assert.equal(undone.state.trainerA.active.name, '');
+  });
+
+  it('leaves what a producer set by hand while the attacks were on their way', async () => {
+    // (another card: the first one is remembered now)
+    const picked = await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv9-slow2', cardData: { id: 'sv9-slow2', name: 'Slowpoke', hp: '80', images: { large: IMG } } });
+    assert.equal(picked.state.trainerA.active.retreat, 0);
+    await trainer('trainerA', { action: 'setRetreat', slot: -1, cost: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 4500));
+    const now = await (await fetch(`${server.base}/api/state`)).json();
+    assert.deepEqual([now.trainerA.active.retreat, now.trainerA.active.attacks.length], [1, 0], 'the retreat cost of the producer is kept, and nothing else is guessed');
   });
 
   it('takes damage and healing in tens only, and says so', async () => {
@@ -732,6 +769,19 @@ describe('server', () => {
     assert.equal('note' in state.featureCards[0], false, 'a feature card has no note');
 
     ({ state } = await producer.act('action:card', { action: 'removeFeatureCard', id: state.featureCards[0].id }));
+    assert.equal(state.featureCards.length, 0);
+
+    // signs between the cards, to explain a combo, in the order they were added
+    await producer.act('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Boss Orders', image: IMG });
+    await producer.act('action:card', { action: 'addFeatureSeparator', symbol: '+' });
+    ({ state } = await producer.act('action:card', { action: 'addFeatureCard', cardId: 'f-2', name: 'Ultra Ball', image: IMG }));
+    assert.deepEqual(state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', '+', 'Ultra Ball']);
+    const refused = await producer.act('action:card', { action: 'addFeatureSeparator', symbol: 'then' });
+    assert.equal(refused.ok, false);
+    assert.match(refused.rejected.message, /can be: \+, →, =, or/);
+    ({ state } = await producer.act('action:card', { action: 'removeFeatureCard', id: state.featureCards[1].id }));
+    assert.deepEqual(state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', 'Ultra Ball']);
+    ({ state } = await producer.act('action:card', { action: 'clearFeatureCards' }));
     assert.equal(state.featureCards.length, 0);
 
     ({ state } = await producer.act('action:card', { action: 'favorite', cardId: 'f-1' }));

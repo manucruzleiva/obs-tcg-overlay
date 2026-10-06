@@ -78,6 +78,7 @@ describe('control panel', { skip }, () => {
 
   // Put the game in a known position, then open a fresh control panel
   beforeEach(async () => {
+    producer.emit('draft:discard'); // a draft is shared: one that a test left open would be there for the next page
     await producer.act('action:reset', { action: 'full', confirm: 'FULL_RESET' });
     await producer.act('action:trainerA', { action: 'setName', name: 'Ash' });
     await producer.act('action:trainerB', { action: 'setName', name: 'Gary' });
@@ -578,6 +579,70 @@ describe('control panel', { skip }, () => {
     assert.equal(await page.locator('.trainer-panel .mon-art.cropped').count(), 3);
   });
 
+  describe('the Stadium and the feature cards', () => {
+    const FEATURES = '.feature-block';
+    const names = () => page.locator(`${FEATURES} .feature-item`).evaluateAll((items) => items.map((item) => (item.querySelector('.sign') || item.querySelector('.feature-text')).textContent));
+    const stadiumBox = () => page.locator('.stadium-art').evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const image = node.querySelector('img');
+      const picture = image && image.getBoundingClientRect();
+      return { w: rect.width, h: rect.height, cropped: node.classList.contains('cropped'), image: picture && { w: picture.width, h: picture.height, left: picture.left - rect.left, top: picture.top - rect.top } };
+    });
+
+    it('are two blocks of their own, and the Stadium is not part of the feature cards', async () => {
+      assert.equal(await page.locator('.table-block').count(), 0);
+      assert.equal(await page.locator('.stadium-block .block-title').textContent(), 'Stadium');
+      assert.match(await page.locator(`${FEATURES} .block-title`).textContent(), /^Feature cards/);
+      assert.equal(await page.locator('.stadium-block .feature-list').count(), 0);
+      assert.equal(await page.locator(`${FEATURES} .stadium-row`).count(), 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('shows just the art of the Stadium card, as the overlay does, and the whole card when this browser is set to it', async () => {
+      await producer.act('action:card', { action: 'setStadium', cardId: 'sv-2', name: 'Area Zero', image: ART('area-zero') });
+      await expectLive((state) => state.stadium.name, 'Area Zero');
+      await page.waitForSelector('.stadium-art img');
+      const art = await stadiumBox();
+      assert.ok(art.cropped, 'the art only, at first');
+      assert.ok(art.w > art.h, `the window of the picture is wide (${art.w} x ${art.h})`);
+      // the card is drawn bigger than the window, and moved so that only the picture of it shows
+      assert.ok(art.image.w > art.w * 1.1 && art.image.h > art.h * 2, JSON.stringify(art));
+      assert.ok(art.image.left < 0 && art.image.top < 0, 'the frame of the card is out of the window');
+
+      await page.evaluate(() => window.oto.setCardView('full'));
+      const whole = await stadiumBox();
+      assert.equal(whole.cropped, false);
+      assert.ok(whole.h > whole.w, 'the whole card is taller than it is wide');
+      assert.ok(whole.h > art.h, 'and taller than its art');
+      await page.evaluate(() => window.oto.setCardView('art'));
+      assert.equal((await stadiumBox()).cropped, true);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('lists the featured cards in the order they were added, with the signs between them, and removes either', async () => {
+      const add = (name) => producer.act('action:card', { action: 'addFeatureCard', cardId: name, name, image: IMG });
+      await add('Boss Orders');
+      await producer.act('action:card', { action: 'addFeatureSeparator', symbol: '+' });
+      await add('Ultra Ball');
+      await expectLive((state) => state.featureCards.length, 3);
+      assert.deepEqual(await names(), ['Boss Orders', '+', 'Ultra Ball']);
+
+      // the buttons add a sign after the last card
+      const signs = page.locator(`${FEATURES} .sign-btn`);
+      assert.deepEqual(await signs.allTextContents(), ['+', '→', '=', 'or']);
+      await signs.nth(1).click();
+      await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', '+', 'Ultra Ball', '→']);
+      assert.deepEqual(await names(), ['Boss Orders', '+', 'Ultra Ball', '→']);
+      assert.equal(await page.locator(`${FEATURES} .feature-sign`).count(), 2);
+
+      await page.locator(`${FEATURES} .feature-sign`).first().getByRole('button', { name: 'Remove the sign +' }).click();
+      await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', 'Ultra Ball', '→']);
+      await page.locator(`${FEATURES} .feature-item`).first().getByRole('button', { name: 'Remove Boss Orders' }).click();
+      await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Ultra Ball', '→']);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
   it('shows who else is producing and what they do', async () => {
     await producer.act('action:trainerB', { action: 'prizeMinus' });
     await page.waitForFunction(() => document.querySelector('.feed').textContent.includes('(5 left)'));
@@ -728,9 +793,28 @@ describe('control panel', { skip }, () => {
     assert.equal(await modal().locator('.amount-input').inputValue(), '10');
   });
 
-  it('has no victory buttons in the hype: whoever takes the last prize card wins by itself', async () => {
+  it('has one Winner button in the hype, for the player whose turn it is, and no victory button for each: whoever takes the last prize card wins by itself', async () => {
     assert.equal(await page.locator('.hype-grid button', { hasText: 'Victory' }).count(), 0);
     assert.equal(await page.locator('.hype-grid button', { hasText: 'Game start' }).count(), 1);
+    const winner = page.locator('.hype-grid button', { hasText: 'Winner' });
+    assert.equal(await winner.count(), 1);
+
+    // Ash has the turn: the victory is Ash's
+    let banner = producer.expect('announce', (announcement) => announcement.type === 'win');
+    await winner.click();
+    assert.equal((await banner).side, 'trainerA');
+    // and when the turn passes, it is Gary's
+    await producer.act('action:match', { action: 'toggleTurn' });
+    await expectLive((state) => state.trainerB.isTurn, true);
+    banner = producer.expect('announce', (announcement) => announcement.type === 'win');
+    await winner.click();
+    assert.equal((await banner).side, 'trainerB');
+    assert.equal((await live()).trainerA.prizes.count, 6, 'it is only the banner: nothing about the game changes');
+    assert.deepEqual(page.problems, []);
+
+    // (Ash has the turn again for the rest)
+    await producer.act('action:match', { action: 'toggleTurn' });
+    await expectLive((state) => state.trainerA.isTurn, true);
 
     await producer.act('action:trainerA', { action: 'prizeSet', count: 1 });
     await expectLive((state) => state.trainerA.prizes.count, 1);
@@ -855,6 +939,70 @@ describe('control panel', { skip }, () => {
       await modal().locator('.modal-foot .danger').click();
       assert.equal((await heard).title, 'Adaptability');
       await expectLive((state) => [state.trainerA.active.abilities[0].used, state.trainerA.bench[0].abilities[0].used], [false, true]);
+    });
+
+    it('keeps the attacks of the benched Pokémon in a list that is closed until it is wanted, and takes one like any other attack', async () => {
+      const list = () => modal().locator('.bench-attacks');
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.equal(await list().count(), 0, 'no Pokémon on the bench has attacks on file');
+      await press('Escape');
+      await dialogClosed();
+
+      await producer.act('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60, attacks: [{ name: 'Rear Kick', damage: '30' }, { name: 'Tail Whip', damage: '10+' }] });
+      await producer.act('action:trainerA', { action: 'setBench', slot: 1, cardId: 'a-3', name: 'Raichu', image: IMG, hp: 120, attacks: [{ name: 'Volt Tackle', damage: '120' }] });
+      await expectLive((state) => state.trainerA.bench[1].attacks.map((attack) => attack.name), ['Volt Tackle']);
+      await press('c');
+      await page.waitForSelector('.modal');
+
+      // closed at first: the Active Pokémon's attacks are the ones that show, with the numbers
+      assert.equal(await list().evaluate((node) => node.open), false);
+      assert.match(await list().locator('summary').textContent(), /Attacks of the benched Pokémon\s*2 Pokémon/);
+      assert.equal(await modal().locator('.bench-pick').first().isVisible(), false);
+      assert.deepEqual(await modal().locator('.attack-pick:not(.ability):not(.bench-pick) .attack-name').allTextContents(), ['Gnaw', 'Thunder Jolt']);
+      assert.equal(await modal().locator('.bench-pick kbd').count(), 0, 'the benched ones have no number key');
+      assert.equal(await modal().locator('.attack-pick.ability kbd').textContent(), '3', 'the numbers of the others do not change');
+
+      // it opens from the keyboard without announcing anything
+      await list().locator('summary').focus();
+      await press('Enter');
+      await page.waitForFunction(() => document.querySelector('.bench-attacks').open);
+      assert.equal(await modal().count(), 1, 'Enter on the list opens it: it does not announce');
+      assert.deepEqual(await list().locator('.bench-attack-owner').allTextContents(), ['Eevee · Bench 1', 'Raichu · Bench 2']);
+      assert.deepEqual(await list().locator('.attack-name').allTextContents(), ['Rear Kick', 'Tail Whip', 'Volt Tackle']);
+      assert.deepEqual(await list().locator('.attack-damage').allTextContents(), ['30', '10+', '120']);
+
+      // picking one fills in the name and the damage of the card, and the list stays open
+      await list().locator('.bench-pick', { hasText: 'Tail Whip' }).click();
+      assert.equal(await modal().locator('input[aria-label="Attack name"]').inputValue(), 'Tail Whip');
+      assert.equal(await damageBox().inputValue(), '10', 'the damage of the attack, by default');
+      assert.match(await modal().locator('.from-bench').textContent(), /The attack of Eevee \(Bench 1\), on the bench\./);
+      assert.match(await modal().locator('.hint-line:not(.from-bench)').textContent(), /The card says 10\+: and more with some conditions/);
+      assert.equal(await list().evaluate((node) => node.open), true);
+      assert.equal(await list().locator('.bench-pick.on .attack-name').textContent(), 'Tail Whip');
+
+      // ...and the producer changes it
+      await damageBox().fill('40');
+      await damageBox().press('Tab');
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await modal().locator('.modal-foot .danger').click();
+      const announced = await heard;
+      assert.equal(announced.title, 'Tail Whip');
+      assert.equal(announced.subtitle, '40 damage');
+      assert.equal(announced.data.source, 'trainerA');
+      await expectLive((state) => state.trainerB.active.hp.current, 110);
+      await dialogClosed();
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is not shown the benched attacks of the other trainer, until that trainer is the one who attacks', async () => {
+      await producer.act('action:trainerB', { action: 'setBench', slot: 0, cardId: 'b-2', name: 'Pidgey', image: IMG, hp: 50, attacks: [{ name: 'Gust', damage: '20' }] });
+      await expectLive((state) => state.trainerB.bench[0].attacks.map((attack) => attack.name), ['Gust']);
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.equal(await modal().locator('.bench-attacks').count(), 0, 'Ash attacks: Gary\'s bench is not listed');
+      await modal().locator('.side-tab', { hasText: 'Gary' }).click();
+      assert.deepEqual(await modal().locator('.bench-attacks .attack-name').allTextContents(), ['Gust']);
     });
 
     it('lets the other trainer attack, and the announcement says so', async () => {
@@ -1104,7 +1252,7 @@ describe('control panel', { skip }, () => {
     const tiles = () => page.locator('.modal .card-tile .card-name').allTextContents();
     const status = () => page.locator('.modal .picker-status').textContent();
     const openFeature = async () => {
-      await page.locator('.block-title.sub', { hasText: 'Feature cards' }).getByRole('button', { name: 'Add' }).click();
+      await page.locator('.feature-block .block-title').getByRole('button', { name: 'Add' }).click();
       await page.waitForSelector('.modal .search-input');
     };
     const usedCount = async (count) => {
@@ -1372,7 +1520,7 @@ describe('control panel', { skip }, () => {
     assert.equal((await live()).trainerA.prizes.count, 5, 'taken once, not twice');
   });
 
-  it('keeps a draft private until it is sent', async () => {
+  it('keeps a draft off the overlay until it is sent', async () => {
     await page.locator('.draft-toggle').click();
     await page.waitForSelector('.draft-banner:not([hidden])');
     await press('ArrowDown');
@@ -1408,6 +1556,115 @@ describe('control panel', { skip }, () => {
     await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
     assert.equal((await live()).trainerA.prizes.count, 6);
     await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '6');
+  });
+
+  describe('the draft the producers share', () => {
+    const youAre = (target) => target.evaluate(() => window.oto.conn.you.name);
+    async function secondPage() {
+      const second = await openPage(browser, `${server.base}/control`);
+      extra.push(second.context());
+      await second.waitForSelector('.trainer-panel.side-a .mon-card');
+      await page.waitForFunction(() => document.querySelectorAll('.people .person').length >= 3);
+      return second;
+    }
+
+    it('is followed by the other producer\'s page, with who made each change, and either of them can send it', async () => {
+      const second = await secondPage();
+      await page.locator('.draft-toggle').click();
+      await second.waitForSelector('.draft-banner:not([hidden])');
+      await second.waitForSelector('.toast');
+      assert.match((await second.locator('.toast').allTextContents()).join(' '), new RegExp(`${await youAre(page)} started a draft`));
+      assert.match(await second.locator('.draft-toggle').textContent(), /Editing draft/);
+      assert.match(await second.locator('.draft-title').textContent(), /shared with the other producers/);
+
+      await press('ArrowDown'); // from this page
+      await second.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+      await second.keyboard.press('ArrowDown'); // and from the other
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('2 changes'));
+      await second.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('2 changes'));
+      const mine = await youAre(page);
+      const theirs = await youAre(second);
+      assert.deepEqual(await page.locator('.draft-changes .draft-by').allTextContents(), [`${mine}: `, `${theirs}: `]);
+      assert.equal((await second.locator('.trainer-panel.side-a .prize-number').textContent()).trim(), '4', 'the other page shows the same draft');
+      assert.equal((await prizeNumber('a').textContent()).trim(), '4');
+      assert.equal((await live()).trainerA.prizes.count, 6, 'and the live game is untouched');
+
+      await second.locator('.draft-banner button', { hasText: 'Send to overlay' }).click();
+      await expectLive((state) => state.trainerA.prizes.count, 4);
+      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await page.waitForFunction((name) => [...document.querySelectorAll('.toast')].some((toast) => toast.textContent.includes(`${name} sent 2 changes to the overlay`)), theirs);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is thrown away for everybody when one producer does it, and the others are told', async () => {
+      const second = await secondPage();
+      await page.locator('.draft-toggle').click();
+      await second.waitForSelector('.draft-banner:not([hidden])');
+      await second.locator('.draft-toggle').click(); // nothing in it yet, so no question
+      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await page.waitForFunction((name) => [...document.querySelectorAll('.toast')].some((toast) => toast.textContent.includes(`${name} threw the draft away`)), await youAre(second));
+      assert.equal((await live()).trainerA.prizes.count, 6);
+    });
+
+    it('shows a producer who joins while there is a draft the same draft', async () => {
+      await page.locator('.draft-toggle').click();
+      await page.waitForSelector('.draft-banner:not([hidden])');
+      await press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+      const late = await secondPage();
+      await late.waitForSelector('.draft-banner:not([hidden])');
+      await late.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+      assert.equal((await late.locator('.trainer-panel.side-a .prize-number').textContent()).trim(), '5');
+    });
+
+    it('opens again when the send of a draft is redone, with the changes that were sent, to change before they are sent once more', async () => {
+      await page.locator('.draft-toggle').click();
+      await page.waitForSelector('.draft-banner:not([hidden])');
+      await press('ArrowDown');
+      await press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('2 changes'));
+      await page.locator('.draft-banner button', { hasText: 'Send to overlay' }).click();
+      await expectLive((state) => state.trainerA.prizes.count, 4);
+      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+
+      await press('Control+z');
+      await expectLive((state) => state.trainerA.prizes.count, 6);
+      await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '6');
+
+      await press('Control+y');
+      await page.waitForSelector('.draft-banner:not([hidden])');
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('2 changes'));
+      await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((toast) => /The draft is open again with its 2 changes/.test(toast.textContent)));
+      assert.equal((await live()).trainerA.prizes.count, 6, 'not on the overlay: it is a draft again');
+      assert.equal((await prizeNumber('a').textContent()).trim(), '4', 'the page shows the draft');
+      assert.match(await page.locator('.feed').textContent(), /Redid: 2 sent changes, opened again as a draft/);
+
+      await press('ArrowDown'); // changed before it goes
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('3 changes'));
+      await press('Control+Enter');
+      await expectLive((state) => state.trainerA.prizes.count, 3);
+      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+    });
+
+    it('opens again for the other producers too', async () => {
+      const second = await secondPage();
+      await page.locator('.draft-toggle').click();
+      await page.waitForSelector('.draft-banner:not([hidden])');
+      await press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+      await press('Control+Enter');
+      await expectLive((state) => state.trainerA.prizes.count, 5);
+      await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await press('Control+z');
+      await expectLive((state) => state.trainerA.prizes.count, 6);
+      await second.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '6');
+      await second.keyboard.press('Control+y');
+      await page.waitForSelector('.draft-banner:not([hidden])');
+      await second.waitForSelector('.draft-banner:not([hidden])');
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+    });
   });
 
   it('says so when it is not connected', async () => {

@@ -332,7 +332,17 @@ function createMainWindow() {
     },
     show: false,
     frame: true,
-    resizable: true
+    resizable: true,
+    autoHideMenuBar: true
+  });
+  // The window has no File, Edit, View or Window menus: everything is done in the page (and in the tray menu). What the View menu gave that
+  // is still wanted, a reload, stays on F5 and Ctrl+R. (The menu bar of macOS belongs to the system and is left as it is.)
+  if (process.platform !== 'darwin') mainWindow.removeMenu();
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.key === 'F5' || ((input.control || input.meta) && input.key.toLowerCase() === 'r'))) {
+      event.preventDefault();
+      mainWindow.webContents.reload();
+    }
   });
   
   mainWindow.loadURL(`http://localhost:${SERVER_PORT}/control`);
@@ -436,6 +446,8 @@ takeTheLock().then((owned) => {
 
   app.whenReady().then(async () => {
     if (wantsQuit(process.argv)) return;
+    // no default menu (File, Edit, View, Window) in any window of OTO
+    if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
     initTrayIcon();
     await startServer();
     createTray();

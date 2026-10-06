@@ -3,6 +3,17 @@
  */
 import { h, icon, $ } from './dom.js';
 
+// Ask for a file (a picture, a font, a sound): resolves with it, or null when the choice was cancelled
+export function pickFile(accept) {
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'file', accept, hidden: true });
+    input.addEventListener('change', () => { resolve(input.files[0] || null); input.remove(); });
+    input.addEventListener('cancel', () => { resolve(null); input.remove(); });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
 // ------------------------------------------------------------------------------ toasts
 
 export function toast(message, kind = 'info', ms = 4200) {

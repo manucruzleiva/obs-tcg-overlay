@@ -1,6 +1,6 @@
 /**
- * The middle column: the match (score, round, turn), the hype buttons, the table (stadium and
- * feature cards) and the activity feed.
+ * The middle column: the match (score, round, turn), the hype buttons, the Stadium, the feature cards
+ * and the activity feed.
  */
 import { h, icon, replace, ago, personColor } from './dom.js';
 
@@ -65,21 +65,35 @@ export class CenterView {
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
         hype('Pass turn', 'P', () => app.act('action:toast', { action: 'passTurn' }), 'blue'),
         hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), ''),
+        // the victory banner for the player whose turn it is (before anybody has it, for the one the shortcuts are for)
+        hype('Winner', '', () => app.act('action:toast', { action: app.prizeSide() === 'trainerA' ? 'trainerAWin' : 'trainerBWin' }), 'gold'),
         this.pauseButton));
 
     // ---- table
     this.stadiumArt = h('div', { class: 'stadium-art' });
     this.stadiumName = h('div', { class: 'stadium-name' });
     this.featureList = h('div', { class: 'feature-list' });
-    const table = h('section', { class: 'block table-block' },
-      h('div', { class: 'block-title' }, 'Table'),
+    // the Stadium in play, and the cards that are featured: a card each
+    const stadium = h('section', { class: 'block stadium-block' },
+      h('div', { class: 'block-title' }, 'Stadium'),
       h('div', { class: 'stadium-row' },
         this.stadiumArt,
         h('div', { class: 'stadium-info' }, this.stadiumName,
           h('div', { class: 'button-row' },
             h('button', { class: 'btn', type: 'button', onclick: () => app.openPicker({ kind: 'stadium' }) }, 'Stadium', h('kbd', {}, 'S')),
-            h('button', { class: 'btn', type: 'button', onclick: () => app.act('action:card', { action: 'setStadium', cardId: '', name: '', image: '' }) }, 'Clear')))),
-      h('div', { class: 'block-title sub' }, 'Feature cards', h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openPicker({ kind: 'feature' }) }, 'Add')),
+            h('button', { class: 'btn', type: 'button', onclick: () => app.act('action:card', { action: 'setStadium', cardId: '', name: '', image: '' }) }, 'Clear')))));
+    // a sign between two cards says how they go together ("A + B → C"): the cards and signs are shown in the order they were added
+    const signs = h('div', { class: 'feature-signs', role: 'group', 'aria-label': 'Add a sign between feature cards' },
+      h('span', { class: 'hint' }, 'Between cards'),
+      window.OTO_GAME.FEATURE_SEPARATORS.map((one) => h('button', {
+        class: 'btn tiny sign-btn', type: 'button', title: `Add "${one.symbol}" (${one.label}) after the last card`, 'aria-label': `Add a sign: ${one.label}`,
+        onclick: () => app.act('action:card', { action: 'addFeatureSeparator', symbol: one.symbol })
+      }, one.symbol)));
+    const features = h('section', { class: 'block feature-block' },
+      h('div', { class: 'block-title' }, 'Feature cards',
+        h('span', { class: 'hint' }, 'The overlay shows the last three'),
+        h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openPicker({ kind: 'feature' }) }, 'Add')),
+      signs,
       this.featureList);
 
     // ---- activity
@@ -88,7 +102,7 @@ export class CenterView {
       h('div', { class: 'block-title' }, 'Activity', h('span', { class: 'hint' }, 'Everything any producer does')),
       this.feed);
 
-    return h('section', { class: 'center-panel' }, score, turn, hypeBlock, table, activity);
+    return h('section', { class: 'center-panel' }, score, turn, hypeBlock, stadium, features, activity);
   }
 
   update(state) {
@@ -114,16 +128,22 @@ export class CenterView {
     // stadium
     const stadium = state.stadium;
     const present = Boolean(stadium && stadium.inPlay);
+    // just the art of the card, like the Pokémon (the whole card is a choice of this browser, Settings, General)
+    this.stadiumArt.classList.toggle('cropped', app.cardView === 'art');
     replace(this.stadiumArt, present && stadium.image ? h('img', { src: stadium.image, alt: '' }) : h('span', { class: 'art-fallback' }, icon('star', 22)));
     this.stadiumName.textContent = present ? stadium.name || 'Stadium in play' : 'No stadium in play';
 
     // feature cards
     replace(this.featureList, state.featureCards.length === 0
       ? h('p', { class: 'empty' }, 'Nothing featured. Add a card to show it to the audience.')
-      : state.featureCards.map((card) => h('div', { class: 'feature-item' },
-        h('img', { src: card.image, alt: '', loading: 'lazy' }),
-        h('div', { class: 'feature-text' }, h('strong', {}, card.name)),
-        h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove ${card.name}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14)))));
+      : state.featureCards.map((card) => (card.separator
+        ? h('div', { class: 'feature-item feature-sign' },
+          h('strong', { class: 'sign' }, card.separator),
+          h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove the sign ${card.separator}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14)))
+        : h('div', { class: 'feature-item' },
+          h('img', { src: card.image, alt: '', loading: 'lazy' }),
+          h('div', { class: 'feature-text' }, h('strong', {}, card.name)),
+          h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove ${card.name}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14))))));
   }
 
   updateActivity(entries, you) {

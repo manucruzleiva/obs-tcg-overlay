@@ -123,6 +123,167 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  // The bench is stacked down the edge of the screen, with the name and the abilities of each Pokémon on the side toward the middle
+  describe('the bench', () => {
+    const looks = (side) => page.$$eval(`.trainer-${side} .bench .mon.mini:not([hidden])`, (nodes) => nodes.map((node) => {
+      const rect = (selector) => { const found = node.querySelector(selector); const box = found.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; };
+      const box = node.getBoundingClientRect();
+      return { box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom }, art: rect('.art'), details: rect('.details'), name: rect('.mon-name'), abilities: node.querySelector('.abilities').hidden ? null : rect('.abilities') };
+    }));
+    const names = ['Eevee', 'Pichu', 'Raichu', 'Mew', 'Snorlax', 'Gengar', 'Absol', 'Alakazam'];
+    const fill = async (side, count, size = 8) => {
+      for (let i = 0; i < size - 5; i++) await send(`action:${side}`, { action: 'benchSizePlus' });
+      for (let slot = 0; slot < count; slot++) {
+        await send(`action:${side}`, { action: 'setBench', slot, cardId: `${side}-${slot}`, name: names[slot], image: IMG, hp: 60, abilities: ['Static', 'Cursed Eye'], retreat: 1 });
+      }
+      await page.waitForFunction(([which, wanted]) => document.querySelectorAll(`.trainer-${which} .bench .mon.mini:not([hidden])`).length === wanted, [side === 'trainerA' ? 'a' : 'b', count]);
+    };
+
+    it('is stacked down the edge of the screen, one Pokémon under the other, for each trainer', async () => {
+      await fill('trainerA', 3, 5);
+      await fill('trainerB', 3, 5);
+      const a = await looks('a');
+      const b = await looks('b');
+      assert.deepEqual([...new Set(a.map((mon) => Math.round(mon.box.left)))], [36], 'at the left edge, all in one column');
+      assert.deepEqual([...new Set(b.map((mon) => Math.round(mon.box.right)))], [1884], 'at the right edge for the other trainer');
+      for (const column of [a, b]) {
+        assert.ok(column.every((mon, index) => index === 0 || mon.box.top >= column[index - 1].box.bottom), 'each one under the one before');
+        assert.ok(column.every((mon) => mon.box.bottom <= 1080 - 36 + 1), 'inside the screen');
+      }
+      const active = await page.$eval('.trainer-a .active', (node) => node.getBoundingClientRect().bottom);
+      assert.ok(a[0].box.top >= active, 'the first one is under the Active Pokémon');
+    });
+
+    it('shows the name and the abilities of each on the side toward the middle of the screen', async () => {
+      await fill('trainerA', 2, 5);
+      await fill('trainerB', 2, 5);
+      for (const mon of await looks('a')) {
+        assert.ok(mon.details.left >= mon.art.right, 'the details are to the right of the picture, toward the middle');
+        assert.ok(mon.abilities && mon.abilities.left >= mon.art.right && mon.name.left >= mon.art.right, 'with the name and the abilities in them');
+      }
+      for (const mon of await looks('b')) {
+        assert.ok(mon.details.right <= mon.art.left, 'the other trainer\'s are to the left of the picture, toward the middle');
+        assert.ok(mon.abilities && mon.abilities.right <= mon.art.left && mon.name.right <= mon.art.left);
+      }
+      assert.equal(await page.$eval('.trainer-b .bench .mon.mini .mon-name', (node) => getComputedStyle(node).textAlign), 'right');
+      assert.match(await page.$eval('.trainer-a .bench .mon.mini .mon-name', (node) => getComputedStyle(node).textAlign), /^(left|start)$/);
+    });
+
+    it('starts a second column, toward the middle, when there are more than fit under the Active Pokémon', async () => {
+      // (with an Active Pokémon each, as in a game: the bench starts under it)
+      await send('action:trainerB', { action: 'setActive', cardId: 'b-act', name: 'Charizard', image: IMG, hp: 150 });
+      await fill('trainerA', 8);
+      await fill('trainerB', 8);
+      for (const [side, column] of [['a', await looks('a')], ['b', await looks('b')]]) {
+        const lefts = [...new Set(column.map((mon) => Math.round(mon.box.left)))].sort((x, y) => x - y);
+        assert.equal(lefts.length, 2, `${side}: two columns`);
+        assert.ok(column.every((mon) => mon.box.bottom <= 1080 - 36 + 1), `${side}: nothing goes below the screen`);
+        const first = column.filter((mon) => Math.round(mon.box.left) === lefts[side === 'a' ? 0 : 1]);
+        assert.ok(first.length >= 5, `${side}: the column at the edge holds the most: ${first.length}`);
+      }
+    });
+
+    it('does not show the retreat cost, which is for the Active Pokémon', async () => {
+      await fill('trainerA', 2, 5);
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini .retreat:visible').count(), 0);
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini .retreat .energy').count(), 0);
+      await send('action:trainerA', { action: 'setRetreat', slot: -1, cost: 2 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .retreat .energy').length === 2);
+      assert.equal(await page.locator('.trainer-a .active .retreat:visible').count(), 1);
+    });
+
+    it('can show the attacks of each benched Pokémon, the name and the damage, when the option is on (it is off at first)', async () => {
+      await send('action:trainerA', { action: 'benchSizePlus' });
+      await send('action:trainerA', { action: 'benchSizeReset' });
+      await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-0', name: 'Eevee', image: IMG, hp: 60, attacks: [{ name: 'Rear Kick', damage: '30' }, { name: 'Tail Whip', damage: '10+' }, { name: 'Splash', damage: '' }] });
+      await send('action:trainerA', { action: 'setBench', slot: 1, cardId: 'a-1', name: 'Pichu', image: IMG, hp: 40 });
+      await send('action:trainerB', { action: 'setBench', slot: 0, cardId: 'b-0', name: 'Charmander', image: IMG, hp: 70, attacks: [{ name: 'Ember', damage: '30' }] });
+      await page.waitForFunction(() => document.querySelectorAll('.bench .mon.mini:not([hidden])').length === 3);
+      const lines = (side) => page.$$eval(`.trainer-${side} .bench .mon.mini:not([hidden])`, (nodes) => nodes.map((node) => [...node.querySelectorAll('.attack-line')].map((line) => line.textContent)));
+      const shown = () => page.locator('.bench .attacks:visible').count();
+
+      assert.equal(await shown(), 0, 'nothing is shown at first');
+      assert.equal((await live()).settings.display.benchAttacks, false);
+      await send('action:settings', { action: 'update', display: { benchAttacks: true } });
+      await page.waitForFunction(() => [...document.querySelectorAll('.bench .attacks')].some((node) => node.offsetParent !== null));
+      assert.deepEqual(await lines('a'), [['Rear Kick30', 'Tail Whip10+', 'Splash'], []], 'name and damage, as the card says; a Pokémon with none shows none');
+      assert.deepEqual(await lines('b'), [['Ember30']]);
+      assert.equal(await shown(), 2, 'only for the Pokémon that have attacks');
+
+      // they are in the details of the Pokémon, toward the middle of the screen, under the name
+      const places = await page.$eval('.trainer-a .bench .mon.mini .attacks', (node) => {
+        const mon = node.closest('.mon');
+        const art = mon.querySelector('.art').getBoundingClientRect();
+        const name = mon.querySelector('.mon-name').getBoundingClientRect();
+        const box = node.getBoundingClientRect();
+        return { right: box.left >= art.right, under: box.top >= name.bottom, inside: box.bottom <= mon.getBoundingClientRect().bottom + 1 };
+      });
+      assert.deepEqual(places, { right: true, under: true, inside: true });
+      assert.equal(await page.locator('.trainer-a .active .attacks:visible').count(), 0, 'the Active Pokémon is as it always was');
+
+      await send('action:settings', { action: 'update', display: { benchAttacks: false } });
+      await page.waitForFunction(() => ![...document.querySelectorAll('.bench .attacks')].some((node) => node.offsetParent !== null));
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can be a row under the Active Pokémon again, with the name and abilities under each picture', async () => {
+      await fill('trainerA', 3, 5);
+      assert.equal(await page.$eval('#stage', (node) => node.classList.contains('bench-row')), false);
+      await send('action:settings', { action: 'update', display: { benchRow: true } });
+      await page.waitForFunction(() => document.querySelector('#stage.bench-row'));
+      const row = await looks('a');
+      assert.deepEqual([...new Set(row.map((mon) => Math.round(mon.box.top)))].length, 1, 'side by side');
+      assert.ok(row.every((mon, index) => index === 0 || mon.box.left >= row[index - 1].box.right), 'one next to the other');
+      assert.ok(row.every((mon) => Math.abs(mon.box.right - mon.box.left - 104) < 1), 'each 104 pixels wide');
+      assert.ok(row.every((mon) => mon.details.top >= mon.art.bottom), 'with the name and the abilities under the picture');
+      assert.equal(await page.$eval('.trainer-a .bench .mon.mini .mon-name', (node) => getComputedStyle(node).textAlign), 'center');
+
+      await send('action:settings', { action: 'update', display: { benchRow: false } });
+      await page.waitForFunction(() => !document.querySelector('#stage.bench-row'));
+      assert.deepEqual([...new Set((await looks('a')).map((mon) => Math.round(mon.box.left)))], [36]);
+    });
+  });
+
+  describe('what is used each turn', () => {
+    const state = () => page.$$eval('.trainer-a .token, .trainer-b .token', (nodes) => nodes.map((node) => `${node.closest('.trainer').classList.contains('trainer-a') ? 'a' : 'b'}:${node.querySelector('.token-label').textContent}:${getComputedStyle(node).visibility}`));
+    const room = (side) => page.$eval(`.trainer-${side} .tokens`, (node) => { const box = node.getBoundingClientRect(); return [Math.round(box.width), Math.round(box.height)]; });
+
+    it('shows the energy, Stadium and Supporter trackers only for the player whose turn it is', async () => {
+      await send('action:trainerA', { action: 'setTurn', isTurn: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a.is-turn'));
+      const mine = await state();
+      for (const label of ['ENERGY', 'STADIUM', 'SUPPORTER']) {
+        assert.ok(mine.includes(`a:${label}:visible`), `${label} for the one with the turn`);
+        assert.ok(mine.includes(`b:${label}:hidden`), `${label} hidden for the other`);
+      }
+
+      await send('action:trainerB', { action: 'setTurn', isTurn: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-b.is-turn'));
+      const theirs = await state();
+      for (const label of ['ENERGY', 'STADIUM', 'SUPPORTER']) {
+        assert.ok(theirs.includes(`b:${label}:visible`) && theirs.includes(`a:${label}:hidden`), `${label} follows the turn`);
+      }
+    });
+
+    it('keeps the GX and VSTAR markers, which are for the game, and nothing moves when the turn passes', async () => {
+      await send('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+      await send('action:trainerA', { action: 'setTurn', isTurn: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a.is-turn'));
+      const before = [await room('a'), await room('b')];
+      const marks = await state();
+      for (const side of ['a', 'b']) assert.ok(marks.includes(`${side}:GX:visible`) && marks.includes(`${side}:VSTAR:visible`), `${side} keeps its markers`);
+      await send('action:trainerB', { action: 'setTurn', isTurn: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-b.is-turn'));
+      assert.deepEqual([await room('a'), await room('b')], before, 'the trackers keep their room: the rows are as big as they were');
+      await send('action:settings', { action: 'update', display: { gxMarker: false, vstarMarker: false } });
+    });
+
+    it('shows none for either player before anybody has the turn', async () => {
+      const none = await state();
+      assert.ok(none.filter((entry) => /:(ENERGY|STADIUM|SUPPORTER):/.test(entry)).every((entry) => entry.endsWith(':hidden')));
+    });
+  });
+
   // The deck of a trainer next to the name on the scoreboard, with the picture of what it names
   describe('the deck', () => {
     // a picture of a Pokémon, so no test needs the internet
@@ -231,6 +392,24 @@ describe('overlay', { skip }, () => {
     const front = (side, index) => prize(side, index).evaluate((node) => { const style = getComputedStyle(node, '::after'); return style.content === 'none' ? 'none' : style.backgroundImage; });
     const waitFaces = (side, count) => page.waitForFunction(([which, wanted]) => document.querySelectorAll(`.trainer-${which} .prize.has-face`).length === wanted, [side, count]);
     const shot = async (side, index) => { await wait(350); return prize(side, index).screenshot(); };
+
+    // (the prize cards are face down until they are shown: these show them)
+    beforeEach(async () => {
+      for (const side of ['trainerA', 'trainerB']) await send(`action:${side}`, { action: 'togglePrizeHidden', enabled: false });
+      await page.waitForFunction(() => !document.querySelector('.prizes.is-hidden'));
+    });
+
+    it('starts face down: the cards that are chosen do not show until the prizes are shown', async () => {
+      for (const side of ['trainerA', 'trainerB']) await send(`action:${side}`, { action: 'togglePrizeHidden', enabled: true });
+      await page.waitForFunction(() => document.querySelectorAll('.prizes.is-hidden').length === 2);
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
+      await waitFaces('a', 1);
+      assert.equal(await front('a', 0), 'none', 'face down: no card shows');
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), '"?"');
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
+      await page.waitForFunction(() => !document.querySelector('.trainer-a .prizes.is-hidden'));
+      assert.match(await front('a', 0), /\/art\/one\.svg/);
+    });
 
     it('shows the card chosen for a prize card on that prize card, and nothing on the others', async () => {
       assert.deepEqual(await faces('a'), [false, false, false, false, false, false], 'no card is chosen at first');
@@ -361,6 +540,217 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('the feature cards', () => {
+    const add = (name) => send('action:card', { action: 'addFeatureCard', cardId: name, name, image: '/art/area-zero.svg' });
+    const sign = (symbol) => send('action:card', { action: 'addFeatureSeparator', symbol });
+    const shown = () => page.$$eval('.features > *', (nodes) => nodes.map((node) => (node.classList.contains('feature-sep') ? node.textContent : node.querySelector('.feature-name').textContent)));
+    const cardWidth = () => page.$eval('.features .feature', (node) => node.getBoundingClientRect().width);
+
+    it('are hidden until there is one, and show the last three in the order they were added', async () => {
+      assert.equal(await page.locator('.features').isHidden(), true);
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      assert.deepEqual(await shown(), ['Boss Orders']);
+      for (const name of ['Ultra Ball', 'Iono', 'Switch']) await add(name);
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3 && document.querySelector('.features .feature-name').textContent === 'Ultra Ball');
+      assert.deepEqual(await shown(), ['Ultra Ball', 'Iono', 'Switch'], 'the oldest one makes room');
+      assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
+      assert.ok(Math.abs((await cardWidth()) - 176) < 1);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('have the signs between them that explain a combo, and the cards are a little smaller to make room', async () => {
+      await add('Boss Orders');
+      await sign('+');
+      await add('Ultra Ball');
+      await sign('→');
+      await add('Iono');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3);
+      assert.deepEqual(await shown(), ['Boss Orders', '+', 'Ultra Ball', '→', 'Iono']);
+      assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), true);
+      assert.ok(Math.abs((await cardWidth()) - 150) < 1, 'smaller');
+      const together = await page.$eval('.features', (node) => node.getBoundingClientRect().width);
+      assert.ok(together < 700, `the combo fits in the middle of the screen (${together}px)`);
+      // the signs are in the middle of the cards, not on top or below
+      const middle = await page.$eval('.feature-sep', (node) => { const sign = node.getBoundingClientRect(); const card = document.querySelector('.feature-img').getBoundingClientRect(); return sign.top >= card.top && sign.bottom <= card.bottom; });
+      assert.equal(middle, true);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('never start with a sign, and keep one that waits for the next card', async () => {
+      for (const name of ['One', 'Two', 'Three']) {
+        await add(name);
+        await sign('=');
+      }
+      await add('Four');
+      await sign('or');
+      await page.waitForFunction(() => document.querySelector('.features .feature-name').textContent === 'Two');
+      assert.deepEqual(await shown(), ['Two', '=', 'Three', '=', 'Four', 'or'], 'the sign before the oldest card shown is left out, the last one stays');
+    });
+
+    it('stay hidden when there are only signs, and a card with no sign is as it always was', async () => {
+      await sign('+');
+      await page.waitForFunction(() => document.querySelector('.features').hidden === true);
+      assert.deepEqual(await shown(), []);
+      await add('Boss Orders');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 1);
+      assert.deepEqual(await shown(), ['Boss Orders'], 'a sign before the first card is not shown');
+      assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
+    });
+  });
+
+  describe('a mobile screen (a design with orientation portrait)', () => {
+    const portrait = (extra = {}) => page.evaluate((more) => window.oto.applyTheme({ name: 'phone', colors: {}, images: {}, sounds: [], orientation: 'portrait', ...more }), extra);
+    const stage = () => page.$eval('#stage', (node) => ({ w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait'), benchRow: node.classList.contains('bench-row'), transform: node.style.transform }));
+    const box = (selector) => page.$eval(selector, (node) => { const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; });
+    const fill = async () => {
+      await send('action:trainerB', { action: 'setActive', cardId: 'b-act', name: 'Charizard', image: IMG, hp: 150 });
+      for (const side of ['trainerA', 'trainerB']) await send(`action:${side}`, { action: 'benchSizePlus' }); // six on the bench
+      for (let slot = 0; slot < 6; slot++) {
+        await send('action:trainerA', { action: 'setBench', slot, cardId: `a-${slot}`, name: `Mon ${slot}`, image: IMG, hp: 60 });
+        await send('action:trainerB', { action: 'setBench', slot, cardId: `b-${slot}`, name: `Foe ${slot}`, image: IMG, hp: 60 });
+      }
+      await page.waitForFunction(() => document.querySelectorAll('.bench .mon.mini:not([hidden])').length === 12);
+    };
+
+    it('is the wide 1920 x 1080 stage unless the design says otherwise', async () => {
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'translate(0px, 0px) scale(1)' });
+    });
+
+    it('is a tall 1080 x 1920 stage, fitted to the screen, and goes back to the wide one with the design', async () => {
+      await portrait();
+      const tall = await stage();
+      assert.deepEqual([tall.w, tall.h, tall.portrait], [1080, 1920, true]);
+      await page.setViewportSize({ width: 540, height: 960 });
+      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5)'));
+      assert.match((await stage()).transform, /translate\(0px, 0px\) scale\(0\.5\)/, 'half the size on a screen half the size');
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5625)'));
+      assert.match((await stage()).transform, /translate\((\d+(\.\d+)?)px, 0px\) scale\(0\.5625\)/, 'a tall stage is centered on a wide screen');
+
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: (await stage()).transform });
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('puts the trainers one above the other with the middle between them, inside the screen, and the bench in a row', async () => {
+      await page.setViewportSize({ width: 1080, height: 1920 });
+      await fill();
+      await portrait();
+      assert.equal((await stage()).benchRow, true, 'there is no room for the bench at the side');
+      const [board, a, b, center] = [await box('.scoreboard'), await box('.trainer-a'), await box('.trainer-b'), await box('.center')];
+      for (const [name, rect] of Object.entries({ board, a, b, center })) {
+        assert.ok(rect.left >= 0 && rect.right <= 1080 && rect.top >= 0 && rect.bottom <= 1920, `${name} is inside the screen: ${JSON.stringify(rect)}`);
+      }
+      assert.ok(board.bottom <= a.top, 'the scoreboard is on top');
+      assert.ok(a.bottom <= center.top && center.bottom <= b.top, 'Trainer A, the middle, then Trainer B');
+      assert.ok(a.right - a.left > 900 && b.right - b.left > 900, 'each trainer has the whole width');
+      for (const side of ['a', 'b']) {
+        const row = await page.$$eval(`.trainer-${side} .bench .mon.mini:not([hidden])`, (nodes) => nodes.map((node) => { const rect = node.getBoundingClientRect(); return { top: Math.round(rect.top), right: rect.right, left: rect.left }; }));
+        assert.equal(row.length, 6);
+        assert.deepEqual([...new Set(row.map((mon) => mon.top))].length, 1, `${side}: the whole bench in one row`);
+        assert.ok(row.every((mon) => mon.left >= 0 && mon.right <= 1080));
+      }
+      const features = await box('.features');
+      assert.ok(features.right <= (await box('.stadium')).left, 'the feature cards at one side of the middle and the Stadium at the other');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is at the bottom for the second trainer, and moves everything down below a logo', async () => {
+      await page.setViewportSize({ width: 1080, height: 1920 });
+      await portrait();
+      const noLogo = [await box('.scoreboard'), await box('.trainer-a')];
+      assert.ok(Math.abs((await box('.trainer-b')).bottom - (1920 - 36)) < 1, 'Trainer B ends at the bottom edge, with the usual margin');
+      await portrait({ images: { logoImage: '/art/logo.svg' } });
+      await page.waitForFunction(() => document.documentElement.classList.contains('has-logo'));
+      const logo = await box('.logo');
+      const withLogo = [await box('.scoreboard'), await box('.trainer-a')];
+      assert.ok(logo.bottom <= withLogo[0].top, 'the logo has the first row');
+      assert.ok(logo.left >= 0 && logo.right <= 1080, 'inside the screen');
+      assert.ok(Math.abs(withLogo[0].top - noLogo[0].top - 110) < 1 && Math.abs(withLogo[1].top - noLogo[1].top - 110) < 1, 'what is under it moves down by the same amount');
+      assert.ok(Math.abs((await box('.trainer-b')).bottom - (1920 - 36)) < 1, 'Trainer B stays where it was');
+    });
+
+    it('keeps the toast banners inside the screen', async () => {
+      await page.setViewportSize({ width: 1080, height: 1920 });
+      await portrait();
+      await send('action:toast', { action: 'topDeck', target: 'trainerA' });
+      await page.waitForSelector('.toast-slot .toast.in');
+      const slot = await box('.toast-slot');
+      assert.ok(slot.left >= 0 && slot.right <= 1080 && slot.bottom <= 1920, JSON.stringify(slot));
+    });
+  });
+
+  describe('the reserved spaces of a design', () => {
+    const wear = (spaces, images = {}, extra = {}) => page.evaluate(([list, pictures, more]) => window.oto.applyTheme({ name: 'spaces', colors: {}, images: pictures, sounds: [], spaces: list, ...more }), [spaces, images, extra]);
+    const spaces = () => page.$$eval('.space', (nodes) => nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return { shape: node.className.replace('space ', ''), left: node.offsetLeft, top: node.offsetTop, w: node.offsetWidth, h: node.offsetHeight, radius: style.borderTopLeftRadius, border: style.borderTopWidth, image: style.backgroundImage, visible: node.offsetParent !== null };
+    }));
+
+    it('are nothing at all unless a design has some', async () => {
+      assert.equal(await page.locator('.space').count(), 0);
+      await wear([]);
+      assert.equal(await page.locator('.space').count(), 0);
+    });
+
+    it('are an outline of their shape where the design says, behind everything else, and nothing is drawn inside', async () => {
+      await wear([
+        { id: 1, name: 'Camera', shape: 'rect', x: 100, y: 200, w: 480, h: 270 },
+        { id: 2, shape: 'rounded', x: 700, y: 300, w: 400, h: 225 },
+        { id: 3, shape: 'circle', x: 1300, y: 250, w: 300, h: 300 }
+      ]);
+      const [rect, rounded, circle] = await spaces();
+      assert.deepEqual([rect.left, rect.top, rect.w, rect.h], [100, 200, 480, 270]);
+      assert.deepEqual([rounded.left, rounded.top, rounded.w, rounded.h], [700, 300, 400, 225]);
+      assert.equal(rect.radius, '0px');
+      assert.equal(rounded.radius, '30px');
+      assert.equal(circle.radius, '50%', 'a circle (or an oval, when it is not as wide as it is tall)');
+      assert.ok([rect, rounded, circle].every((space) => space.border === '4px' && space.image === 'none'));
+      assert.equal(await page.locator('.space *').count(), 0, 'the inside is for what shows through');
+      const behind = await page.evaluate(() => { const layer = document.querySelector('.spaces'); const logo = document.querySelector('.logo'); return Boolean(layer.compareDocumentPosition(logo) & Node.DOCUMENT_POSITION_FOLLOWING) && getComputedStyle(layer).pointerEvents === 'none'; });
+      assert.equal(behind, true, 'under the logo and the pieces of the overlay, and the clicks go through');
+    });
+
+    it('show the picture the design has for them, instead of the outline, each its own', async () => {
+      await wear([{ id: 2, shape: 'rounded', x: 50, y: 60, w: 320, h: 180 }, { id: 4, shape: 'rect', x: 500, y: 60, w: 200, h: 200 }], { spaceFrame2: '/art/frame-two.svg' });
+      const [first, second] = await spaces();
+      assert.match(first.image, /frame-two\.svg/);
+      assert.equal(first.border, '0px', 'no outline over a picture');
+      assert.equal(second.image, 'none', 'the other has none: the outline');
+      assert.equal(second.border, '4px');
+      assert.equal(await page.locator('.space.has-frame').count(), 1);
+      assert.equal(await page.$eval('.space.has-frame', (node) => getComputedStyle(node).backgroundSize), '100% 100%');
+    });
+
+    it('can be switched off, and are left out when they are not right', async () => {
+      await wear([
+        { id: 1, shape: 'blob', x: 10, y: 10, w: 100, h: 100 },
+        { id: 2, shape: 'rect', x: 'left', y: 10, w: 100, h: 100 },
+        null, 'text', { id: 3, shape: 'rect', x: 20, y: 20, w: 100 }
+      ]);
+      const kept = await spaces();
+      assert.equal(kept.length, 1, 'only the one that can be drawn');
+      assert.equal(kept[0].shape, 'shape-rect', 'a shape nobody knows is a rectangle');
+
+      assert.equal(kept[0].visible, true);
+      await send('action:settings', { action: 'update', display: { spaces: false } });
+      await page.waitForFunction(() => !document.querySelector('.space').offsetParent);
+      assert.equal((await spaces())[0].visible, false);
+      await send('action:settings', { action: 'update', display: { spaces: true } });
+      await page.waitForFunction(() => document.querySelector('.space').offsetParent !== null);
+    });
+
+    it('go with the design: another design, or none, takes them away', async () => {
+      await wear([{ id: 1, shape: 'rect', x: 10, y: 10, w: 100, h: 100 }]);
+      assert.equal(await page.locator('.space').count(), 1);
+      await wear([{ id: 1, shape: 'rect', x: 10, y: 10, w: 100, h: 100 }, { id: 2, shape: 'rect', x: 200, y: 10, w: 100, h: 100 }]);
+      assert.equal(await page.locator('.space').count(), 2, 'not added to the last design\'s');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await page.locator('.space').count(), 0);
+    });
+  });
+
   describe('a paused game', () => {
     const paused = () => page.$eval('#stage', (node) => node.classList.contains('is-paused'));
 
@@ -442,10 +832,12 @@ describe('overlay', { skip }, () => {
     });
 
     describe('a Special Energy card', () => {
-      // a card whose picture window is green and everything else blue, so what the circle shows can be told by color
+      // a card whose art window (that of a Special Energy card) is green and everything else blue, so what the circle shows can be told by color
       const GREEN = '32,208,64';
       const BLUE = '32,48,208';
-      const flatCard = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="418"><rect width="300" height="418" fill="#2030d0"/><rect x="21" y="48.07" width="258" height="160.93" fill="#20d040"/></svg>';
+      const ART = require('../public/js/theme-options').ENERGY_ART;
+      const CIRCLE = require('../public/js/theme-options').ENERGY_CIRCLE;
+      const flatCard = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="418"><rect width="300" height="418" fill="#2030d0"/><rect x="${ART.x * 300}" y="${ART.y * 418}" width="${ART.w * 300}" height="${ART.h * 418}" fill="#20d040"/></svg>`;
       const api = async (method, route, body) => {
         const response = await fetch(`${server.base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
         return response.json().catch(() => null);
@@ -501,11 +893,12 @@ describe('overlay', { skip }, () => {
         assert.equal(look.radius, '50%');
         assert.equal(look.overflow, 'hidden');
         assert.equal(look.title, 'Flat Energy');
-        // 26 pixels inside the border show 0.536 of the card's width
-        assert.ok(Math.abs(look.imgW - 26 / 0.536) < 0.5, `picture ${look.imgW} px wide`);
-        assert.ok(Math.abs(look.imgLeft - 26 * (0.5 - 0.5 / 0.536)) < 0.6, `picture left ${look.imgLeft}`);
-        assert.ok(Math.abs(look.imgTop - 26 * (0.5 - 0.3075 * 1.3933 / 0.536)) < 0.6, `picture top ${look.imgTop}`);
-        assert.deepEqual([...new Set(await seen())], [GREEN], 'only the picture window shows in the circle');
+        // 26 pixels inside the border show the width of the circle, which is as wide as the art is tall, from the middle of the art
+        assert.ok(Math.abs(look.imgW - 26 / CIRCLE.w) < 0.5, `picture ${look.imgW} px wide`);
+        assert.ok(Math.abs(look.imgLeft - 26 * (0.5 - (CIRCLE.x + CIRCLE.w / 2) / CIRCLE.w)) < 0.6, `picture left ${look.imgLeft}`);
+        assert.ok(Math.abs(look.imgTop - 26 * (0.5 - (CIRCLE.y + CIRCLE.h / 2) * 1.3933 / CIRCLE.w)) < 0.6, `picture top ${look.imgTop}`);
+        assert.ok(Math.abs(CIRCLE.h - ART.h) < 0.002 && Math.abs(CIRCLE.x + CIRCLE.w / 2 - (ART.x + ART.w / 2)) < 0.002, 'the circle is the height of the art, in the middle of it');
+        assert.deepEqual([...new Set(await seen())], [GREEN], 'only the art window shows in the circle');
       });
 
       it('is smaller on the bench, and one is shown for each card, up to four', async () => {
@@ -609,15 +1002,13 @@ describe('overlay', { skip }, () => {
       assert.equal(await page.locator('.trainer-a .active .retreat').isVisible(), false, 'a free retreat shows nothing');
     });
 
-    it('does the same on the bench, with the small thin bar and at most six Energy and the count of the rest', async () => {
+    it('does the same on the bench, with the small thin bar and at most six Energy and the count of the rest, and no retreat cost (that is for the Active Pokémon)', async () => {
       const art = await box('.trainer-a .bench .mon.mini:not([hidden]) .art');
       const bar = await box('.trainer-a .bench .mon.mini:not([hidden]) .art .hp');
-      const retreat = await box('.trainer-a .bench .mon.mini:not([hidden]) .art .retreat');
       within(bar, art, 'the HP bar');
-      within(retreat, art, 'the retreat cost');
       assert.ok(bar.height <= 17 && bar.top - art.top < 6, `a thin bar on top: ${bar.height}`);
-      assert.ok(art.right - retreat.right < 8, 'the retreat cost is at the right');
-      assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .retreat .energy').count(), 1);
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .retreat .energy').count(), 0);
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .art .retreat').count(), 0);
 
       await send('action:trainerA', { action: 'attachEnergy', slot: 0, energyType: 'fire', count: 7, countsAsTurn: false });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .bench .mon.mini:not([hidden]) .art .energies .energy').length === 6);
@@ -992,8 +1383,8 @@ describe('overlay', { skip }, () => {
         assert.equal(await page.locator('.trainer-a .active .art .energies').count(), 0);
         assert.equal(await page.locator('.trainer-a .active .art .retreat').count(), 0);
         assert.equal(await page.locator('.trainer-a .active .art .statuses').count(), 0);
-        // in their old order: the name, the HP, the energy, the retreat cost, the abilities
-        assert.deepEqual(await page.$$eval('.trainer-a .active .details > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['mon-name', 'hp', 'energies', 'retreat', 'abilities', 'statuses']);
+        // in their old order: the name, the HP, the energy, the retreat cost, the abilities (and the attacks of a benched Pokémon, which are not shown here)
+        assert.deepEqual(await page.$$eval('.trainer-a .active .details > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['mon-name', 'hp', 'energies', 'retreat', 'abilities', 'attacks', 'statuses']);
         const hp = await page.$eval('.trainer-a .active .details .hp-text', (node) => ({ position: getComputedStyle(node).position, margin: getComputedStyle(node).marginTop }));
         assert.equal(hp.position, 'static', 'the numbers are under the bar again');
         const art = await page.$eval('.trainer-a .active .art', (node) => node.getBoundingClientRect().height);
@@ -1043,6 +1434,117 @@ describe('overlay', { skip }, () => {
       });
     });
 
+    describe('with a layout for the prize cards', () => {
+      const spots = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => ({ left: node.offsetLeft, top: node.offsetTop }))); // (where they are laid out: the ones that are taken are drawn a little smaller)
+      const rootLayout = () => page.evaluate(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-layout-')));
+      const distinct = (list, key) => [...new Set(list.map((spot) => spot[key]))].length;
+
+      it('is a row of six unless the design says otherwise', async () => {
+        const row = await spots();
+        assert.equal(row.length, 6);
+        assert.equal(distinct(row, 'top'), 1, 'side by side');
+        assert.equal(distinct(row, 'left'), 6);
+        assert.deepEqual(await rootLayout(), []);
+      });
+
+      for (const [layout, columns, rows] of [['column', 1, 6], ['two-rows', 3, 2], ['three-rows', 2, 3]]) {
+        it(`puts them in ${rows} row${rows === 1 ? '' : 's'} of ${columns} when the design says "${layout}", for both trainers`, async () => {
+          await wear({ name: `Layout ${layout}`, prizeLayout: layout });
+          await page.waitForFunction((name) => document.documentElement.classList.contains(`prize-layout-${name}`), layout);
+          for (const side of ['a', 'b']) {
+            const spot = await spots(side);
+            assert.equal(distinct(spot, 'left'), columns, `${side}: ${columns} across`);
+            assert.equal(distinct(spot, 'top'), rows, `${side}: ${rows} down`);
+          }
+          assert.deepEqual(await rootLayout(), [`prize-layout-${layout}`], 'one at a time');
+          assert.deepEqual(page.problems, []);
+        });
+      }
+
+      it('keeps the taken ones, the penalty and the cards in the same places, and goes back to a row when the design is taken away', async () => {
+        await send('action:trainerA', { action: 'prizeSet', count: 4 });
+        await send('action:trainerB', { action: 'prizePenaltySet', count: 1 });
+        await wear({ name: 'Two rows', prizeLayout: 'two-rows' });
+        await page.waitForFunction(() => document.documentElement.classList.contains('prize-layout-two-rows'));
+        const flags = await page.$$eval('.trainer-a .prize', (nodes) => nodes.map((node) => [node.classList.contains('taken'), node.classList.contains('penalty')]));
+        assert.deepEqual(flags, [[false, true], [false, false], [false, false], [false, false], [true, false], [true, false]], 'in order: the last ones are taken');
+        assert.ok(await page.$eval('.trainer-a .prize-flag', (node) => node.getBoundingClientRect().width > 0), 'with the penalty tag');
+
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForFunction(() => !document.documentElement.classList.contains('prize-layout-two-rows'));
+        assert.equal(distinct(await spots(), 'top'), 1);
+      });
+
+      it('ignores a layout it does not know, whatever a hand-written design says', async () => {
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeLayout: 'diagonal' }));
+        assert.deepEqual(await rootLayout(), []);
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeLayout: 'column' }));
+        assert.deepEqual(await rootLayout(), ['prize-layout-column']);
+        await page.evaluate(() => window.oto.applyTheme({ name: 'y', colors: {}, images: {}, sounds: [] }));
+        assert.deepEqual(await rootLayout(), [], 'one design after another does not leave the last one behind');
+        assert.deepEqual(page.problems, []);
+      });
+    });
+
+    describe('with a crop for the cards on the prize cards', () => {
+      const card = (name) => ({ cardId: `t-${name}`, name, image: `/art/${name}.svg` });
+      const size = () => page.$eval('.trainer-a .prize', (node) => { const box = node.getBoundingClientRect(); return [Math.round(box.width * 100) / 100, Math.round(box.height * 100) / 100]; });
+      const face = () => page.$eval('.trainer-a .prize', (node) => { const style = getComputedStyle(node, '::after'); return { size: style.backgroundSize, position: style.backgroundPosition }; });
+      const px = (text) => text.split(' ').map(parseFloat);
+
+      beforeEach(async () => {
+        await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
+        await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
+        await page.waitForSelector('.trainer-a .prize.has-face');
+      });
+
+      it('shows the whole card, on a prize card of the usual size, unless the design says otherwise', async () => {
+        assert.deepEqual(await size(), [40, 56]);
+        const shown = await face();
+        assert.ok(Math.abs(px(shown.size)[0] - 38) < 0.01, shown.size);
+        assert.deepEqual(px(shown.position), [-0, -0].map(Math.abs), shown.position);
+      });
+
+      it('shows just the part of the card the design chooses, and the prize card takes the shape of it', async () => {
+        await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
+        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        const [width, height] = await size();
+        assert.equal(width, 40);
+        assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `as tall as the part that shows: ${height}`);
+        const shown = await face();
+        assert.ok(Math.abs(px(shown.size)[0] - 38 / 0.86) < 0.05, `the picture is larger than the box: ${shown.size}`);
+        assert.ok(Math.abs(px(shown.position)[0] - (-38 * 0.07) / 0.86) < 0.05 && Math.abs(px(shown.position)[1] - (-53.2 * 0.115) / 0.86) < 0.05, `and moved to the part: ${shown.position}`);
+        // the back of the prize cards, the other trainer's included, is as big as the part too
+        assert.ok(Math.abs((await page.$eval('.trainer-b .prize', (node) => node.getBoundingClientRect().height)) - height) < 0.1);
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '');
+        assert.deepEqual(await size(), [40, 56]);
+      });
+
+      it('shows exactly the part of the card picture that is chosen', async () => {
+        // a card whose art window is green and everything else blue: the prize card, cropped to the art window, shows only green
+        const flat = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="418"><rect width="300" height="418" fill="#2030d0"/><rect x="21" y="48.07" width="258" height="160.93" fill="#20d040"/></svg>';
+        await page.route('**/art/flat-prize.svg', (route) => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: flat }));
+        await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('flat-prize')] });
+        await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
+        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await wait(500);
+        const shot = await page.locator('.trainer-a .prize').first().screenshot();
+        // the picture is a PNG: read its middle pixel and a pixel near each corner inside the border, in the page
+        const colors = await page.evaluate(async (base64) => {
+          const image = new Image();
+          await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = `data:image/png;base64,${base64}`; });
+          const canvas = document.createElement('canvas');
+          canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0);
+          const at = (fx, fy) => Array.from(context.getImageData(Math.floor(canvas.width * fx), Math.floor(canvas.height * fy), 1, 1).data).slice(0, 3).join(',');
+          return [at(0.5, 0.5), at(0.2, 0.3), at(0.8, 0.3), at(0.2, 0.7), at(0.8, 0.7)];
+        }, shot.toString('base64'));
+        assert.deepEqual([...new Set(colors)], ['32,208,64'], `only the art window shows: ${colors.join(' | ')}`);
+      });
+    });
+
     describe('with a picture on the prize cards', () => {
       const backs = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => ({ taken: node.classList.contains('taken'), image: getComputedStyle(node).backgroundImage, size: getComputedStyle(node).backgroundSize })));
       const rootClass = () => page.evaluate(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-')));
@@ -1066,14 +1568,28 @@ describe('overlay', { skip }, () => {
         await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.taken').length === 2);
       });
 
-      it('keeps the card back the design has, or the built-in one, until the design asks for another', async () => {
-        assert.deepEqual(await rootClass(), []);
+      it('shows the English card back, unless the design has a card back of its own or asks for another', async () => {
+        assert.deepEqual(await rootClass(), ['prize-english'], 'with no design');
         const usual = await backs();
         assert.equal(usual.length, 6);
-        assert.ok(usual.every((prize) => !prize.image.includes('cardbacks')), 'no card back file is asked for');
+        assert.ok(usual.every((prize) => prize.image.includes('/assets/cardbacks/english')), 'the English card back is asked for');
         await wear({ name: 'Plain Prizes', colors: { '--accent': '#336699' } });
         await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#336699');
+        assert.deepEqual(await rootClass(), ['prize-english'], 'a design that says nothing');
+
+        // a design with a prize card back picture of its own: that one
+        await page.evaluate(() => window.oto.applyTheme({ name: 'own', colors: {}, images: { prizeCardBack: '/art/own-back.svg' }, sounds: [] }));
         assert.deepEqual(await rootClass(), []);
+        assert.ok((await backs()).every((prize) => prize.image.includes('/art/own-back.svg') && !prize.image.includes('cardbacks')), 'its own picture');
+        await page.evaluate(() => window.oto.applyTheme({ name: 'own', colors: {}, images: { cardBackImage: '/art/own-back.svg' }, sounds: [] }));
+        assert.deepEqual(await rootClass(), [], 'the card back picture of a design is its own too');
+        // and when the design asks for another, that one
+        await page.evaluate(() => window.oto.applyTheme({ name: 'own', colors: {}, images: { prizeCardBack: '/art/own-back.svg' }, sounds: [], prizeStyle: 'japanese' }));
+        assert.deepEqual(await rootClass(), ['prize-japanese']);
+        await page.evaluate(() => window.oto.applyTheme({ name: 'own', colors: {}, images: { prizeCardBack: '/art/own-back.svg' }, sounds: [], prizeStyle: 'current' }));
+        assert.deepEqual(await rootClass(), [], 'or says "the design\'s own"');
+        await page.evaluate(() => window.oto.applyTheme({ name: 'none', colors: {}, images: {}, sounds: [], prizeStyle: 'current' }));
+        assert.deepEqual(await rootClass(), ['prize-english'], 'which is the English one when it has none');
       });
 
       for (const style of ['english', 'japanese', 'pokeball']) {
@@ -1123,9 +1639,10 @@ describe('overlay', { skip }, () => {
         assert.ok(!looks.english.equals(looks.japanese) && !looks.english.equals(looks.pokeball) && !looks.japanese.equals(looks.pokeball), 'a blue one, a red one and a ball');
 
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => ![...document.documentElement.classList].some((name) => name.startsWith('prize-')));
-        const builtIn = await paint();
-        for (const style of ['english', 'japanese', 'pokeball']) assert.ok(!builtIn.equals(looks[style]), `${style} is not the built-in card back`);
+        await page.waitForFunction(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-')).join() === 'prize-english');
+        const usual = await paint();
+        assert.ok(usual.equals(looks.english), 'with no design it is the English one');
+        for (const style of ['japanese', 'pokeball']) assert.ok(!usual.equals(looks[style]), `and not the ${style} one`);
         assert.deepEqual(page.problems, []);
       });
 
@@ -1135,6 +1652,8 @@ describe('overlay', { skip }, () => {
         // this page is told there is no file; another one, that opens afterwards, gets it (a page keeps what it learned of a picture, so a file
         // that is added is there for the pages opened after that, which is what refreshing the overlay in OBS does)
         await page.route('**/assets/cardbacks/english', (route) => route.fulfill({ status: 204 }));
+        await page.reload(); // (the English card back is the usual one: this page has the file already, until it is loaded again)
+        await page.waitForSelector('.trainer-b .prize');
         await wear({ name: 'Drawn English', prizeStyle: 'english' });
         await styled('english');
         const drawn = await paint();
@@ -1163,8 +1682,8 @@ describe('overlay', { skip }, () => {
         assert.equal(new Set(Object.values(seen)).size, 3, 'three different drawings');
 
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => ![...document.documentElement.classList].some((name) => name.startsWith('prize-')));
-        assert.ok((await backs('b')).every((prize) => !prize.image.includes('cardbacks')), 'the built-in card back again');
+        await page.waitForFunction(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-')).join() === 'prize-english');
+        assert.ok((await backs('b')).every((prize) => prize.image.includes('/assets/cardbacks/english')), 'the English card back again');
       });
 
       it('keeps the red mask of a penalty and the question mark of hidden prizes on top of the picture', async () => {
@@ -1182,11 +1701,11 @@ describe('overlay', { skip }, () => {
       it('ignores a picture it does not know, whatever a hand-written design says', async () => {
         await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'spanish' }));
         await wait(100);
-        assert.deepEqual(await rootClass(), []);
-        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'english' }));
-        assert.deepEqual(await rootClass(), ['prize-english']);
+        assert.deepEqual(await rootClass(), ['prize-english'], 'the English one, as when a design says nothing');
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'pokeball' }));
+        assert.deepEqual(await rootClass(), ['prize-pokeball']);
         await page.evaluate(() => window.oto.applyTheme({ name: 'y', colors: {}, images: {}, sounds: [], prizeStyle: 'current' }));
-        assert.deepEqual(await rootClass(), [], 'and one design after another does not leave the last one behind');
+        assert.deepEqual(await rootClass(), ['prize-english'], 'and one design after another does not leave the last one behind');
         assert.deepEqual(page.problems, []);
       });
     });

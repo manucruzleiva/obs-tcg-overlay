@@ -163,7 +163,14 @@ class App {
     const { conn } = this;
     conn.on('connection', (connected) => this.topbar.setConnected(connected));
     conn.on('state', () => this.render());
-    conn.on('draft', () => this.render());
+    conn.on('draft', (draft) => {
+      // somebody else started the draft: this page is in it too, so say so
+      if (draft.active && !this.draftWasActive && draft.startedBy && conn.you && draft.startedBy.clientId !== conn.you.clientId) {
+        toast(`${draft.startedBy.name} started a draft. You all edit it together until it is sent or thrown away.`, 'info', 5000);
+      }
+      this.draftWasActive = draft.active;
+      this.render();
+    });
     conn.on('presence', (presence) => this.topbar.updatePresence(presence, conn.you));
     conn.on('you', () => this.topbar.updatePresence(conn.presence, conn.you));
     conn.on('activity', (entries) => {
@@ -178,8 +185,12 @@ class App {
       this.reportedJob = job.id;
       toast(job.message, job.phase === 'done' ? 'success' : job.phase === 'cancelled' ? 'info' : 'error', 6000);
     });
-    conn.on('draft-sent', ({ applied, skipped }) => {
-      toast(`Sent ${applied} change${applied === 1 ? '' : 's'} to the overlay${skipped.length ? `, ${skipped.length} left out` : ''}.`, skipped.length ? 'warning' : 'success');
+    conn.on('draft-sent', ({ applied, skipped, by, byClientId }) => {
+      const mine = !conn.you || byClientId === conn.you.clientId;
+      toast(`${mine ? 'Sent' : `${by} sent`} ${applied} change${applied === 1 ? '' : 's'} to the overlay${skipped.length ? `, ${skipped.length} left out` : ''}.`, skipped.length ? 'warning' : 'success');
+    });
+    conn.on('draft-closed', ({ by, byClientId }) => {
+      if (conn.you && byClientId !== conn.you.clientId) toast(`${by} threw the draft away.`, 'info');
     });
   }
 
@@ -222,7 +233,7 @@ class App {
       case 'read-only': toast('This screen is not signed in as a producer. Reload the page and sign in.', 'error'); break;
       case 'nothing-to-undo': toast('Nothing to undo.', 'info'); break;
       case 'nothing-to-redo': toast('Nothing to redo.', 'info'); break;
-      case 'no-draft': toast('You are not editing a draft.', 'warning'); break;
+      case 'no-draft': toast('There is no draft open.', 'warning'); break;
       default: toast(rejected.message || 'That did not work.', 'error');
     }
   }
@@ -234,6 +245,11 @@ class App {
 
   async redo() {
     const result = await this.conn.redo();
+    // redoing the send of a draft opens the draft again, with the changes that were sent: it is not on the overlay until it is sent once more
+    if (result.ok && result.applied && result.applied.draft) {
+      toast(`The draft is open again with its ${result.applied.changes} change${result.applied.changes === 1 ? '' : 's'}. Change what you like, then send it.`, 'info', 5000);
+      return;
+    }
     // says what was done again, like the undo says what was taken back
     if (result.ok) toast(`Redid: ${this.conn.activity[this.conn.activity.length - 1]?.label.replace(/^Redid: /, '') || 'the last change'}`, 'info', 2600);
   }

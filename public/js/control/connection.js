@@ -1,5 +1,5 @@
 /**
- * The control panel's link to the server: the game state, other producers, your private draft, and
+ * The control panel's link to the server: the game state, other producers, the draft you share with them, and
  * sending actions with the revision you last saw so the server can spot a double click.
  */
 
@@ -27,7 +27,7 @@ export class Connection {
   constructor() {
     this.listeners = new Map();
     this.live = null; // the real game, as everyone sees it
-    this.draft = { active: false }; // your private draft (see the server's draft messages)
+    this.draft = { active: false }; // the draft of the table, shared by every producer (see the server's draft messages)
     this.presence = { producers: [], viewers: 0 };
     this.activity = [];
     this.you = null;
@@ -111,6 +111,7 @@ export class Connection {
       this.emit('draft', this.draft);
     });
     socket.on('draft:sent', (result) => this.emit('draft-sent', result));
+    socket.on('draft:closed', (result) => this.emit('draft-closed', result));
     socket.on('draft:conflicts', (data) => this.emit('draft-conflicts', data));
 
     socket.on('action:applied', (answer) => this.settle(answer.seq, { ok: true, applied: answer }));

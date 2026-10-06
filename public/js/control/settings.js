@@ -3,7 +3,7 @@
  * general options.
  */
 import { h, icon, replace, debounce } from './dom.js';
-import { openModal, closeModal, confirmDialog, promptDialog } from './ui.js';
+import { openModal, closeModal, confirmDialog, promptDialog, pickFile } from './ui.js';
 import { openDesignEditor } from './design-editor.js';
 import { libraryPanels } from './library.js';
 import { openImportDialog, openExportDialog } from './packages.js';
@@ -32,16 +32,6 @@ function slider({ label, value, min, max, step = 1, format = (v) => v, onInput, 
   input.addEventListener('input', () => { readout.textContent = format(Number(input.value)); if (onInput) onInput(Number(input.value)); });
   input.addEventListener('change', () => onChange(Number(input.value)));
   return h('label', { class: 'slider' }, h('span', { class: 'slider-label' }, label), input, readout);
-}
-
-function pickFile(accept) {
-  return new Promise((resolve) => {
-    const input = h('input', { type: 'file', accept, hidden: true });
-    input.addEventListener('change', () => { resolve(input.files[0] || null); input.remove(); });
-    input.addEventListener('cancel', () => { resolve(null); input.remove(); });
-    document.body.appendChild(input);
-    input.click();
-  });
 }
 
 async function readError(response) {
@@ -392,7 +382,8 @@ function themesTab(app) {
           field('Made by', theme.author, 60, (value) => { theme.author = value; }),
           field('About this design', theme.description, 300, (value) => { theme.description = value; })),
         groups.map((group) => h('fieldset', { class: 'option-group' }, h('legend', {}, group), THEME.COLORS.filter((color) => color.group === group).map(colorRow))),
-        h('fieldset', { class: 'option-group' }, h('legend', {}, 'Pictures and font'), THEME.IMAGES.map(imageRow), fontRow()),
+        // (the frame of a reserved space is listed when the design has that space, or still has the picture)
+        h('fieldset', { class: 'option-group' }, h('legend', {}, 'Pictures and font'), THEME.IMAGES.filter((image) => !image.space || theme.images[image.key] || (theme.spaces || []).some((space) => space.id === image.space)).map(imageRow), fontRow()),
         h('fieldset', { class: 'option-group' }, h('legend', {}, 'Sounds'),
           note('These play while this design is on the overlay, once sound effects are switched on in Settings > Sounds. A sound you set yourself on the Sounds tab plays instead of the design\'s for that moment.'),
           SOUND.GROUPS.map((group) => h('div', { class: 'design-sounds' }, h('div', { class: 'section-label' }, group.label), group.cues.map(soundRow)))))

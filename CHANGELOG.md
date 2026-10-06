@@ -20,6 +20,10 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 - A penalty is a number of prize cards: that many of the other player's prizes show in red, and that player needs that many fewer to win. The victory is announced by itself when a player has taken the prizes they need, adds a game to their score, and **Next game** starts the next one
 - **Deck or GLC type** for each trainer, shown next to the record on the scoreboard, with the Pokémon it names (official artwork from the PokeAPI sprites, downloaded once and kept) or the icon of its energy type; another picture, or none, can be chosen
 - **Set prizes**: choose, with the card search, the card of each of a player's six prize cards. They show on the prize cards of the overlay (face down with a question mark while the prizes are hidden, faded when taken) and on the prize pips of the control panel, and start again for the next game
+- The **bench** is stacked at the side of the screen by default, with a switch for a row under the Active Pokémon; the **retreat cost** is only for the Active Pokémon; the energy, Stadium and Supporter counters are only shown for the player whose turn it is; Pokémon whose card details (attacks, retreat cost) were not on file get them in the background, a moment after they are put in play
+- A **Winner** button in the Hype box, for the player whose turn it is
+- **Feature cards** have a box of their own, apart from the Stadium (which shows as its art in the control panel too), are shown in the order they were added, and can have a sign between them (`+`, `→`, `=`, `or`) to explain a combo
+- The attack dialog has a list, closed until it is wanted, with the attacks of the benched Pokémon, and an option (off at first) shows them on the overlay
 - **Pause**: a banner in the middle of the overlay that stays, with everything else grayed out, until the game is resumed (`Shift+P`)
 - Drag and drop Pokémon between the Active spot and the bench (move or swap), right-click an energy to attach another, `Shift+B` and a button to put the bench back to 5 slots, prize arrows for the player whose turn it is, a Stadium that uses the playing player's Stadium play (or not), and undo and redo that say what they did
 - Ability tokens on each Pokémon: ready or used, once per turn (they reset when that trainer's turn begins) or once per game
@@ -30,7 +34,7 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 **Producing together**
 - Several producers at once: live-synced pages, presence, a named activity feed, and conflict protection (a click on something another producer just changed is refused, so nothing counts twice)
 - Shared undo and redo
-- **Edit & send** drafts: change things privately, then send them all at once as one undoable step, with clash handling
+- **Edit & send** drafts: one draft shared by all the producers (everybody sees the same preview and who made each change, anybody can send or throw it away), sent all at once as one undoable step, with clash handling. Redoing the send of a draft opens the draft again with its changes, to edit before it goes once more
 - Optional control panel password (any text), scrypt-hashed, with signed sessions and a login throttle; `OTO_PASSWORD` overrides it and `OTO_RESET_PASSWORD=1` removes a forgotten one
 - A visible share link in the control panel and tray menu, and `GET /api/network`
 
@@ -39,8 +43,12 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 - Pokémon shown as the art of their card (the whole card when a design asks) with the HP bar, attached energy, retreat cost and status icons placed on it, each editable per design; the Stadium shows as its art with its name below; a **design editor** with zoom, drag, a code view, crop and tile editors, and sample Stadium and Pokémon cards
 - The control panel shows the art of the Pokémon cards too, or the whole card as a choice of that browser
 - Sound effects for the moments of a match, off by default, each with its own switch and volume, a built-in sound for every cue, and your own files per cue
-- **Designs**: colors, seven picture slots, a font and sounds, edited in the Look tab and reaching the overlay live
-- **The picture on the prize cards**, chosen in each design (Tile tab): the design's own, an English or a Japanese Pokémon card back, or a Poké Ball. The card backs are files in `assets/cardbacks` (a PNG, JPG or WebP each), and a plain drawing shows when there is none
+- **Designs**: colors, picture slots (including a frame for each reserved space), a font and sounds, edited in the Look tab and reaching the overlay live
+- **The picture on the prize cards**, chosen in each design (Tile tab): the design's own (the English card back when it has none), an English or a Japanese Pokémon card back, or a Poké Ball. The card backs are files in `assets/cardbacks` (a PNG, JPG or WebP each), and a plain drawing shows when there is none. The prize cards start face down, can be laid out as a row, a column, two rows of three or three rows of two, and have a crop of their own for the cards set on them
+- **A mobile screen**: a design can be a tall 1080 × 1920 screen for a phone, with its own arrangement of the overlay. The editor's canvas follows it
+- **Reserved spaces** for a camera feed or the like (up to six, each a rectangle, a rounded one or a circle), with a picture of the designer's own drawn over each, moved and resized on the canvas or typed in a Spaces tab; and a **grid** on the canvas, with squares of the size the designer chooses, for lining things up and snapping to
+- Special Energy cards on a Pokémon show as a circle centered on the art of the card, as wide as the art is tall
+- The OTO window has no File, Edit, View or Window menu
 - **`.oto` packages**: a design, its sounds and the producer's control settings in one compressed file, saved from the Look or General tab, installed from a picker, by drag and drop, or by double-clicking the file in the desktop app. The format is documented in [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md)
 - Designs saved by earlier builds (one JSON with the pictures inside) are converted automatically
 

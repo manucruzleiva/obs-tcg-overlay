@@ -163,6 +163,7 @@ kbd {
 .draft-main { display: flex; align-items: center; gap: 14px; }
 .draft-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--warning); }
 .draft-count { color: var(--fg-secondary); }
+.draft-by { color: var(--fg-muted); font-weight: 600; }
 .draft-changes { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .draft-changes li { padding: 3px 10px; border-radius: 999px; background: rgba(251, 191, 36, 0.14); font-size: 13px; }
 .draft-changes li.conflict { background: rgba(248, 113, 113, 0.22); }
@@ -334,7 +335,7 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .no-energy-icons .energy-chip { border: 2px solid rgba(255, 255, 255, 0.75); background: var(--c, #ccc); }
 /* a Special Energy card: the usual circle cut out of it (the same as the overlay's, without a design's changes) */
 .energy-chip.special { position: relative; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.75); background: #1b2238; }
-.energy-chip.special img { position: absolute; max-width: none; width: 186.6%; left: -43.3%; top: -29.9%; pointer-events: none; }
+.energy-chip.special img { position: absolute; max-width: none; width: 140.3%; left: -20.1%; top: -26.6%; pointer-events: none; }
 .energy-chip:hover { transform: scale(1.15); }
 .ability-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; font-size: 13px; font-weight: 600; }
 .ability-chip .diamond { width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }
@@ -393,6 +394,23 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .stadium-row { display: flex; gap: 12px; align-items: center; }
 .stadium-art { flex: none; display: flex; align-items: center; justify-content: center; width: 64px; height: 90px; border-radius: 6px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
 .stadium-art img { width: 100%; height: 100%; object-fit: cover; }
+/* Art only: just the picture window of the Stadium card, as the overlay shows it, so the box is wide instead of tall */
+:root { --sta-x: 0.082; --sta-y: 0.145; --sta-w: 0.836; --sta-h: 0.37; }
+.stadium-art.cropped { position: relative; width: 120px; height: calc(120px * 1.393333 * var(--sta-h) / var(--sta-w)); }
+.stadium-art.cropped img {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+  width: calc(100% / var(--sta-w));
+  height: calc(100% / var(--sta-h));
+  left: calc(-100% * var(--sta-x) / var(--sta-w));
+  top: calc(-100% * var(--sta-y) / var(--sta-h));
+}
+.feature-signs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.feature-signs .hint { margin-right: 4px; }
+.sign-btn { min-width: 34px; font-weight: 800; }
+.feature-item.feature-sign { justify-content: space-between; padding: 2px 10px 2px 14px; background: rgba(251, 191, 36, 0.12); }
+.feature-sign .sign { font: 800 22px/1 var(--font-display); color: var(--accent); }
 .stadium-info { flex: 1; min-width: 0; }
 .stadium-name { font-weight: 700; }
 .feature-list { display: flex; flex-direction: column; gap: 8px; }
@@ -477,6 +495,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .attack-pick .attack-name small { color: var(--fg-muted); font-weight: 500; }
 .attack-pick .attack-damage { flex: none; font: 800 20px var(--font-display); font-variant-numeric: tabular-nums; }
 .attack-pick.ability .attack-damage { font: 600 12px var(--font-body); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+/* the attacks of the benched Pokémon: closed until they are wanted */
+.bench-attacks { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.bench-attacks > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; cursor: pointer; font-weight: 700; list-style-position: inside; }
+.bench-attacks[open] > summary { border-bottom: 1px solid var(--border); }
+.bench-attack-group { padding: 8px 10px 4px; }
+.bench-attack-owner { margin: 0 0 6px 2px; font-weight: 700; }
+.bench-attack-owner small { color: var(--fg-muted); font-weight: 500; }
+.bench-attack-group + .bench-attack-group { padding-top: 4px; }
+.bench-attack-group .attack-list { padding-bottom: 6px; }
 .attack-pick .diamond, .ability-line .diamond { flex: none; width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }
 .ability-line { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
 .ability-line small { color: var(--fg-muted); }

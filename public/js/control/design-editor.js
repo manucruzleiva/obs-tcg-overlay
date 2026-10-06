@@ -1,10 +1,12 @@
 /**
- * The design editor: the overlay on a canvas you can zoom and drag pieces around, a crop selector for the
- * Pokémon cards, where the parts of a Pokémon's tile go (and the picture on the prize cards), and the design as code. It edits one design and
- * saves it back, so the overlay (if this design is on air) follows.
+ * The design editor: the overlay on a canvas you can zoom and drag pieces around (with a grid to line them up by, and a wide or a tall
+ * mobile screen), a crop selector for the Pokémon cards, where the parts of a Pokémon's tile go (and the picture on the prize cards), the
+ * places kept clear for a camera feed, and the design as code. It edits one design and saves it back, so the overlay (if this design is on air)
+ * follows.
  */
 import { h, icon } from './dom.js';
-import { openModal, closeModal, confirmDialog } from './ui.js';
+import { openModal, closeModal, confirmDialog, pickFile } from './ui.js';
+import { SpacesPanel } from './editor-spaces.js';
 import { EditorModel } from './editor-model.js';
 import { EditorCanvas } from './editor-canvas.js';
 import { CropSelector } from './editor-crop.js';
@@ -13,6 +15,26 @@ import { CodePanel } from './editor-code.js';
 import { sampleState, cardArt, specialEnergyArt } from './editor-sample.js';
 
 const THEME = window.OTO_THEME;
+const MAX_UPLOAD_BYTES = 4.5 * 1024 * 1024; // the most the server takes for one picture
+const GRID_KEY = 'oto-editor-grid'; // the grid mask is a choice of this browser, for editing only: it is not part of the design
+const GRID_USUAL = { show: false, size: 40, snap: false };
+const GRID_SIZES = { min: 8, max: 480 };
+
+// The grid this browser used last (or the usual one)
+function loadGrid() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(GRID_KEY));
+    if (saved && typeof saved === 'object') {
+      const size = Number(saved.size);
+      return { show: saved.show === true, snap: saved.snap === true, size: Number.isFinite(size) ? Math.max(GRID_SIZES.min, Math.min(GRID_SIZES.max, Math.round(size))) : GRID_USUAL.size };
+    }
+  } catch (error) { /* a private window remembers nothing */ }
+  return { ...GRID_USUAL };
+}
+
+function saveGrid(grid) {
+  try { window.localStorage.setItem(GRID_KEY, JSON.stringify(grid)); } catch (error) { /* a private window cannot remember it */ }
+}
 
 async function getJson(url) {
   const response = await fetch(url);
@@ -47,7 +69,7 @@ function layoutPanel({ model, canvas }) {
   const y = number('Down', 1, -1920, 1920);
   const scale = number('Size', 0.05, 0.2, 4);
   const commit = () => {
-    const key = canvas.selected;
+    const key = canvas.selectedBlock;
     if (!key) return;
     const value = (field, fallback) => (field.input.value === '' || Number.isNaN(Number(field.input.value)) ? fallback : Number(field.input.value));
     const limit = THEME.LAYOUT_LIMITS;
@@ -60,7 +82,7 @@ function layoutPanel({ model, canvas }) {
   };
   for (const field of [x, y, scale]) field.input.addEventListener('change', commit);
 
-  const resetOne = h('button', { class: 'btn tiny', type: 'button', onclick: () => canvas.selected && model.setLayout(canvas.selected, {}, { source: 'fields' }) }, 'Put it back');
+  const resetOne = h('button', { class: 'btn tiny', type: 'button', onclick: () => canvas.selectedBlock && model.setLayout(canvas.selectedBlock, {}, { source: 'fields' }) }, 'Put it back');
   const resetAll = h('button', { class: 'btn tiny', type: 'button', onclick: () => model.update({ layout: {} }, { source: 'fields' }) }, 'Put everything back');
   const name = h('strong', { class: 'block-selected' });
   const fields = h('div', { class: 'block-fields' }, name, h('div', { class: 'crop-fields' }, x.node, y.node, scale.node), h('div', { class: 'button-row' }, resetOne));
@@ -70,7 +92,7 @@ function layoutPanel({ model, canvas }) {
     list, fields, h('div', { class: 'button-row' }, resetAll));
 
   function refresh() {
-    const selected = canvas.selected;
+    const selected = canvas.selectedBlock;
     for (const [key, button] of buttons) {
       button.classList.toggle('moved', model.isMoved(key));
       button.classList.toggle('on', key === selected);
@@ -127,7 +149,12 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   const canvas = new EditorCanvas({
     model, sample, assetUrl,
     onView: (view) => { if (toolbar.zoom) toolbar.zoom.textContent = `${Math.round(view.zoom * 100)}%`; },
-    onSelect: () => layout.refresh()
+    // picking a reserved space on the overlay shows its tab, and picking a piece goes back to the pieces
+    onSelect: (key) => {
+      layout.refresh();
+      spaces.refresh();
+      if (typeof key === 'string' && key.startsWith('space:')) { if (current !== 'spaces') showTab('spaces'); } else if (key && current === 'spaces') showTab('layout');
+    }
   });
   const layout = layoutPanel({ model, canvas });
   const cropSelector = new CropSelector({
@@ -161,6 +188,34 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   const tilePanel = new TilePanel({ model });
   const code = new CodePanel({ model });
 
+  // The picture that is drawn over a reserved space is one of the design's pictures (spaceFrame<id>): it is saved as soon as it is chosen,
+  // not with the rest of the design
+  const frameUrl = (id) => (model.files.images[`spaceFrame${id}`] ? assetUrl(model.files.images[`spaceFrame${id}`]) : null);
+  const uploadFrame = async (id) => {
+    const file = await pickFile('image/png,image/jpeg,image/gif,image/webp,image/svg+xml');
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) { app.toast('That picture is larger than 4.5 MB. Use a smaller one.', 'warning'); return; }
+    try {
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/spaceFrame${id}`, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'The picture could not be saved');
+      model.setFiles(data);
+    } catch (error) {
+      app.toast(error.message, 'error');
+    }
+  };
+  const removeFrame = async (id) => {
+    try {
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/spaceFrame${id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'The picture could not be taken off');
+      model.setFiles(data);
+    } catch (error) {
+      app.toast(error.message, 'error');
+    }
+  };
+  const spaces = new SpacesPanel({ model, canvas, frameUrl, upload: uploadFrame, removePicture: removeFrame });
+
   // ---- the toolbar above the canvas
   const iconButton = (label, glyph, onclick) => h('button', { class: 'icon-btn', type: 'button', title: label, 'aria-label': label, onclick }, icon(glyph));
   toolbar.undo = iconButton('Undo (Ctrl+Z)', 'undo', () => model.undo());
@@ -170,6 +225,25 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   snap.addEventListener('change', () => { canvas.snap = snap.checked; });
   const banner = h('input', { type: 'checkbox', 'aria-label': 'Show an announcement banner' });
   banner.addEventListener('change', () => canvas.showBanner(banner.checked));
+  // the screen of the design: a wide one or a tall one for a phone
+  const screen = h('select', { class: 'screen-select', 'aria-label': 'The screen of the design', title: 'Wide: 1920 x 1080. Mobile: 1080 x 1920, for a phone held upright', onchange: () => model.setOrientation(screen.value, { source: 'fields' }) },
+    THEME.ORIENTATIONS.map((entry) => h('option', { value: entry.key, title: entry.help }, entry.label)));
+  screen.value = model.orientationOf();
+  // the grid mask: lines over the stage to line things up by, and pieces that jump onto them
+  const grid = loadGrid();
+  const gridShow = h('input', { type: 'checkbox', checked: grid.show, 'aria-label': 'Show a grid' });
+  const gridSnap = h('input', { type: 'checkbox', checked: grid.snap, 'aria-label': 'Snap to the grid' });
+  const gridSize = h('input', { type: 'number', class: 'grid-size', min: GRID_SIZES.min, max: GRID_SIZES.max, step: 1, value: String(grid.size), 'aria-label': 'Size of the grid squares, in pixels', title: 'Size of the squares, in pixels of the screen' });
+  const useGrid = () => {
+    const size = Math.max(GRID_SIZES.min, Math.min(GRID_SIZES.max, Math.round(Number(gridSize.value)) || GRID_USUAL.size));
+    const next = { show: gridShow.checked, snap: gridSnap.checked, size };
+    saveGrid(next);
+    canvas.setGrid(next);
+  };
+  gridShow.addEventListener('change', useGrid);
+  gridSnap.addEventListener('change', useGrid);
+  gridSize.addEventListener('change', () => { gridSize.value = String(Math.max(GRID_SIZES.min, Math.min(GRID_SIZES.max, Math.round(Number(gridSize.value)) || GRID_USUAL.size))); useGrid(); });
+  canvas.setGrid(grid);
   const match = h('select', { 'aria-label': 'The match to draw', onchange: () => { matchMode = match.value; canvas.draw(); } },
     h('option', { value: 'sample' }, 'A sample match'), h('option', { value: 'live' }, 'The live match'));
   const switchOf = (input, label) => h('label', { class: 'switch inline' }, input, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, label));
@@ -181,12 +255,13 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
       h('button', { class: 'btn tiny', type: 'button', title: 'Show the whole overlay (0)', onclick: () => canvas.fit() }, 'Fit'),
       h('button', { class: 'btn tiny', type: 'button', title: 'One pixel is one pixel (1)', onclick: () => canvas.actualSize() }, '100%')),
     h('div', { class: 'toolbar-group' }, switchOf(snap, 'Snap to lines'), switchOf(banner, 'Banner')),
-    h('div', { class: 'toolbar-group' }, match),
+    h('div', { class: 'toolbar-group' }, switchOf(gridShow, 'Grid'), gridSize, h('span', { class: 'toolbar-unit' }, 'px'), switchOf(gridSnap, 'Snap to grid')),
+    h('div', { class: 'toolbar-group' }, screen, match),
     h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));
 
   // ---- the side panel
-  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, code: code.element };
-  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['code', 'Code']];
+  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, spaces: spaces.element, code: code.element };
+  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['spaces', 'Spaces'], ['code', 'Code']];
   const tabButtons = new Map();
   const sideBody = h('div', { class: 'editor-side-body' });
   let current = 'layout';
@@ -231,7 +306,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     try {
       const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle })
+        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle, prizeLayout: model.draft.prizeLayout, orientation: model.draft.orientation, spaces: model.draft.spaces })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The design could not be saved');
@@ -253,6 +328,8 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   model.on((change) => {
     if (change.kind !== 'saved') canvas.redesign();
     layout.refresh();
+    spaces.refresh();
+    if (document.activeElement !== screen) screen.value = model.orientationOf();
     refreshStatus();
   });
 

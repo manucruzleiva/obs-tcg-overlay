@@ -6,10 +6,11 @@ const { describe, it, before, after, beforeEach, afterEach } = require('node:tes
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { ThemeStore, ThemeError, sanitizeLayout, sanitizeCrop, sanitizePrize } = require('../src/services/themes');
+const { ThemeStore, ThemeError, sanitizeLayout, sanitizeCrop, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces } = require('../src/services/themes');
 const THEME = require('../public/js/theme-options');
 const { cleanRect } = require('../public/js/theme-rules');
 const { startServer, ROOT } = require('../test-support/harness');
+const S = require('../test-support/samples');
 
 const refuses = (fn, pattern) => assert.throws(fn, (error) => error instanceof ThemeError && pattern.test(error.message), String(pattern));
 
@@ -121,7 +122,7 @@ describe('the crop of the Stadium', () => {
 
   it('is refused when it is not on the card, with the names it can be written under', () => {
     refuses(() => sanitizeCrop({ stadium: { x: 0.5, y: 0, w: 0.8, h: 0.5 } }, { strict: true }), /"stadium" needs x, y, w and h|The crop for "stadium" needs/);
-    refuses(() => sanitizeCrop({ hand: WHOLE }, { strict: true }), /use "active", "bench", "stadium" or "energy"/);
+    refuses(() => sanitizeCrop({ hand: WHOLE }, { strict: true }), /use "active", "bench", "stadium", "prize" or "energy"/);
     assert.deepEqual(sanitizeCrop({ stadium: { x: 0.5, y: 0, w: 0.8, h: 0.5 } }), {}, 'a file written by hand with one is not refused, only left out');
   });
 
@@ -191,13 +192,194 @@ describe('the picture on the prize cards (a design\'s prizeStyle)', () => {
   });
 });
 
+describe('how the prize cards are laid out (a design\'s prizeLayout)', () => {
+  it('is one of four: a row of six, a column, two rows of three or three rows of two', () => {
+    assert.deepEqual(THEME.PRIZE_LAYOUT_KEYS, ['row', 'column', 'two-rows', 'three-rows']);
+    assert.equal(THEME.PRIZE_LAYOUT_DEFAULT, 'row');
+    assert.ok(THEME.PRIZE_LAYOUTS.every((layout) => layout.label && layout.help));
+  });
+
+  it('is kept when it is one of them, and not listed when it is the usual row', () => {
+    for (const layout of ['column', 'two-rows', 'three-rows']) assert.equal(sanitizePrizeLayout(layout), layout);
+    assert.equal(sanitizePrizeLayout('row'), '');
+    for (const nothing of [undefined, null, '']) assert.equal(sanitizePrizeLayout(nothing), '');
+  });
+
+  it('is refused when it is not one of them, with the list, and dropped from a file written by hand', () => {
+    for (const bad of ['diagonal', 'Column', 6, true, ['row'], {}]) {
+      assert.equal(sanitizePrizeLayout(bad), '', JSON.stringify(bad));
+      refuses(() => sanitizePrizeLayout(bad, { strict: true }), /The prize cards can be laid out as: "row", "column", "two-rows", "three-rows"/);
+    }
+  });
+
+  it('is saved with a design, handed to the overlay, carried in a package and forgotten when it goes back to the row', () => {
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    const store = new ThemeStore(fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'prize-layout-')), { getSetting: () => null, setSetting() {} });
+    store.init();
+    try {
+      assert.equal(store.save('Layouts', { prizeLayout: 'two-rows' }).prizeLayout, 'two-rows');
+      assert.equal(new ThemeStore(store.dir, { getSetting: () => null, setSetting() {} }).get('Layouts').prizeLayout, 'two-rows', 'still there after a restart');
+      assert.equal(store.resolved('Layouts').prizeLayout, 'two-rows');
+      assert.equal(store.exportDesign('Layouts').design.prizeLayout, 'two-rows');
+      assert.equal(store.save('Layouts', { prizeStyle: 'english' }).prizeLayout, 'two-rows', 'a save about something else leaves it alone');
+      refuses(() => store.save('Layouts', { prizeLayout: 'diagonal' }), /The prize cards can be laid out as/);
+      assert.equal(store.addDesign({ name: 'From A Package', prizeLayout: 'column' }).prizeLayout, 'column');
+      assert.equal('prizeLayout' in store.addDesign({ name: 'Odd Package', prizeLayout: 'nonsense' }), false);
+      assert.equal('prizeLayout' in store.save('Layouts', { prizeLayout: 'row' }), false, 'the usual row is not written down');
+    } finally {
+      fs.rmSync(store.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the screen of a design (its orientation)', () => {
+  it('is a wide screen or a tall one for a phone, and the size of the stage follows', () => {
+    assert.deepEqual(THEME.ORIENTATION_KEYS, ['landscape', 'portrait']);
+    assert.equal(THEME.ORIENTATION_DEFAULT, 'landscape');
+    assert.deepEqual(THEME.stageSizeOf('landscape'), { width: 1920, height: 1080 });
+    assert.deepEqual(THEME.stageSizeOf('portrait'), { width: 1080, height: 1920 });
+    assert.deepEqual(THEME.stageSizeOf('sideways'), { width: 1920, height: 1080 }, 'anything else is the usual one');
+    assert.ok(THEME.ORIENTATIONS.every((screen) => screen.label && screen.help));
+  });
+
+  it('is kept when it is the tall one, and not listed when it is the usual wide one', () => {
+    assert.equal(sanitizeOrientation('portrait'), 'portrait');
+    assert.equal(sanitizeOrientation('landscape'), '');
+    for (const nothing of [undefined, null, '']) assert.equal(sanitizeOrientation(nothing), '');
+  });
+
+  it('is refused when it is not one of them, with the list, and dropped from a file written by hand', () => {
+    for (const bad of ['sideways', 'Portrait', 90, true, ['portrait'], {}]) {
+      assert.equal(sanitizeOrientation(bad), '', JSON.stringify(bad));
+      refuses(() => sanitizeOrientation(bad, { strict: true }), /The screen can be: "landscape", "portrait"/);
+    }
+  });
+
+  it('is saved with a design, handed to the overlay, carried in a package and forgotten when it goes back to the wide screen', () => {
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    const store = new ThemeStore(fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'orientation-')), { getSetting: () => null, setSetting() {} });
+    store.init();
+    try {
+      assert.equal(store.save('Phone', { orientation: 'portrait' }).orientation, 'portrait');
+      assert.equal(new ThemeStore(store.dir, { getSetting: () => null, setSetting() {} }).get('Phone').orientation, 'portrait', 'still there after a restart');
+      assert.equal(store.resolved('Phone').orientation, 'portrait');
+      assert.equal(store.exportDesign('Phone').design.orientation, 'portrait');
+      assert.equal(store.save('Phone', { prizeStyle: 'english' }).orientation, 'portrait', 'a save about something else leaves it alone');
+      refuses(() => store.save('Phone', { orientation: 'sideways' }), /The screen can be/);
+      assert.equal(store.addDesign({ name: 'From A Package', orientation: 'portrait' }).orientation, 'portrait');
+      assert.equal('orientation' in store.addDesign({ name: 'Odd Package', orientation: 'nonsense' }), false);
+      assert.equal('orientation' in store.save('Phone', { orientation: 'landscape' }), false, 'the usual screen is not written down');
+      assert.equal('orientation' in store.resolved('Phone'), false);
+    } finally {
+      fs.rmSync(store.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the reserved spaces of a design', () => {
+  const space = { id: 1, name: 'Camera', shape: 'rounded', x: 700, y: 300, w: 480, h: 270 };
+
+  it('are rectangles, rounded ones or ovals, up to six, with a name that is only for the editor', () => {
+    assert.deepEqual(THEME.SPACE_SHAPE_KEYS, ['rect', 'rounded', 'circle']);
+    assert.equal(THEME.SPACE_LIMITS.max, 6);
+    assert.deepEqual(Object.keys(THEME.SPACE_SIZES), THEME.SPACE_SHAPE_KEYS);
+    assert.ok(THEME.SPACE_SHAPES.every((shape) => shape.label));
+  });
+
+  it('have a picture slot each, to draw a frame over the space', () => {
+    assert.deepEqual(THEME.IMAGE_KEYS.filter((key) => key.startsWith('spaceFrame')), [1, 2, 3, 4, 5, 6].map((n) => `spaceFrame${n}`));
+    assert.deepEqual(THEME.IMAGES.filter((image) => image.space).map((image) => image.space), [1, 2, 3, 4, 5, 6]);
+  });
+
+  it('are kept as they are when they are right, in whole pixels', () => {
+    assert.deepEqual(sanitizeSpaces([space]), [space]);
+    assert.deepEqual(sanitizeSpaces([{ id: 1, shape: 'circle', x: 10.4, y: 20.6, w: 100.2, h: 99.9 }]), [{ id: 1, shape: 'circle', x: 10, y: 21, w: 100, h: 100 }]);
+    assert.deepEqual(sanitizeSpaces([{ x: 0, y: 0, w: 40, h: 40, name: '   ' }]), [{ id: 1, shape: 'rect', x: 0, y: 0, w: 40, h: 40 }], 'a rectangle unless it says otherwise, and no name');
+    for (const nothing of [undefined, null, []]) assert.deepEqual(sanitizeSpaces(nothing), []);
+  });
+
+  it('give an id to a space that has none, the lowest that is free', () => {
+    const given = sanitizeSpaces([{ x: 0, y: 0, w: 50, h: 50 }, { id: 1, x: 0, y: 0, w: 50, h: 50 }, { id: 3, x: 0, y: 0, w: 50, h: 50 }, { x: 0, y: 0, w: 50, h: 50 }]);
+    assert.deepEqual(given.map((entry) => entry.id), [2, 1, 3, 4]);
+    assert.deepEqual(sanitizeSpaces([{ id: 2, x: 0, y: 0, w: 50, h: 50 }, { id: 2, x: 5, y: 5, w: 50, h: 50 }]).map((entry) => entry.id), [2, 1], 'a repeated id is not kept');
+  });
+
+  it('drop what cannot be kept when the file was written by hand, and keep at most six', () => {
+    const bad = [
+      'text', null, 5, [], { x: 0, y: 0, w: 10, h: 100 }, { x: 0, y: 0, w: 100, h: 5000 }, { x: 'a', y: 0, w: 100, h: 100 }, { x: 0, y: 0, w: 100 },
+      { x: 0, y: 0, w: 100, h: 100, shape: 'blob' }, { x: 99999, y: 0, w: 100, h: 100 }, { x: 0, y: 0, w: 100, h: 100, name: 7 }, { x: 0, y: 0, w: 100, h: 100, name: 'x'.repeat(25) }
+    ];
+    assert.deepEqual(sanitizeSpaces(bad), []);
+    assert.deepEqual(sanitizeSpaces('not a list'), []);
+    const many = Array.from({ length: 9 }, (_, i) => ({ x: i, y: 0, w: 50, h: 50 }));
+    assert.equal(sanitizeSpaces(many).length, 6);
+    assert.equal(sanitizeSpaces([{ id: 99, x: 0, y: 0, w: 50, h: 50 }])[0].id, 1, 'an id that is not 1 to 6 is replaced');
+  });
+
+  it('are refused one by one when they are sent through the editor or the API, and say which one is wrong', () => {
+    refuses(() => sanitizeSpaces('x', { strict: true }), /The spaces must be a list/);
+    refuses(() => sanitizeSpaces(Array.from({ length: 7 }, () => space), { strict: true }), /6 reserved spaces at most/);
+    refuses(() => sanitizeSpaces([space, 7], { strict: true }), /Space 2: it must be an object/);
+    refuses(() => sanitizeSpaces([{ ...space, shape: 'blob' }], { strict: true }), /Space 1: the shape can be "rect", "rounded", "circle"/);
+    refuses(() => sanitizeSpaces([space, { ...space, id: 2, w: 10 }], { strict: true }), /Space 2: "w" must be a number from 40 to 3840/);
+    refuses(() => sanitizeSpaces([{ ...space, x: 'left' }], { strict: true }), /"x" must be a number/);
+    refuses(() => sanitizeSpaces([{ ...space, name: 'x'.repeat(25) }], { strict: true }), /24 letters at most/);
+    refuses(() => sanitizeSpaces([{ ...space, name: 5 }], { strict: true }), /the name must be text/);
+    refuses(() => sanitizeSpaces([{ ...space, id: 7 }], { strict: true }), /"id" must be a whole number from 1 to 6/);
+    refuses(() => sanitizeSpaces([space, { ...space }], { strict: true }), /Space 2: another space already has the id 1/);
+  });
+
+  it('are saved with a design, handed to the overlay, carried in a package and forgotten when there are none', () => {
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    const store = new ThemeStore(fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'spaces-')), { getSetting: () => null, setSetting() {} });
+    store.init();
+    try {
+      assert.deepEqual(store.save('Stream', { spaces: [space] }).spaces, [space]);
+      assert.deepEqual(new ThemeStore(store.dir, { getSetting: () => null, setSetting() {} }).get('Stream').spaces, [space], 'still there after a restart');
+      assert.deepEqual(store.resolved('Stream').spaces, [space]);
+      assert.deepEqual(store.exportDesign('Stream').design.spaces, [space]);
+      assert.deepEqual(store.save('Stream', { prizeStyle: 'english' }).spaces, [space], 'a save about something else leaves them alone');
+      refuses(() => store.save('Stream', { spaces: [{ ...space, w: 1 }] }), /Space 1: "w" must be a number/);
+      assert.deepEqual(store.addDesign({ name: 'From A Package', spaces: [space] }).spaces, [space]);
+      assert.equal('spaces' in store.addDesign({ name: 'Odd Package', spaces: [{ x: 1 }] }), false);
+
+      // the picture of a space is one of the design's pictures
+      store.setImage('Stream', 'spaceFrame1', S.PNG);
+      assert.match(store.resolved('Stream').images.spaceFrame1, /^\/api\/theme\/assets\/images\/spaceFrame1\.png/);
+
+      assert.equal('spaces' in store.save('Stream', { spaces: [] }), false, 'no spaces is not written down');
+      assert.equal('spaces' in store.resolved('Stream'), false);
+    } finally {
+      fs.rmSync(store.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the crop of the prize cards', () => {
+  it('is a crop of its own, the whole card unless the design says otherwise, as the part of a card that shows on a prize card with a card on it', () => {
+    assert.ok(THEME.CROP_KEYS.includes('prize'));
+    assert.deepEqual(THEME.PRIZE_CROP_DEFAULT, { x: 0, y: 0, w: 1, h: 1 });
+    assert.deepEqual(sanitizeCrop({ prize: THEME.PRIZE_CROP_DEFAULT }), {}, 'the whole card is the usual here: it is not listed');
+    const art = { x: 0.07, y: 0.115, w: 0.86, h: 0.385 };
+    assert.deepEqual(sanitizeCrop({ prize: art }), { prize: art });
+    assert.deepEqual(sanitizeCrop({ active: THEME.PRIZE_CROP_DEFAULT }), { active: THEME.PRIZE_CROP_DEFAULT }, 'while the whole card is not the usual for a Pokémon');
+    assert.deepEqual(sanitizeCrop({ active: art, prize: art }), { prize: art }, 'and the art is not the usual for a prize card, only for a Pokémon');
+    assert.deepEqual(THEME.PRIZE_PRESETS.map((preset) => preset.key), ['full', 'art']);
+    refuses(() => sanitizeCrop({ prize: { x: 0.9, y: 0, w: 0.5, h: 0.5 } }, { strict: true }), /inside the card/);
+  });
+});
+
 describe('the circle for Special Energy', () => {
-  it('is a third crop, a circle in the middle of the picture window unless the design says otherwise', () => {
-    assert.deepEqual(THEME.CROP_KEYS, ['active', 'bench', 'stadium', 'energy']);
+  it('is a third crop, a circle centered on the art of a Special Energy card, as wide as the art is tall, unless the design says otherwise', () => {
+    assert.deepEqual(THEME.CROP_KEYS, ['active', 'bench', 'stadium', 'prize', 'energy']);
     const { x, y, w, h } = THEME.ENERGY_CIRCLE;
+    const art = THEME.ENERGY_ART;
     assert.ok(Math.abs(w * 300 - h * 418) < 1, 'a circle: as many pixels across as down');
-    assert.ok(Math.abs(x + w / 2 - 0.5) < 0.001, 'in the middle across');
-    assert.ok(Math.abs(y + h / 2 - (THEME.CROP_PRESETS[1].rect.y + THEME.CROP_PRESETS[1].rect.h / 2)) < 0.001, 'and in the middle of the picture window');
+    assert.ok(Math.abs(x + w / 2 - (art.x + art.w / 2)) < 0.002, 'in the middle of the art across');
+    assert.ok(Math.abs(y + h / 2 - (art.y + art.h / 2)) < 0.002, 'and down');
+    assert.ok(Math.abs(h - art.h) < 0.002, 'as tall as the art, so as wide as the art is tall');
+    assert.ok(x >= art.x && x + w <= art.x + art.w, 'and inside it');
+    assert.ok(art.h > THEME.CROP_DEFAULT.h, 'the art of a Special Energy card is bigger than a Pokémon\'s');
     assert.deepEqual(sanitizeCrop({ energy: THEME.ENERGY_CIRCLE }), {}, 'the usual circle is not listed');
   });
 
@@ -380,7 +562,8 @@ describe('the tile of a design', () => {
   it('says what is wrong when asked to be strict', () => {
     refuses(() => sanitizeTile({ active: { hp: 'left' } }, { strict: true }), /"hp" can go in one of these places: top, bottom, below/);
     refuses(() => sanitizeTile({ active: { retreat: 'middle' } }, { strict: true }), /"retreat" can go in one of these places: top-left, top-right, bottom-left, bottom-right, below/);
-    refuses(() => sanitizeTile({ active: { mood: 'top' } }, { strict: true }), /no part of a tile called "mood" \(use "hp", "energy", "retreat", "status"\)/);
+    refuses(() => sanitizeTile({ active: { mood: 'top' } }, { strict: true }), /no part of a tile called "mood" for "active" \(use "hp", "energy", "retreat", "status"\)/);
+    refuses(() => sanitizeTile({ bench: { retreat: 'below' } }, { strict: true }), /no part of a tile called "retreat" for "bench" \(use "hp", "energy", "status"\)/);
     refuses(() => sanitizeTile({ hand: { hp: 'top' } }, { strict: true }), /no tile called "hand" \(use "active" or "bench"\)/);
     refuses(() => sanitizeTile({ active: 'below' }, { strict: true }), /The tile for "active" must be an object/);
     refuses(() => sanitizeTile([], { strict: true }), /must be an object/);
@@ -433,8 +616,8 @@ describe('the tile of a design', () => {
     it('travels with the design in a package, checked on the way in', () => {
       store.save('Store League', { tile: TILE });
       assert.deepEqual(store.exportDesign('Store League').design.tile, TILE);
-      const added = store.addDesign({ name: 'From A Package', tile: { active: { hp: 'below', energy: 'diagonal' }, bench: { retreat: 'below' } } });
-      assert.deepEqual(added.tile, { active: { hp: 'below' }, bench: { retreat: 'below' } }, 'what is not a place is left out');
+      const added = store.addDesign({ name: 'From A Package', tile: { active: { hp: 'below', energy: 'diagonal', retreat: 'top-left' }, bench: { retreat: 'below', status: 'below' } } });
+      assert.deepEqual(added.tile, { active: { hp: 'below', retreat: 'top-left' }, bench: { status: 'below' } }, 'what is not a place is left out, and so is a retreat cost of the bench (it is not shown there)');
     });
   });
 });

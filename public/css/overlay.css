@@ -55,6 +55,19 @@ html, body {
 }
 .has-logo .logo { display: block; }
 
+/* the reserved spaces of a design: places kept clear for a camera feed or the like, framed with an outline of their shape, or with the design's picture */
+.spaces { position: absolute; left: 0; top: 0; right: 0; bottom: 0; pointer-events: none; }
+.space {
+  position: absolute;
+  box-sizing: border-box;
+  border: 4px solid var(--accent);
+  box-shadow: 0 0 36px var(--shadow);
+  background: center / 100% 100% no-repeat;
+}
+.space.shape-rounded { border-radius: 30px; }
+.space.shape-circle { border-radius: 50%; }
+.space.has-frame { border: 0; border-radius: 0; box-shadow: none; }
+
 /* ---------------------------------------------------------------- scoreboard */
 
 .scoreboard {
@@ -253,10 +266,13 @@ html, body {
   background: var(--bg-panel);
   border: 1px solid var(--border);
 }
+/* the part of a card that shows on a prize card that has a card put on it (--cp-*, as fractions of the card): the whole card unless a design
+   says otherwise. The prize card takes the shape of that part, as the Pokémon's do. */
+:root { --cp-x: 0; --cp-y: 0; --cp-w: 1; --cp-h: 1; }
 .prize {
   position: relative;
   width: 40px;
-  height: 56px;
+  height: calc(56px * var(--cp-h) / var(--cp-w));
   border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   background:
@@ -290,7 +306,10 @@ html, body {
   right: 0;
   bottom: 0;
   border-radius: inherit;
-  background: var(--prize-face) center / cover no-repeat;
+  background-image: var(--prize-face);
+  background-repeat: no-repeat;
+  background-size: calc(38px / var(--cp-w)) calc(53.2px / var(--cp-w));
+  background-position: calc(-38px * var(--cp-x) / var(--cp-w)) calc(-53.2px * var(--cp-y) / var(--cp-w));
 }
 .prizes.is-hidden .prize::after {
   content: "?";
@@ -317,6 +336,10 @@ html, body {
   opacity: 0.62;
 }
 .prizes.pulse .prize.penalty { animation: pulse-penalty 1.2s ease-in-out infinite; }
+/* the six prize cards: in a row (the usual), in a column, or in two rows of three or three rows of two (a design chooses) */
+.prize-layout-column .prizes { grid-template-columns: repeat(1, 40px); }
+.prize-layout-two-rows .prizes { grid-template-columns: repeat(3, 40px); }
+.prize-layout-three-rows .prizes { grid-template-columns: repeat(2, 40px); }
 .prize-flag {
   position: absolute;
   left: 50%;
@@ -333,6 +356,7 @@ html, body {
 @keyframes pulse-penalty { 50% { box-shadow: 0 0 6px var(--danger); } }
 
 /* once-per-turn tokens */
+.token.off-turn { visibility: hidden; }
 .tokens { display: flex; flex-wrap: wrap; gap: 8px; }
 .token {
   display: flex;
@@ -477,9 +501,9 @@ html, body {
 .energy-special-img {
   position: absolute;
   max-width: none;
-  width: calc(100% / var(--ed, 0.536));
-  left: calc(100% * (0.5 - var(--ex, 0.5) / var(--ed, 0.536)));
-  top: calc(100% * (0.5 - var(--ey, 0.3075) * 1.393333 / var(--ed, 0.536)));
+  width: calc(100% / var(--ed, 0.713));
+  left: calc(100% * (0.5 - var(--ex, 0.5) / var(--ed, 0.713)));
+  top: calc(100% * (0.5 - var(--ey, 0.392) * 1.393333 / var(--ed, 0.713)));
 }
 
 /* An uploaded icon strip (11 equal squares in the order Grass, Fire, Water, Lightning, Psychic,
@@ -530,6 +554,23 @@ html, body {
   letter-spacing: 0.14em;
 }
 
+/* the attacks of a benched Pokémon (an option): the name and the damage, one per line */
+.attacks { display: flex; flex-direction: column; gap: 3px; }
+.attack-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-card);
+  font: 600 13px/1.2 var(--font-display);
+}
+.attack-line-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attack-line-damage { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; }
+.trainer-b .attacks .attack-line { flex-direction: row-reverse; border-left: 0; border-right: 3px solid var(--accent); }
+
 .statuses { display: flex; flex-wrap: wrap; gap: 6px; }
 /* --c and --ink are the color of the condition (see STATUS_CONDITIONS in game-data.js) */
 .status-chip {
@@ -546,11 +587,14 @@ html, body {
   letter-spacing: 0.08em;
 }
 
-/* bench */
-.bench { display: flex; flex-wrap: wrap; gap: 16px 12px; align-content: flex-start; }
-.trainer-b .bench { justify-content: flex-end; }
+/* bench: stacked down the edge of the screen, one Pokémon under the other, each with its name and abilities on the side toward the middle of
+   the screen, like the Active Pokémon's. When there are more than fit under the Active Pokémon a second column starts (towards the middle).
+   The "bench in a row" option (#stage.bench-row, further down) brings back the row under the Active Pokémon. */
+.bench { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; gap: 14px 24px; }
+.trainer-b .bench { flex-wrap: wrap-reverse; }
 
-.mon.mini { width: 104px; flex-direction: column; gap: 7px; }
+.mon.mini { width: 300px; flex-direction: row; align-items: flex-start; gap: 14px; }
+.trainer-b .mon.mini { flex-direction: row-reverse; }
 .mon.mini .art { width: 104px; height: calc(104px * 1.393333 * var(--cb-h) / var(--cb-w)); border-radius: 9px; box-shadow: 0 10px 24px var(--shadow); }
 
 .active .mon .art-img {
@@ -571,25 +615,43 @@ html, body {
   left: calc(-100% * var(--cb-x) / var(--cb-w));
   top: calc(-100% * var(--cb-y) / var(--cb-h));
 }
-.mon.mini .details { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mon.mini .details { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 3px; }
+.trainer-b .mon.mini .details { align-items: flex-end; }
 .mon.mini .mon-name {
-  font-size: 14px;
-  text-align: center;
+  max-width: 100%;
+  font-size: 19px;
+  text-align: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .mon.mini .hp-bar { height: 8px; }
-.mon.mini .hp-text { margin-top: 3px; font-size: 15px; text-align: center; }
-.mon.mini .energies { justify-content: center; gap: 3px; }
+.mon.mini .hp-text { margin-top: 3px; font-size: 15px; text-align: inherit; }
+.mon.mini .energies { justify-content: flex-start; gap: 3px; }
 .mon.mini .energy { width: 15px; height: 15px; border-width: 1px; }
-.mon.mini .abilities { justify-content: center; gap: 4px; }
-.mon.mini .ability { padding: 2px 7px 2px 6px; gap: 5px; font-size: 11px; }
-.mon.mini .ability::before { width: 6px; height: 6px; }
-.mon.mini .ability-state { padding: 1px 4px; font-size: 9px; }
-.mon.mini .statuses { justify-content: center; }
+.mon.mini .abilities { justify-content: flex-start; gap: 5px; }
+.mon.mini .ability { padding: 2px 8px 2px 7px; gap: 5px; font-size: 13px; }
+.mon.mini .ability::before { width: 7px; height: 7px; }
+.mon.mini .ability-state { padding: 1px 4px; font-size: 10px; }
+.mon.mini .statuses { justify-content: flex-start; }
+.trainer-b .mon.mini .energies, .trainer-b .mon.mini .abilities, .trainer-b .mon.mini .statuses { justify-content: flex-end; }
 .mon.mini .status-chip { font-size: 10px; padding: 1px 6px 1px 2px; }
 .mon.mini .status-icon { width: 15px; height: 15px; }
+
+/* the bench in a row under the Active Pokémon (an option): each Pokémon is its picture with its name and abilities under it */
+#stage.bench-row .bench { flex: none; flex-direction: row; flex-wrap: wrap; gap: 16px 12px; }
+#stage.bench-row .trainer-b .bench { justify-content: flex-end; }
+#stage.bench-row .mon.mini, #stage.bench-row .trainer-b .mon.mini { width: 104px; flex-direction: column; align-items: stretch; gap: 7px; }
+#stage.bench-row .mon.mini .details { padding-top: 0; }
+#stage.bench-row .trainer-b .mon.mini .details { align-items: stretch; }
+#stage.bench-row .mon.mini .mon-name { font-size: 14px; text-align: center; }
+#stage.bench-row .mon.mini .hp-text { text-align: center; }
+#stage.bench-row .mon.mini .energies, #stage.bench-row .mon.mini .abilities, #stage.bench-row .mon.mini .statuses,
+#stage.bench-row .trainer-b .mon.mini .energies, #stage.bench-row .trainer-b .mon.mini .abilities, #stage.bench-row .trainer-b .mon.mini .statuses { justify-content: center; }
+#stage.bench-row .mon.mini .abilities { gap: 4px; }
+#stage.bench-row .mon.mini .ability { padding: 2px 7px 2px 6px; font-size: 11px; }
+#stage.bench-row .mon.mini .ability::before { width: 6px; height: 6px; }
+#stage.bench-row .mon.mini .ability-state { font-size: 9px; }
 
 /* ------------------------------------------------------------ a Pokémon's tile
    The picture of the card (cropped to the part a design chooses) has a band at its top and one at its bottom. Each band can
@@ -727,6 +789,11 @@ html, body {
 
 .features { display: flex; gap: 22px; justify-content: center; align-items: flex-start; }
 .feature { margin: 0; width: 176px; }
+/* the signs between the cards of a combo: the cards are a little smaller to make room */
+.feature-sep { align-self: center; min-width: 28px; text-align: center; font: 800 44px/1 var(--font-display); color: var(--accent); text-shadow: 0 3px 14px var(--shadow); }
+.features.combo { gap: 10px; }
+.features.combo .feature { width: 150px; }
+.features.combo .feature-img { width: 150px; height: 209px; }
 .feature-img {
   display: block;
   width: 176px;
@@ -782,6 +849,35 @@ html, body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* ---------------------------------------------------------------- a mobile screen */
+
+/* A design for a phone held upright has a tall stage, 1080 x 1920 (overlay.js sets .portrait): the scoreboard on top, Trainer A under it, Trainer B
+   at the bottom and the middle (Stadium and feature cards side by side) between them, each trainer using the whole width. The bench is a row
+   (overlay.js). What is left in the middle is room for a camera feed, a reserved space. A logo takes the first row, and what is under it moves
+   down to make room (--shift). */
+#stage.portrait { --shift: 0px; }
+.has-logo #stage.portrait { --shift: 110px; }
+#stage.portrait .logo { top: 14px; left: 50%; width: 360px; height: 90px; margin-left: -180px; background-position: center; }
+#stage.portrait .scoreboard { top: calc(28px + var(--shift)); width: 1008px; margin-left: -504px; }
+#stage.portrait .sb-side { gap: 14px; padding: 0 22px; }
+#stage.portrait .sb-name { font-size: 30px; }
+#stage.portrait .sb-avatar { width: 56px; height: 56px; }
+#stage.portrait .trainer { top: calc(160px + var(--shift)); bottom: auto; width: 1008px; height: auto; }
+#stage.portrait .trainer-a { left: 36px; right: auto; }
+#stage.portrait .trainer-b { left: auto; right: 36px; top: auto; bottom: 36px; }
+#stage.portrait .center {
+  left: 36px;
+  width: 1008px;
+  top: calc(700px + var(--shift));
+  bottom: auto;
+  height: 370px;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+}
+#stage.portrait .stadium { margin-top: 0; }
+#stage.portrait .toast-slot { top: 930px; width: 900px; margin-left: -450px; }
 
 /* ---------------------------------------------------------------- a paused game */
 

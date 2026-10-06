@@ -352,7 +352,7 @@ describe('the package service', () => {
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
-      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null });
+      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null, prizeLayout: null, orientation: null, spaces: 0 });
       assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)'], 'the markers that are off to begin with are not "hidden"');
       assert.deepEqual(info.controls.revealed, []);
       assert.equal(info.controls.toastSeconds, 6);
@@ -413,6 +413,30 @@ describe('the package service', () => {
       assert.equal('prizeStyle' in themes.get(odd.design.name), false, 'what is not one of the pictures is left out');
       const usual = service.install(zip({ 'design.json': { name: 'Usual Prizes', prizeStyle: 'current' } }));
       assert.equal('prizeStyle' in themes.get(usual.design.name), false, 'and so is the usual one');
+    });
+
+    it('brings the screen of the design and its reserved spaces, with their frames, and cleans what it does not know', () => {
+      const space = { id: 2, name: 'Camera', shape: 'circle', x: 700, y: 300, w: 320, h: 320 };
+      themes.save('Store League', { orientation: 'portrait', spaces: [space] });
+      themes.setImage('Store League', 'spaceFrame2', S.PNG);
+      const info = service.inspect(exported({ design: 'Store League' }));
+      assert.equal(info.design.orientation, 'portrait');
+      assert.equal(info.design.spaces, 1);
+      assert.ok(info.design.images.includes('spaceFrame2'));
+
+      const result = service.install(exported({ design: 'Store League' }));
+      const installed = themes.get(result.design.name);
+      assert.equal(installed.orientation, 'portrait');
+      assert.deepEqual(installed.spaces, [space]);
+      assert.ok(installed.images.spaceFrame2, 'the frame of the space came too');
+
+      const odd = service.install(zip({ 'design.json': { name: 'Odd Screen', orientation: 'sideways', spaces: [{ x: 1, y: 1, w: 3, h: 3 }, { x: 10, y: 20, w: 100, h: 100, shape: 'blob' }, { x: 10, y: 20, w: 100, h: 100, shape: 'rounded', id: 9 }] } }));
+      const clean = themes.get(odd.design.name);
+      assert.equal('orientation' in clean, false, 'a screen it does not know is left out');
+      assert.deepEqual(clean.spaces, [{ id: 1, shape: 'rounded', x: 10, y: 20, w: 100, h: 100 }], 'and the spaces that cannot be kept; the others get what they lack');
+      const usual = service.install(zip({ 'design.json': { name: 'Usual Screen', orientation: 'landscape', spaces: [] } }));
+      assert.equal('orientation' in themes.get(usual.design.name), false, 'the usual screen is not written down');
+      assert.equal('spaces' in themes.get(usual.design.name), false);
     });
 
     it('can replace the design that has the same name', () => {

@@ -234,7 +234,7 @@ describe('two producers', () => {
   });
 });
 
-describe('draft then send', () => {
+describe('the draft the producers share', () => {
   let server;
   let alice;
   let bob;
@@ -257,9 +257,12 @@ describe('draft then send', () => {
     throw new Error('pages out of sync');
   }
 
-  async function startDraft(client) {
+  // starts the draft from one producer, and waits until the other one is told as well
+  async function startDraft(client, other = client === bob ? alice : bob) {
+    const told = other.expect('draft:state', (d) => d.active);
     const started = client.expect('draft:state', (d) => d.active);
     client.emit('draft:start');
+    await told;
     return started;
   }
 
@@ -272,72 +275,242 @@ describe('draft then send', () => {
     await inSync();
   });
 
-  it('keeps a draft private until it is sent', async () => {
-    const drafting = alice.expect('presence', (p) => p.producers.some((x) => x.name === 'Bob' && x.drafting));
+  it('is one draft for all the producers: they see the same preview and who made each change, and it is not live until it is sent', async () => {
+    const drafting = alice.expect('presence', (p) => p.producers.every((x) => x.drafting));
     const draft = await startDraft(bob);
     assert.deepEqual(draft.changes, []);
+    assert.equal(draft.startedBy.name, 'Bob');
     await drafting;
 
     const before = alice.revision;
     await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+    const seenByAlice = alice.expect('draft:state', (d) => d.changes.length === 2);
     await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
-    const { draft: preview } = await bob.draftAct('action:trainerA', { action: 'setName', name: 'Drafted' });
+    const own = await seenByAlice;
+    assert.equal(own.preview.trainerA.prizes.count, 4, 'Alice sees what Bob drafted');
+    assert.equal(own.ack, undefined, 'and is not handed an answer to an action of Bob\'s');
 
+    // Alice adds to the same draft
+    const { draft: preview } = await alice.draftAct('action:trainerA', { action: 'setName', name: 'Drafted' });
     assert.equal(preview.preview.trainerA.prizes.count, 4);
     assert.equal(preview.preview.trainerA.name, 'Drafted');
-    assert.deepEqual(preview.changes.map((c) => c.label), [
-      'Trainer A prizes −1 (5 left)',
-      'Trainer A prizes −1 (4 left)',
-      'Trainer A name → Drafted'
+    assert.deepEqual(preview.changes.map((c) => [c.by, c.label]), [
+      ['Bob', 'Trainer A prizes −1 (5 left)'],
+      ['Bob', 'Trainer A prizes −1 (4 left)'],
+      ['Alice', 'Trainer A name → Drafted']
     ]);
+    const bobSees = bob.last('draft:state');
+    assert.equal(bobSees.changes.length, 3, 'and Bob sees it');
 
-    // nothing is live: Alice and the overlay still see the original
+    // nothing is live
     await wait(150);
     assert.equal(alice.revision, before);
     assert.equal(alice.state.trainerA.prizes.count, 6);
-    assert.equal(alice.state.trainerA.name, 'Trainer A');
+    assert.equal(bob.state.trainerA.name, 'Trainer A');
   });
 
-  it('applies a draft in one step, with one history entry and one undo', async () => {
+  it('tells a producer who arrives while there is a draft, and drops it when the last producer goes', async () => {
     await startDraft(bob);
     await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
-    await bob.draftAct('action:trainerB', { action: 'prizeMinus' });
+    const late = server.client({ clientId: 'late-draft-001', name: 'Late' });
+    await late.ready();
+    const told = late.last('draft:state') || await late.expect('draft:state');
+    assert.equal(told.active, true);
+    assert.equal(told.changes.length, 1);
+    assert.equal(told.preview.trainerA.prizes.count, 5);
+    late.close();
+
+    // nobody here to send it: the draft goes with the producers (a new server, since the others are in use)
+    const alone = await startServer({ label: 'drafts-alone' });
+    try {
+      const one = alone.client({ clientId: 'alone-client-01', name: 'One' });
+      await one.ready();
+      one.emit('draft:start');
+      await one.expect('draft:state', (d) => d.active);
+      one.close();
+      await wait(200);
+      const back = alone.client({ clientId: 'alone-client-01', name: 'One' });
+      await back.ready();
+      await wait(150);
+      assert.equal((back.events['draft:state'] || []).length, 0, 'the same person coming back starts clean');
+      back.close();
+    } finally {
+      await alone.stop();
+    }
+  });
+
+  it('keeps the draft when the producer who started it goes away, for the others', async () => {
+    const carol = server.client({ clientId: 'carol-client-01', name: 'Carol' });
+    await carol.ready();
+    await startDraft(carol, alice);
+    await carol.draftAct('action:trainerA', { action: 'prizeMinus' });
+    const gone = alice.expect('presence', (p) => !p.producers.some((x) => x.name === 'Carol'));
+    carol.close();
+    await gone;
+    const added = await alice.draftAct('action:trainerB', { action: 'prizeMinus' });
+    assert.equal(added.draft.changes.length, 2, 'Carol\'s change is still in it');
+    assert.equal(added.draft.startedBy.name, 'Carol');
+  });
+
+  it('is applied in one step by any of them, with one history entry and one undo, and everybody is told who sent it', async () => {
+    await startDraft(bob);
+    await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+    await alice.draftAct('action:trainerB', { action: 'prizeMinus' });
     await bob.draftAct('action:trainerA', { action: 'setName', name: 'Drafted' });
 
     const before = alice.revision;
-    const live = alice.expect('state:update');
-    const feed = alice.expect('activity', (a) => /^Sent 3 changes/.test(a.label));
-    const sent = bob.expect('draft:sent');
+    const live = bob.expect('state:update');
+    const feed = bob.expect('activity', (a) => /^Sent 3 changes/.test(a.label));
+    const sentToBob = bob.expect('draft:sent');
+    const sentToAlice = alice.expect('draft:sent');
     const closed = bob.expect('draft:state', (d) => !d.active);
-    bob.emit('draft:send', {});
+    alice.emit('draft:send', {});
 
     const state = await live;
     assert.equal(state.revision, before + 1, 'one new revision for the whole draft');
     assert.equal(state.trainerA.prizes.count, 5);
     assert.equal(state.trainerB.prizes.count, 5);
     assert.equal(state.trainerA.name, 'Drafted');
-    assert.equal((await sent).applied, 3);
-    assert.equal((await feed).by.name, 'Bob');
+    const told = await sentToBob;
+    assert.deepEqual([told.applied, told.by], [3, 'Alice']);
+    assert.deepEqual([(await sentToAlice).applied, (await feed).by.name], [3, 'Alice']);
     await closed;
 
     // one undo takes the whole draft back
     await inSync();
-    const undone = await alice.act('action:undo', {});
+    const undone = await bob.act('action:undo', {});
     assert.equal(undone.ok, true);
     assert.equal(undone.state.trainerA.prizes.count, 6);
     assert.equal(undone.state.trainerB.prizes.count, 6);
     assert.equal(undone.state.trainerA.name, 'Trainer A');
   });
 
-  it('can be thrown away', async () => {
+  describe('redoing the send of a draft', () => {
+    // a draft of two changes by two producers, sent and then undone
+    async function sentAndUndone() {
+      await startDraft(bob);
+      await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+      await alice.draftAct('action:trainerB', { action: 'setName', name: 'Gary' });
+      const closed = bob.expect('draft:state', (d) => !d.active);
+      bob.emit('draft:send', {});
+      await closed;
+      await inSync();
+      const undone = await alice.act('action:undo', {});
+      assert.equal(undone.state.trainerA.prizes.count, 6);
+      await inSync();
+    }
+
+    it('opens the draft again with the changes that were sent, for everybody, and leaves the game as the undo left it', async () => {
+      await sentAndUndone();
+      const before = alice.revision;
+      const opened = bob.expect('draft:state', (d) => d.active && d.changes.length === 2);
+      const result = await alice.act('action:redo', {});
+      assert.equal(result.ok, true);
+      assert.equal(result.applied.draft, true, 'the answer says it was a draft that opened');
+      assert.equal(result.applied.changes, 2);
+
+      const draft = await opened;
+      assert.deepEqual(draft.changes.map((c) => [c.by, c.label]), [['Bob', 'Trainer A prizes −1 (5 left)'], ['Alice', 'Trainer B name → Gary']], 'with who made each of them');
+      assert.equal(draft.preview.trainerA.prizes.count, 5);
+      assert.equal(draft.preview.trainerB.name, 'Gary');
+      assert.ok(draft.changes.every((change) => change.conflict === null));
+      await wait(150);
+      assert.equal(alice.revision, before, 'nothing went to the overlay');
+      assert.equal(alice.state.trainerA.prizes.count, 6);
+      assert.equal(alice.state.trainerB.name, 'Trainer B');
+      const feed = (alice.events.activity || []).filter((entry) => /opened again as a draft/.test(entry.label));
+      assert.match(feed[feed.length - 1].label, /^Redid: 2 sent changes, opened again as a draft/);
+    });
+
+    it('can be changed before it is sent again, by any producer, and then goes live in one step', async () => {
+      await sentAndUndone();
+      const opened = bob.expect('draft:state', (d) => d.active && d.changes.length === 2);
+      await alice.act('action:redo', {});
+      await opened;
+      const { draft } = await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+      assert.equal(draft.changes.length, 3);
+      assert.equal(draft.preview.trainerA.prizes.count, 4);
+
+      const before = alice.revision;
+      const sent = alice.expect('draft:sent');
+      const live = alice.expect('state:update', (s) => s.revision === before + 1);
+      alice.emit('draft:send', {});
+      assert.equal((await sent).applied, 3);
+      await live;
+      assert.equal(alice.state.trainerA.prizes.count, 4);
+      assert.equal(alice.state.trainerB.name, 'Gary');
+
+      // and that send is one step too
+      await inSync();
+      const undone = await bob.act('action:undo', {});
+      assert.equal(undone.state.trainerA.prizes.count, 6);
+    });
+
+    it('can be thrown away like any draft, and then the game is as the undo left it', async () => {
+      await sentAndUndone();
+      await alice.act('action:redo', {});
+      const closed = bob.expect('draft:state', (d) => !d.active);
+      alice.emit('draft:discard');
+      await closed;
+      await wait(100);
+      assert.equal(alice.state.trainerA.prizes.count, 6);
+      const again = await alice.act('action:redo', {});
+      assert.equal(again.ok, false, 'the redo was used up');
+      assert.equal(again.rejected.reason, 'nothing-to-redo');
+    });
+
+    it('adds the changes to the draft that is open already', async () => {
+      await sentAndUndone();
+      await startDraft(bob);
+      await bob.draftAct('action:match', { action: 'setBestOf', bestOf: 5 });
+      const merged = bob.expect('draft:state', (d) => d.changes.length === 3);
+      await alice.act('action:redo', {});
+      const draft = await merged;
+      assert.equal(draft.changes[0].label, 'Best of 5', 'what was in the draft stays first');
+    });
+
+    it('opens nothing for an ordinary redo, which is applied as before', async () => {
+      await bob.act('action:trainerA', { action: 'prizeMinus' });
+      await inSync();
+      await alice.act('action:undo', {});
+      await inSync();
+      const redone = await alice.act('action:redo', {});
+      assert.equal(redone.ok, true);
+      assert.equal(redone.applied.draft, undefined);
+      assert.equal(redone.state.trainerA.prizes.count, 5, 'applied to the game');
+      await wait(100);
+      assert.equal((bob.last('draft:state') || { active: false }).active, false);
+    });
+
+    it('marks a change that no longer applies, instead of failing', async () => {
+      await startDraft(bob);
+      await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+      const closed = bob.expect('draft:state', (d) => !d.active);
+      bob.emit('draft:send', {});
+      await closed;
+      await inSync();
+      await alice.act('action:undo', {});
+      await inSync();
+      const opened = bob.expect('draft:state', (d) => d.active);
+      await alice.act('action:redo', {});
+      const draft = await opened;
+      assert.equal(draft.changes.length, 1);
+      assert.equal(draft.changes[0].conflict, null);
+    });
+  });
+
+  it('can be thrown away by any of them, and the others are told who did', async () => {
     await startDraft(bob);
     await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
 
     const before = alice.revision;
     const closed = bob.expect('draft:state', (d) => !d.active);
-    const idle = alice.expect('presence', (p) => p.producers.every((x) => !x.drafting));
-    bob.emit('draft:discard');
+    const toldBob = bob.expect('draft:closed');
+    const idle = bob.expect('presence', (p) => p.producers.every((x) => !x.drafting));
+    alice.emit('draft:discard');
     await closed;
+    const gone = await toldBob;
+    assert.deepEqual([gone.how, gone.by], ['discarded', 'Alice']);
     await idle;
     await wait(100);
     assert.equal(alice.revision, before);
@@ -351,23 +524,23 @@ describe('draft then send', () => {
     const refreshed = bob.expect('draft:state', (d) => d.preview.trainerB.name === 'Live change');
     await alice.act('action:trainerB', { action: 'setName', name: 'Live change' });
     const draft = await refreshed;
-    assert.equal(draft.preview.trainerA.prizes.count, 5, 'Bob\'s own draft change is still in the preview');
+    assert.equal(draft.preview.trainerA.prizes.count, 5, 'the draft change is still in the preview');
     assert.equal(draft.changes[0].conflict, null);
   });
 
-  it('warns when the live game changed the same thing, and lets Bob choose what to do', async () => {
+  it('warns when the live game changed the same thing since the draft began, and lets the sender choose what to do', async () => {
     await startDraft(bob);
     await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
     await bob.draftAct('action:trainerB', { action: 'prizeMinus' });
 
-    // Alice takes a prize on trainer A while Bob is still drafting
+    // a change that is not part of the draft (a producer's page that is not drafting does that, and so does the API) takes a prize on trainer A
     const flagged = bob.expect('draft:state', (d) => d.changes[0] && d.changes[0].conflict);
     await alice.act('action:trainerA', { action: 'prizeMinus' });
     const draft = await flagged;
     assert.equal(draft.changes[0].conflict.by, 'Alice');
     assert.equal(draft.changes[1].conflict, null);
 
-    // the careful default stops and explains
+    // the careful default stops and explains (to the one who sent)
     const conflicts = bob.expect('draft:conflicts');
     bob.emit('draft:send', {});
     assert.equal((await conflicts).conflicts.length, 1);
@@ -397,24 +570,6 @@ describe('draft then send', () => {
     bob.emit('draft:send', { mode: 'force' });
     assert.equal((await sent).applied, 1);
     await updated;
-  });
-
-  it('drops a draft when its owner goes away', async () => {
-    const carol = server.client({ clientId: 'carol-client-01', name: 'Carol' });
-    await carol.ready();
-    const drafting = alice.expect('presence', (p) => p.producers.some((x) => x.name === 'Carol' && x.drafting));
-    await startDraft(carol);
-    await drafting;
-
-    const gone = alice.expect('presence', (p) => !p.producers.some((x) => x.name === 'Carol'));
-    carol.close();
-    await gone;
-
-    // the same person coming back starts clean
-    const back = server.client({ clientId: 'carol-client-01', name: 'Carol' });
-    await back.ready();
-    await wait(100);
-    assert.equal((back.events['draft:state'] || []).length, 0);
   });
 
   it('reports a draft change that is not valid without breaking the draft', async () => {

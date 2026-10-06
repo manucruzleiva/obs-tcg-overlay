@@ -6,11 +6,14 @@
  * action; if another producer changed the same part of the game since then, the action is refused
  * instead of being applied twice.
  *
- * A producer can also work on a private draft: their changes run against a copy of the game that
- * only they see, and "send" applies them to the live game in one step.
+ * The producers can also work on a draft together: there is one for the whole table, started by any of them. Everybody's changes run against
+ * a copy of the game that the overlay does not see, every producer sees the same preview and the same list of changes (and who made each),
+ * and any of them can "send" it, which applies all of them to the live game in one step, or throw it away. Undoing a sent draft and then
+ * redoing it opens the draft again with those changes, in case somebody wants to change something before it is sent once more.
  */
 
 const actions = require('./actions');
+const { attacksOf, retreatOf } = require('./services/attacks');
 const GAME = require('../public/js/game-data');
 const { Collab, Presence } = require('./services/collab');
 
@@ -44,7 +47,7 @@ class Session {
 
     this.collab = new Collab();
     this.presence = new Presence();
-    this.drafts = new Map(); // clientId -> { clientId, baseRevision, queue, fork }
+    this.draft = null; // the draft of the table: { baseRevision, queue, fork, startedBy }, each change { event, payload, label, targets, conflict, by }
     this.announceId = 0;
     this.sfxId = 0;
   }
@@ -63,7 +66,7 @@ class Session {
       socket.join(clientRoom(clientId));
       socket.emit('you', this.presence.who(clientId));
       socket.emit('activity:history', this.collab.activity);
-      if (this.drafts.has(clientId)) this.sendDraft(clientId);
+      if (this.draft) socket.emit('draft:state', this.draftPayload());
     }
     this.broadcastPresence();
 
@@ -82,9 +85,8 @@ class Session {
 
   detach(socket) {
     this.presence.leave(socket.id);
-    const { clientId } = socket.data;
-    // A draft belongs to a person: it goes when their last page closes
-    if (!this.presence.hasClient(clientId)) this.drafts.delete(clientId);
+    // The draft is for the producers who are here: it goes when the last of them leaves
+    if (this.draft && this.presence.producers().length === 0) this.draft = null;
     this.broadcastPresence();
   }
 
@@ -103,7 +105,8 @@ class Session {
   }
 
   broadcastPresence() {
-    const producers = this.presence.producers().map((p) => ({ ...p, drafting: this.drafts.has(p.clientId) }));
+    // (while there is a draft, every producer is editing it)
+    const producers = this.presence.producers().map((p) => ({ ...p, drafting: Boolean(this.draft) }));
     this.io.to(PRODUCERS).emit('presence', { producers, viewers: this.presence.viewerCount() });
   }
 
@@ -137,6 +140,7 @@ class Session {
         this.draftAction(socket, event, prepared, spec, seq);
       } else {
         this.commitLive(socket, spec, info);
+        if (prepared.detailsLater === true) this.fillDetailsLater(prepared);
       }
     } catch (error) {
       error.seq = seq; // so the sender can tell which of its actions failed
@@ -203,8 +207,41 @@ class Session {
     this.finish({ before, targets: ['*'], label, clientId: by.clientId, by, announced: [], kind: 'action' });
   }
 
+  // A Pokémon picked while the card service was slow has no attacks or retreat cost yet: they are looked for in the background and filled
+  // in when they come, if that Pokémon is still there and nobody has set them by hand. It is no step of the history.
+  async fillDetailsLater(payload) {
+    const match = /^(trainerA|trainerB)-(?:active|bench-\d+)$/.exec(String(payload.target));
+    if (!match) return;
+    const side = match[1];
+    const supplied = payload.cardData && typeof payload.cardData === 'object' ? payload.cardData : {};
+    let details = null;
+    try {
+      details = await this.gs.pokemonTCG.getCard(payload.cardId, { source: supplied.source, language: supplied.language });
+    } catch (error) {
+      return; // the card service is not answering: the attacks and the retreat cost stay to be set by hand
+    }
+    if (!details) return;
+    const attacks = attacksOf(details.attacks) || [];
+    const retreat = retreatOf({ retreat: details.retreat });
+    if (attacks.length === 0 && !retreat) return;
+
+    const slot = [-1, 0, 1, 2, 3, 4, 5, 6, 7].find((candidate) => {
+      const pokemon = this.gs.pokemonAt(side, candidate);
+      return pokemon && pokemon.cardId === payload.cardId && pokemon.attacks.length === 0 && pokemon.retreat === 0;
+    });
+    if (slot === undefined) return;
+
+    const before = this.gs.snapshot();
+    const name = this.gs.pokemonAt(side, slot).name;
+    this.gs.fillPokemonDetails(side, slot, { attacks, retreat });
+    this.finish({
+      before, targets: [slot === -1 ? `${side}.active` : `${side}.bench.${slot}`], by: { clientId: 'card-service', name: 'Card service' },
+      label: `${name}: attacks and retreat cost from the card`, kind: 'details', recordUndo: false, keepRedo: true
+    });
+  }
+
   // The one place a change becomes official: new revision, undo entry, activity, broadcast
-  finish({ before, targets, label, clientId, by, announced = [], cues = [], kind, undoLabel = label, recordUndo = true }) {
+  finish({ before, targets, label, clientId, by, announced = [], cues = [], kind, undoLabel = label, recordUndo = true, keepRedo = false, draft = null }) {
     const gs = this.gs;
     const changed = JSON.stringify({ ...before, revision: 0 }) !== JSON.stringify({ ...gs.state, revision: 0 });
 
@@ -213,8 +250,9 @@ class Session {
     const who = by || this.presence.who(clientId);
 
     this.collab.recordChange({ rev, clientId, by: who, label, targets });
-    if (recordUndo && changed) this.collab.pushUndo({ before, rev, label: undoLabel, by: who });
-    if (kind !== 'undo' && kind !== 'redo') this.collab.clearRedo();
+    // (a draft that was sent keeps its changes, so that redoing the send can open it again)
+    if (recordUndo && changed) this.collab.pushUndo({ before, rev, label: undoLabel, by: who, draft });
+    if (kind !== 'undo' && kind !== 'redo' && !keepRedo) this.collab.clearRedo();
 
     const activity = this.collab.addActivity({ rev, by: who, label, kind });
 
@@ -228,7 +266,7 @@ class Session {
     for (const cue of new Set(cues)) {
       this.io.emit('sfx', { id: ++this.sfxId, cue });
     }
-    this.refreshDrafts();
+    this.refreshDraft();
   }
 
   // ------------------------------------------------------------ undo / redo
@@ -245,7 +283,7 @@ class Session {
     if (this.staleView(socket, data)) return;
 
     this.collab.popUndo();
-    this.collab.pushRedo({ snapshot: this.gs.snapshot(), label: entry.label, by: entry.by });
+    this.collab.pushRedo({ snapshot: this.gs.snapshot(), label: entry.label, by: entry.by, draft: entry.draft || null });
     this.gs.restore(entry.before);
 
     const owner = entry.by.clientId === clientId ? '' : ` (made by ${entry.by.name})`;
@@ -270,6 +308,12 @@ class Session {
       return;
     }
 
+    // Redoing the send of a draft opens the draft again instead, with the changes that were sent, so they can be changed before they go
+    if (entry.draft && entry.draft.length) {
+      this.reopenDraft(socket, entry, seq);
+      return;
+    }
+
     const current = this.gs.snapshot();
     this.gs.restore(entry.snapshot);
     this.finish({
@@ -289,29 +333,33 @@ class Session {
     return true;
   }
 
-  // ---------------------------------------------------------------- drafts
+  // ---------------------------------------------------------------- the draft
 
   draftStart(socket) {
     if (!socket.data.canControl) return;
-    const { clientId } = socket.data;
-    if (!this.drafts.has(clientId)) {
-      this.drafts.set(clientId, { clientId, baseRevision: this.gs.state.revision, queue: [], fork: this.gs.fork() });
+    if (!this.draft) {
+      this.draft = { baseRevision: this.gs.state.revision, queue: [], fork: this.gs.fork(), startedBy: this.presence.who(socket.data.clientId) };
       this.broadcastPresence();
     }
-    this.sendDraft(clientId);
+    this.sendDraft();
   }
 
   draftDiscard(socket) {
     if (!socket.data.canControl) return;
-    const { clientId } = socket.data;
-    this.drafts.delete(clientId);
-    this.io.to(clientRoom(clientId)).emit('draft:state', { active: false });
+    if (!this.draft) {
+      socket.emit('draft:state', { active: false });
+      return;
+    }
+    const by = this.presence.who(socket.data.clientId);
+    this.draft = null;
+    this.io.to(PRODUCERS).emit('draft:state', { active: false });
+    this.io.to(PRODUCERS).emit('draft:closed', { how: 'discarded', by: by.name, byClientId: by.clientId });
     this.broadcastPresence();
   }
 
   draftAction(socket, event, payload, spec, seq) {
     const { clientId } = socket.data;
-    const draft = this.drafts.get(clientId);
+    const draft = this.draft;
     if (!draft) {
       socket.emit('action:rejected', { reason: 'no-draft', seq });
       return;
@@ -324,16 +372,16 @@ class Session {
       draft.fork.restore(before);
       throw error;
     }
-    draft.queue.push({ event, payload, label: spec.label(draft.fork), targets: spec.targets(), conflict: null });
-    this.sendDraft(clientId, seq);
+    draft.queue.push({ event, payload, label: spec.label(draft.fork), targets: spec.targets(), conflict: null, by: this.presence.who(clientId) });
+    this.sendDraft({ socket, ack: seq });
   }
 
-  // Replay a draft's actions on a fresh copy of the live game, marking the ones that
-  // touch something another producer changed since the draft began
+  // Replay a draft's actions on a fresh copy of the live game, marking the ones that touch something that
+  // somebody else (not the one who made that change) changed since the draft began
   rebuildDraft(draft) {
     const fork = this.gs.fork();
     for (const entry of draft.queue) {
-      const conflict = entry.targets ? this.collab.findConflict(draft.baseRevision, draft.clientId, entry.targets) : null;
+      const conflict = entry.targets ? this.collab.findConflict(draft.baseRevision, entry.by.clientId, entry.targets) : null;
       entry.conflict = conflict ? { by: conflict.by.name, label: conflict.label } : null;
       if (conflict) continue;
       try {
@@ -345,25 +393,36 @@ class Session {
     draft.fork = fork;
   }
 
-  refreshDrafts() {
-    for (const draft of this.drafts.values()) {
-      this.rebuildDraft(draft);
-      this.sendDraft(draft.clientId);
-    }
+  refreshDraft() {
+    if (!this.draft) return;
+    this.rebuildDraft(this.draft);
+    this.sendDraft();
   }
 
-  // `ack` is the sequence number of the action this answers (absent when the draft just refreshed)
-  sendDraft(clientId, ack) {
-    const draft = this.drafts.get(clientId);
-    if (!draft) return;
-    this.io.to(clientRoom(clientId)).emit('draft:state', {
+  // What every producer's page is told about the draft
+  draftPayload() {
+    const { startedBy, baseRevision, fork, queue } = this.draft;
+    return {
       active: true,
-      ack,
-      baseRevision: draft.baseRevision,
+      baseRevision,
       revision: this.gs.state.revision,
-      preview: publicState(draft.fork.state),
-      changes: draft.queue.map(({ label, conflict }) => ({ label, conflict }))
-    });
+      startedBy: { clientId: startedBy.clientId, name: startedBy.name },
+      preview: publicState(fork.state),
+      changes: queue.map(({ label, conflict, by }) => ({ label, conflict, by: by.name, byClientId: by.clientId }))
+    };
+  }
+
+  // Tell every producer how the draft is. `ack` is the sequence number of the action of `socket` that this answers: only the page that sent it
+  // is told (sequence numbers belong to a page, so another page could mistake it for one of its own).
+  sendDraft({ socket, ack } = {}) {
+    if (!this.draft) return;
+    const payload = this.draftPayload();
+    if (socket && ack !== undefined) {
+      socket.to(PRODUCERS).emit('draft:state', payload);
+      socket.emit('draft:state', { ...payload, ack });
+    } else {
+      this.io.to(PRODUCERS).emit('draft:state', payload);
+    }
   }
 
   // mode: 'safe' (default: stop and report if anything conflicts), 'skip' (leave conflicting
@@ -371,7 +430,7 @@ class Session {
   draftSend(socket, data) {
     if (!socket.data.canControl) return;
     const { clientId } = socket.data;
-    const draft = this.drafts.get(clientId);
+    const draft = this.draft;
     if (!draft) {
       socket.emit('action:rejected', { reason: 'no-draft' });
       return;
@@ -382,12 +441,13 @@ class Session {
     const conflicting = draft.queue.filter((entry) => entry.conflict);
     if (conflicting.length && mode === 'safe') {
       socket.emit('draft:conflicts', { conflicts: conflicting.map(({ label, conflict }) => ({ label, conflict })) });
-      this.sendDraft(clientId);
+      this.sendDraft();
       return;
     }
 
     const before = this.gs.snapshot();
     const applied = [];
+    const kept = []; // what was applied, as it can be played again (redoing the send opens the draft with these)
     const skipped = [];
     const announced = [];
     const cues = [];
@@ -403,26 +463,47 @@ class Session {
         announced.push(...spec.run(this.gs));
         cues.push(...spec.cues());
         applied.push(spec.label(this.gs));
+        kept.push({ event: entry.event, payload: entry.payload, label: entry.label, targets: entry.targets, by: entry.by });
         targets.push(...(entry.targets || []));
       } catch (error) {
         skipped.push({ label: entry.label, reason: error.message });
       }
     }
 
-    this.drafts.delete(clientId);
+    this.draft = null;
 
     if (applied.length) {
       const preview = applied.slice(0, 3).join('; ') + (applied.length > 3 ? '…' : '');
       this.finish({
-        before, targets, clientId, announced, cues, kind: 'draft',
+        before, targets, clientId, announced, cues, kind: 'draft', draft: kept,
         label: `Sent ${applied.length} change${applied.length === 1 ? '' : 's'}: ${preview}`,
         undoLabel: `${applied.length} sent change${applied.length === 1 ? '' : 's'}`
       });
     }
 
-    this.io.to(clientRoom(clientId)).emit('draft:sent', { applied: applied.length, skipped });
-    this.io.to(clientRoom(clientId)).emit('draft:state', { active: false });
+    const by = this.presence.who(clientId);
+    this.io.to(PRODUCERS).emit('draft:sent', { applied: applied.length, skipped, by: by.name, byClientId: by.clientId });
+    this.io.to(PRODUCERS).emit('draft:state', { active: false });
     this.broadcastPresence();
+  }
+
+  // Redoing the send of a draft: the draft opens again (the one that is open, if there is one, gets those changes too) with the changes that
+  // were sent, to be sent again or changed first. The game stays as the undo left it.
+  reopenDraft(socket, entry, seq) {
+    const { clientId } = socket.data;
+    const by = this.presence.who(clientId);
+    if (!this.draft) this.draft = { baseRevision: this.gs.state.revision, queue: [], fork: this.gs.fork(), startedBy: by };
+    for (const item of entry.draft) this.draft.queue.push({ ...item, conflict: null });
+    this.rebuildDraft(this.draft);
+
+    const activity = this.collab.addActivity({
+      rev: this.gs.state.revision, by, kind: 'redo',
+      label: `Redid: ${entry.label}, opened again as a draft`
+    });
+    this.io.to(PRODUCERS).emit('activity', activity);
+    this.sendDraft();
+    this.broadcastPresence();
+    if (Number.isInteger(seq)) socket.emit('action:applied', { seq, revision: this.gs.state.revision, draft: true, changes: entry.draft.length });
   }
 }
 

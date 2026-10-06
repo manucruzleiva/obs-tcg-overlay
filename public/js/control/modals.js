@@ -639,6 +639,7 @@ const MODIFIER_HINT = { '+': 'and more with some conditions', '×': 'times somet
 
 // Announce an attack or an ability. The Active Pokémon's attacks and the abilities of the Pokémon in play are listed from
 // their cards: pick one (or press its number) and the name and the base damage are filled in, ready to be changed.
+// The attacks of the benched Pokémon are in a list that is closed until it is wanted (an attack that is copied from the bench, for example).
 export function openAttack(app) {
   const holder = app.state.trainerA.isTurn ? 'trainerA' : app.state.trainerB.isTurn ? 'trainerB' : app.focus;
   let attacker = holder;
@@ -646,6 +647,7 @@ export function openAttack(app) {
   let items = []; // what the number keys pick, in the order they are listed
   let applyDamage = true;
   let markUsed = true;
+  let benchOpen = false; // the list of the benched Pokémon's attacks stays as it was left while the dialog is drawn again
 
   const body = h('div', {});
   const name = h('input', { type: 'text', maxlength: 60, placeholder: 'Attack name (for example Thunderbolt)', 'aria-label': 'Attack name' });
@@ -693,15 +695,19 @@ export function openAttack(app) {
     if (entry.kind === 'attack') { damage.focus(); damage.select(); } else announce.focus();
   };
 
-  const listed = (entry, content) => {
-    items.push(entry);
+  // (the attacks of the benched Pokémon have no number: they are picked with a click)
+  const listed = (entry, content, { numbered = true } = {}) => {
+    if (numbered) items.push(entry);
     return h('button', {
-      class: `attack-pick${entry.kind === 'ability' ? ' ability' : ''}${sameAsChosen(entry) ? ' on' : ''}`, type: 'button',
-      'aria-pressed': String(Boolean(sameAsChosen(entry))), dataset: { kind: entry.kind, index: String(entry.index) },
-      'data-autofocus': items.length === 1 || undefined,
+      class: `attack-pick${entry.kind === 'ability' ? ' ability' : ''}${numbered ? '' : ' bench-pick'}${sameAsChosen(entry) ? ' on' : ''}`, type: 'button',
+      'aria-pressed': String(Boolean(sameAsChosen(entry))), dataset: { kind: entry.kind, index: String(entry.index), slot: String(entry.slot) },
+      'data-autofocus': (numbered && items.length === 1) || undefined,
       onclick: () => choose(entry)
-    }, h('kbd', {}, String(items.length)), content);
+    }, numbered && h('kbd', {}, String(items.length)), content);
   };
+
+  // The Pokémon that holds an attack: the Active one (slot -1) or one of the bench
+  const holderOf = (state, entry) => (entry.slot === -1 ? state[attacker].active : state[attacker].bench[entry.slot]);
 
   const draw = () => {
     const state = app.state;
@@ -722,13 +728,29 @@ export function openAttack(app) {
         ability.used ? h('span', { class: 'used-tag' }, 'USED') : h('span', { class: 'attack-damage' }, ability.scope === 'game' ? 'game' : 'turn')])));
 
     const usingAbility = chosen && chosen.kind === 'ability';
-    const card = chosen && chosen.kind === 'attack' && attacks[chosen.index] && attacks[chosen.index].mod ? attacks[chosen.index] : null;
+    // the benched Pokémon that have attacks on file, in a list of their own
+    const benched = inPlay(state, attacker).filter(({ slot, pokemon }) => slot >= 0 && (pokemon.attacks || []).length > 0);
+    const benchList = benched.length > 0 && h('details', {
+      class: 'bench-attacks', open: benchOpen, ontoggle: (event) => { benchOpen = event.target.open; }
+    },
+    h('summary', {}, 'Attacks of the benched Pokémon', h('span', { class: 'hint' }, benched.length === 1 ? '1 Pokémon' : `${benched.length} Pokémon`)),
+    benched.map(({ slot, pokemon }) => h('div', { class: 'bench-attack-group' },
+      h('div', { class: 'bench-attack-owner' }, pokemon.name, h('small', {}, ` · ${slotLabel(slot)}`)),
+      h('div', { class: 'attack-list' }, pokemon.attacks.map((attack, index) => listed(
+        { kind: 'attack', slot, index, label: attack.name, base: attack.damage, owner: pokemon.name },
+        [h('span', { class: 'attack-name' }, attack.name),
+          h('span', { class: 'attack-damage', title: attack.mod ? `${attack.damage} ${MODIFIER_HINT[attack.mod] || ''}`.trim() : undefined }, damageText(attack))],
+        { numbered: false }))))));
+
+    const chosenAttack = chosen && chosen.kind === 'attack' ? (holderOf(state, chosen) || {}).attacks?.[chosen.index] : null;
+    const card = chosenAttack && chosenAttack.mod ? chosenAttack : null;
     const fields = usingAbility
       ? [
         h('p', { class: 'ability-line' }, h('span', { class: 'diamond' }), h('strong', {}, chosen.label), h('small', {}, ` ${chosen.owner}`)),
         h('label', { class: 'switch inline' }, usedBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Mark ${chosen.label} as used`))
       ]
       : [
+        chosen && chosen.slot >= 0 && h('p', { class: 'hint-line from-bench' }, `The attack of ${chosen.owner} (${slotLabel(chosen.slot)}), on the bench.`),
         h('label', { class: 'field' }, h('span', {}, 'Attack'), name),
         h('div', { class: 'field' }, h('span', {}, 'Damage', h('small', { class: 'tens-note' }, ' · in tens')),
           h('div', { class: 'amount-row' }, lessButton, damage, moreButton, baseButton)),
@@ -742,6 +764,7 @@ export function openAttack(app) {
       attackList.length > 0
         ? h('div', { class: 'attack-list' }, attackList)
         : h('p', { class: 'empty' }, hasPokemon(active) ? 'This card has no attacks on file. Type the attack below.' : `${trainerName(state, attacker)} has no Active Pokémon. Type the attack below.`),
+      benchList,
       abilityList.length > 0 && h('div', { class: 'section-label' }, 'Abilities', h('span', { class: 'hint' }, 'Announced like an attack')),
       abilityList.length > 0 && h('div', { class: 'attack-list' }, abilityList),
       h('div', { class: 'section-label' }, 'Announce'),
@@ -787,7 +810,7 @@ export function openAttack(app) {
       choose(items[Number(event.key) - 1]);
       return;
     }
-    if (event.key === 'Enter' && event.target.tagName !== 'BUTTON') { event.preventDefault(); go(); }
+    if (event.key === 'Enter' && event.target.tagName !== 'BUTTON' && event.target.tagName !== 'SUMMARY') { event.preventDefault(); go(); }
   });
 }
 

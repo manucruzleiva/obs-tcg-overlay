@@ -159,6 +159,37 @@ describe('desktop app', { skip }, () => {
     app = null;
   });
 
+  it('has no File, Edit, View or Window menu bar, and F5 and Ctrl+R still reload the page', async () => {
+    app = await _electron.launch({ executablePath: electronPath, args: [path.join(ROOT, 'electron', 'main.js')], env });
+    try {
+      window = await app.firstWindow();
+      await window.waitForSelector('.trainer-panel.side-a');
+      if (process.platform !== 'darwin') {
+        assert.equal(await app.evaluate(({ Menu }) => Menu.getApplicationMenu()), null, 'no application menu');
+        assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((win) => win.isMenuBarVisible())), false, 'and no menu bar in the window');
+      }
+      // the keys are looked at by the app before the page sees them: press them there. A marker on the page says whether it was loaded again.
+      for (const input of [{ type: 'keyDown', key: 'F5' }, { type: 'keyDown', key: 'r', control: true }]) {
+        await window.evaluate(() => { window.__notReloaded = true; });
+        await app.evaluate(({ BrowserWindow }, pressed) => {
+          const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+          win.webContents.emit('before-input-event', { preventDefault() {} }, pressed);
+        }, input);
+        await window.waitForFunction(() => window.__notReloaded === undefined, null, { timeout: 15000 });
+        await window.waitForSelector('.trainer-panel.side-a');
+      }
+      // other keys are left alone
+      await window.evaluate(() => { window.__notReloaded = true; });
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.emit('before-input-event', { preventDefault() {} }, { type: 'keyDown', key: 'a' }));
+      await wait(800);
+      assert.equal(await window.evaluate(() => window.__notReloaded), true);
+    } finally {
+      await app.close().catch(() => {});
+      app = null;
+      await wait(1500);
+    }
+  });
+
   it('backs everything up and starts fresh instead of deleting it', async () => {
     app = await _electron.launch({ executablePath: electronPath, args: [main], env });
     window = await app.firstWindow();

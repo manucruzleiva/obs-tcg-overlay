@@ -7,7 +7,7 @@
 import { h } from './dom.js';
 
 const RULES = window.OTO_THEME_RULES;
-const KNOWN = ['author', 'description', 'colors', 'layout', 'crop', 'tile', 'prizeStyle'];
+const KNOWN = ['author', 'description', 'colors', 'layout', 'crop', 'tile', 'prizeStyle', 'prizeLayout', 'orientation', 'spaces'];
 const MAX_AUTHOR = 60;
 const MAX_DESCRIPTION = 300;
 
@@ -48,6 +48,9 @@ export function readCode(text) {
     if ('crop' in parsed) design.crop = RULES.sanitizeCrop(parsed.crop, { strict: true });
     if ('tile' in parsed) design.tile = RULES.sanitizeTile(parsed.tile, { strict: true });
     if ('prizeStyle' in parsed) design.prizeStyle = RULES.sanitizePrize(parsed.prizeStyle, { strict: true });
+    if ('prizeLayout' in parsed) design.prizeLayout = RULES.sanitizePrizeLayout(parsed.prizeLayout, { strict: true });
+    if ('orientation' in parsed) design.orientation = RULES.sanitizeOrientation(parsed.orientation, { strict: true });
+    if ('spaces' in parsed) design.spaces = RULES.sanitizeSpaces(parsed.spaces, { strict: true });
   } catch (error) {
     if (error instanceof RULES.RuleError) return { error: error.message };
     throw error;
@@ -79,7 +82,7 @@ export class CodePanel {
 
     this.format = h('button', { class: 'btn tiny', type: 'button', onclick: () => this.tidy() }, 'Format');
     this.element = h('div', { class: 'code-panel' },
-      h('p', { class: 'settings-note' }, 'Everything about the look except the pictures, font and sounds. Changes show on the overlay as you type. Pieces of the overlay are listed under "layout", the part of the card that shows under "crop", where the HP bar, the energy and the retreat cost go under "tile", and the picture on the prize cards under "prizeStyle".'),
+      h('p', { class: 'settings-note' }, 'Everything about the look except the pictures, font and sounds. Changes show on the overlay as you type. Pieces of the overlay are listed under "layout", the part of the card that shows under "crop", where the HP bar, the energy and the retreat cost go under "tile", the picture on the prize cards under "prizeStyle" and how they are laid out under "prizeLayout", the screen under "orientation" and the places kept clear for a camera feed under "spaces".'),
       h('div', { class: 'code-editor' }, this.gutter, this.input),
       this.status,
       h('div', { class: 'button-row' }, this.format));
@@ -127,8 +130,8 @@ export class CodePanel {
     }
     this.input.removeAttribute('aria-invalid');
     const patch = {};
-    const TEXTS = ['author', 'description', 'prizeStyle']; // what is left out of the text goes back to nothing, or to an empty object
-    for (const key of KNOWN) patch[key] = key in result.design ? result.design[key] : (TEXTS.includes(key) ? '' : {});
+    const TEXTS = ['author', 'description', 'prizeStyle', 'prizeLayout', 'orientation']; // what is left out of the text goes back to nothing, to an empty list or to an empty object
+    for (const key of KNOWN) patch[key] = key in result.design ? result.design[key] : (TEXTS.includes(key) ? '' : key === 'spaces' ? [] : {});
     this.say(result.ignored.length ? `Not used: ${result.ignored.join(', ')}.` : 'Applied.');
     this.model.update(patch, { source: 'code' });
     this.shown = this.model.toCode(); // the model now says what the text says

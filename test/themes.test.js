@@ -22,7 +22,8 @@ describe('what a design may hold', () => {
   it('knows which variables and picture slots a design can set', () => {
     assert.ok(COLOR_KEYS.includes('--accent'));
     assert.ok(COLOR_KEYS.includes('--trainer-a'));
-    assert.deepEqual(IMAGE_KEYS, ['logoImage', 'backgroundImage', 'trainerAAvatar', 'trainerBAvatar', 'prizeCardBack', 'cardBackImage', 'energySymbols', 'statusSymbols']);
+    assert.deepEqual(IMAGE_KEYS, ['logoImage', 'backgroundImage', 'trainerAAvatar', 'trainerBAvatar', 'prizeCardBack', 'cardBackImage', 'energySymbols', 'statusSymbols',
+      'spaceFrame1', 'spaceFrame2', 'spaceFrame3', 'spaceFrame4', 'spaceFrame5', 'spaceFrame6']);
   });
 
   it('keeps the colors it knows and drops everything else', () => {
@@ -283,7 +284,7 @@ describe('the folder a design lives in', () => {
     });
 
     it('limits how much one design can hold', () => {
-      for (const key of IMAGE_KEYS) store.setImage('Store League', key, S.bigPng(4.4 * 1024 * 1024));
+      for (const key of IMAGE_KEYS.slice(0, 8)) store.setImage('Store League', key, S.bigPng(4.4 * 1024 * 1024));
       store.setFont('Store League', Buffer.concat([S.WOFF2, Buffer.alloc(4.4 * 1024 * 1024)]));
       const cues = SOUND.KEYS;
       let stoppedAt = null;
@@ -430,7 +431,7 @@ describe('the folder a design lives in', () => {
       const added = store.addDesign(parts({ images: { logoImage: S.PNG, notASlot: S.PNG }, sounds: { damage: S.MP3, notACue: S.MP3 } }));
       assert.deepEqual(Object.keys(added.images), ['logoImage']);
       assert.deepEqual(Object.keys(added.sounds), ['damage']);
-      const huge = Object.fromEntries(IMAGE_KEYS.map((key) => [key, S.bigPng(4.4 * 1024 * 1024)]));
+      const huge = Object.fromEntries(IMAGE_KEYS.slice(0, 8).map((key) => [key, S.bigPng(4.4 * 1024 * 1024)]));
       refuses(() => store.addDesign(parts({ name: 'Huge', images: huge, font: Buffer.concat([S.WOFF2, Buffer.alloc(4.4 * 1024 * 1024)]), sounds: Object.fromEntries(SOUND.KEYS.map((cue) => [cue, S.bigWav(1.4 * 1024 * 1024)])) })), /too large \(40 MB/);
       assert.equal(store.get('Huge'), null);
     });

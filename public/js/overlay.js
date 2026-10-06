@@ -29,6 +29,7 @@
   const SIDE_CLASS = { trainerA: 'a', trainerB: 'b' };
   const ENERGY_INDEX = {};
   GAME.ENERGY_KEYS.forEach((key, index) => { ENERGY_INDEX[key] = index; });
+  const PER_TURN = ['energy', 'stadiumUse', 'supporter']; // the trackers of what is used once each turn (the GX and VSTAR markers are for the game)
   const STATUS = {};
   const STATUS_INDEX = {};
   GAME.STATUS_CONDITIONS.forEach((condition, index) => { STATUS[condition.key] = condition; STATUS_INDEX[condition.key] = index; });
@@ -106,13 +107,14 @@
     const energies = opt(el('div', 'energies'), 'attachments');
     const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
+    const attacks = opt(el('div', 'attacks'), 'benchAttacks'); // (the benched Pokémon only)
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
-    [name, hp, energies, retreat, abilities, statuses].forEach((node) => details.appendChild(node));
+    [name, hp, energies, retreat, abilities, attacks, statuses].forEach((node) => details.appendChild(node));
 
     root.appendChild(art);
     root.appendChild(details);
     root.hidden = true;
-    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, statuses };
+    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, attacks, statuses };
   }
 
   // Where the parts of a tile go: the usual places, with what a design says (a design is checked by the server, this only
@@ -145,11 +147,12 @@
     };
     put('hp', mon.hp);
     put('energy', mon.energies);
-    put('retreat', mon.retreat);
+    if (!mon.mini) put('retreat', mon.retreat); // (the bench does not show the retreat cost)
     // what stays under the picture keeps its order: the name, then whatever came down, then the abilities and the status icons
     mon.details.appendChild(mon.name);
     below.forEach((node) => mon.details.appendChild(node));
     mon.details.appendChild(mon.abilities);
+    mon.details.appendChild(mon.attacks);
     below.length = 0;
     put('status', mon.statuses);
     below.forEach((node) => mon.details.appendChild(node));
@@ -222,6 +225,20 @@
     container.hidden = list.length === 0;
   }
 
+  // What a benched Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
+  function renderAttacks(container, attacks) {
+    const list = attacks || [];
+    container.textContent = '';
+    list.forEach((attack) => {
+      const line = el('div', 'attack-line');
+      line.appendChild(el('span', 'attack-line-name', attack.name));
+      const amount = attack.damage ? `${attack.damage}${attack.mod || ''}` : attack.mod || '';
+      if (amount) line.appendChild(el('span', 'attack-line-damage', amount));
+      container.appendChild(line);
+    });
+    container.hidden = list.length === 0;
+  }
+
   function renderMon(mon, pokemon) {
     const present = hasPokemon(pokemon);
     mon.root.hidden = !present;
@@ -241,8 +258,15 @@
 
     const status = pokemon.status || [];
     renderEnergies(mon.energies, pokemon.energies, pokemon.specialEnergies, mon.mini ? MAX_ENERGY_SHOWN_ON_BENCH : MAX_ENERGY_SHOWN);
-    renderRetreat(mon.retreat, pokemon.retreat, status.indexOf('trapped') !== -1);
+    // only the Active Pokémon shows what it costs to retreat
+    if (mon.mini) {
+      mon.retreat.textContent = '';
+      mon.retreat.hidden = true;
+    } else {
+      renderRetreat(mon.retreat, pokemon.retreat, status.indexOf('trapped') !== -1);
+    }
     renderAbilities(mon.abilities, pokemon.abilities);
+    renderAttacks(mon.attacks, mon.mini ? pokemon.attacks : []);
 
     mon.statuses.textContent = '';
     status.forEach((key) => {
@@ -276,6 +300,8 @@
       this.state = null;
       this.themeProps = [];
       this.layoutNodes = []; // the pieces a design has moved
+      this.stageSize = { width: STAGE_WIDTH, height: STAGE_HEIGHT }; // a mobile design has a tall one
+      this.portrait = false;
       this.themeFont = null;
       this.toastTimers = {};
       this.effectNodes = [];
@@ -352,7 +378,10 @@
 
       this.backdrop = el('div', 'backdrop');
       this.logo = el('div', 'logo');
+      // the reserved spaces (a design's camera feeds and the like): frames, behind everything else
+      this.spacesLayer = opt(el('div', 'spaces'), 'spaces');
       stage.appendChild(this.backdrop);
+      stage.appendChild(this.spacesLayer);
       stage.appendChild(this.logo);
 
       this.buildScoreboard();
@@ -495,10 +524,49 @@
     fit() {
       // the editor shows the stage at its real size (the editor zooms the whole picture)
       const auto = !this.editor && (!this.state || this.state.settings.autoScale !== false);
-      const scale = auto ? Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT) : 1;
-      const x = auto ? (window.innerWidth - STAGE_WIDTH * scale) / 2 : 0;
-      const y = auto ? (window.innerHeight - STAGE_HEIGHT * scale) / 2 : 0;
+      const { width, height } = this.stageSize;
+      const scale = auto ? Math.min(window.innerWidth / width, window.innerHeight / height) : 1;
+      const x = auto ? (window.innerWidth - width * scale) / 2 : 0;
+      const y = auto ? (window.innerHeight - height * scale) / 2 : 0;
       this.stage.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    }
+
+    // The screen of the design: a wide one (1920 x 1080) or a tall one for a phone (1080 x 1920, with its own arrangement: see #stage.portrait)
+    setScreen(orientation) {
+      this.portrait = orientation === 'portrait';
+      this.stageSize = THEME.stageSizeOf(this.portrait ? 'portrait' : 'landscape');
+      this.stage.style.width = `${this.stageSize.width}px`;
+      this.stage.style.height = `${this.stageSize.height}px`;
+      this.stage.classList.toggle('portrait', this.portrait);
+      this.syncBenchRow();
+      this.fit();
+    }
+
+    // The bench is a row under the Active Pokémon when the producer asks for it, and always on a tall screen (there is no room at the side)
+    syncBenchRow() {
+      const display = (this.state && this.state.settings && this.state.settings.display) || DISPLAY.DEFAULTS;
+      this.stage.classList.toggle('bench-row', this.portrait || display.benchRow === true);
+    }
+
+    // The reserved spaces of the design, as frames: an outline of the shape, or the design's picture for it (spaceFrame<id>)
+    renderSpaces(theme) {
+      this.spacesLayer.textContent = '';
+      const images = (theme && theme.images) || {};
+      ((theme && Array.isArray(theme.spaces)) ? theme.spaces : []).forEach((space) => {
+        if (!space || !['x', 'y', 'w', 'h'].every((key) => Number.isFinite(space[key]))) return;
+        const shape = THEME.SPACE_SHAPE_KEYS.includes(space.shape) ? space.shape : 'rect';
+        const node = el('div', `space shape-${shape}`);
+        node.style.left = `${space.x}px`;
+        node.style.top = `${space.y}px`;
+        node.style.width = `${space.w}px`;
+        node.style.height = `${space.h}px`;
+        const frame = images[`spaceFrame${space.id}`];
+        if (frame) {
+          node.classList.add('has-frame');
+          node.style.backgroundImage = cssUrl(frame);
+        }
+        this.spacesLayer.appendChild(node);
+      });
     }
 
     // ---- the game
@@ -519,6 +587,8 @@
       // be switched off (Settings, Overlay), and then the game is not shown as paused.
       const paused = state.paused === true && state.settings.enablePauseToast !== false && display.toasts !== false;
       this.stage.classList.toggle('is-paused', paused);
+      // the bench is stacked at the side unless it is asked to be a row under the Active Pokémon
+      this.syncBenchRow();
       this.pauseBanner.hidden = !paused;
 
       // Switch elements off last, so everything that exists is covered
@@ -606,6 +676,9 @@
         if (!counter) return;
         refs[key].root.classList.toggle('used', counter.used >= counter.available);
         refs[key].count.textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : '';
+        // what is used each turn is for the player whose turn it is: the other one (and both, before anybody has the turn) show none
+        // (they are not there, but keep their room, so nothing moves when the turn passes)
+        if (PER_TURN.indexOf(key) !== -1) refs[key].root.classList.toggle('off-turn', !trainer.isTurn);
       });
 
       // locks
@@ -630,8 +703,25 @@
         this.stadiumName.textContent = stadium.name || '';
       }
 
+      // the last three cards that were featured, in the order they were added, with the separators between them ("A + B → C")
       this.featureBox.textContent = '';
-      state.featureCards.slice(0, 3).forEach((card) => {
+      const shown = [];
+      let counted = 0;
+      for (let i = state.featureCards.length - 1; i >= 0; i--) {
+        const entry = state.featureCards[i];
+        if (!entry.separator) {
+          if (counted === 3) break;
+          counted++;
+        }
+        shown.unshift(entry);
+      }
+      while (shown.length && shown[0].separator) shown.shift(); // a sign with nothing before it
+      this.featureBox.classList.toggle('combo', shown.some((entry) => entry.separator));
+      shown.forEach((card) => {
+        if (card.separator) {
+          this.featureBox.appendChild(el('div', 'feature-sep', card.separator));
+          return;
+        }
         const figure = el('figure', 'feature');
         const img = el('img', 'feature-img');
         setImage(img, card.image, card.name);
@@ -641,7 +731,7 @@
         figure.appendChild(caption);
         this.featureBox.appendChild(figure);
       });
-      this.featureBox.hidden = state.featureCards.length === 0;
+      this.featureBox.hidden = shown.length === 0;
     }
 
     // ---- announcements
@@ -793,7 +883,7 @@
       this.themeProps = [];
 
       const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-status-sprite', 'has-backdrop']
-        .concat(THEME.PRIZE_KEYS.map((key) => `prize-${key}`));
+        .concat(THEME.PRIZE_KEYS.map((key) => `prize-${key}`), THEME.PRIZE_LAYOUT_KEYS.map((key) => `prize-layout-${key}`));
       rootClasses.forEach((name) => root.classList.remove(name));
 
       // pieces the last design moved go back to where they belong
@@ -808,9 +898,21 @@
         this.themeFont = null;
       }
 
+      // the screen (wide, or a tall one for a phone) and the reserved spaces
+      this.setScreen(theme && theme.orientation);
+      this.renderSpaces(theme);
+
       // where the HP bar, the attached energy and the retreat cost go (the usual places when there is no design)
       this.tile = tileOf(theme && theme.tile);
       this.placeAll();
+
+      // the picture on the prize cards: the English card back when the design says nothing (or there is no design), unless the design has a
+      // prize card back or a card back picture of its own; a card back or a Poké Ball when it asks. And how the six are laid out.
+      const own = Boolean(theme && theme.images && (theme.images.prizeCardBack || theme.images.cardBackImage));
+      let style = theme && THEME.PRIZE_KEYS.includes(theme.prizeStyle) ? theme.prizeStyle : THEME.PRIZE_DEFAULT;
+      if (style === THEME.PRIZE_DEFAULT) style = own ? THEME.PRIZE_DEFAULT : 'english';
+      if (style !== THEME.PRIZE_DEFAULT) root.classList.add(`prize-${style}`);
+      if (theme && THEME.PRIZE_LAYOUT_KEYS.includes(theme.prizeLayout) && theme.prizeLayout !== THEME.PRIZE_LAYOUT_DEFAULT) root.classList.add(`prize-layout-${theme.prizeLayout}`);
       if (!theme) return;
 
       const set = (name, value) => {
@@ -836,9 +938,10 @@
         });
       });
 
-      // crop: the part of the card that shows for the Active Pokémon (ca), the bench (cb) and the Stadium (sa); the artwork unless the design says
+      // crop: the part of the card that shows for the Active Pokémon (ca), the bench (cb), the Stadium (sa) and the cards put on the prize
+      // cards (cp); the artwork unless the design says (the whole card for the prize cards)
       const crop = theme.crop || {};
-      [['active', 'ca'], ['bench', 'cb'], ['stadium', 'sa']].forEach(([which, prefix]) => {
+      [['active', 'ca'], ['bench', 'cb'], ['stadium', 'sa'], ['prize', 'cp']].forEach(([which, prefix]) => {
         const rect = crop[which];
         if (!rect) return;
         ['x', 'y', 'w', 'h'].forEach((side) => set(`--${prefix}-${side}`, String(rect[side])));
@@ -856,8 +959,6 @@
       if (images.energySymbols) root.classList.add('has-energy-sprite');
       if (images.statusSymbols) root.classList.add('has-status-sprite');
       if (images.backgroundImage) root.classList.add('has-backdrop');
-      // the picture on the prize cards: a card back or a ball when the design asks for one (the CSS draws it), its own look otherwise
-      if (THEME.PRIZE_KEYS.includes(theme.prizeStyle) && theme.prizeStyle !== THEME.PRIZE_DEFAULT) root.classList.add(`prize-${theme.prizeStyle}`);
 
       if (theme.font) {
         const face = new window.FontFace('OTO Theme', cssUrl(theme.font));

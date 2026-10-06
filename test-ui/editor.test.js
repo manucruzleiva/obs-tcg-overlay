@@ -11,6 +11,7 @@ const S = require('../test-support/samples');
 const { findBrowser, launch, openPage } = require('./browser');
 
 const skip = findBrowser() ? false : 'no Chrome or Edge found (set BROWSER_PATH to use another)';
+const THEME_OPTIONS = require('../public/js/theme-options');
 
 describe('design editor', { skip }, () => {
   let browser;
@@ -476,31 +477,31 @@ describe('design editor', { skip }, () => {
     const where = (selector) => overlayFrame().locator(selector).count();
 
     it('starts with the usual places: the HP bar on top, the energy at the bottom left and the retreat cost at the bottom right', async () => {
-      for (const group of ['Active Pokémon', 'Bench']) {
-        assert.deepEqual([await value(group, 'HP bar'), await value(group, 'Attached energy'), await value(group, 'Retreat cost')], ['top', 'bottom-left', 'bottom-right'], group);
-      }
+      assert.deepEqual([await value('Active Pokémon', 'HP bar'), await value('Active Pokémon', 'Attached energy'), await value('Active Pokémon', 'Retreat cost')], ['top', 'bottom-left', 'bottom-right']);
+      assert.deepEqual([await value('Bench', 'HP bar'), await value('Bench', 'Attached energy')], ['top', 'bottom-left']);
+      assert.equal(await page.locator('select[aria-label="Bench: Retreat cost"]').count(), 0, 'the bench does not show the retreat cost, so there is none to place');
       assert.deepEqual(await tile(), {});
       assert.equal(await page.getByRole('button', { name: 'Use the usual places' }).isDisabled(), true, 'nothing to put back');
       assert.deepEqual(await page.locator('select[aria-label="Active Pokémon: HP bar"] option').allTextContents(), ['On the picture, at the top', 'On the picture, at the bottom', 'Below the picture']);
-      assert.equal(await page.locator('select[aria-label="Bench: Retreat cost"] option').count(), 5, 'the four corners and below');
+      assert.equal(await page.locator('select[aria-label="Active Pokémon: Retreat cost"] option').count(), 5, 'the four corners and below');
       await drawn();
       assert.equal(await where('.trainer-a .active .band-top .band-bar .hp'), 1);
       assert.equal(await where('.trainer-a .active .band-bottom .corner-left .energies'), 1);
       assert.equal(await where('.trainer-a .active .band-bottom .corner-right .retreat'), 1);
-      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-bottom .corner-right .retreat'), 3, 'and the same on the bench');
+      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .retreat:not([hidden])'), 0, 'and none on the bench');
     });
 
     it('moves a part as soon as it is chosen, for the Active Pokémon and the bench on their own', async () => {
       await choose('Active Pokémon', 'HP bar', 'below');
       await choose('Active Pokémon', 'Attached energy', 'top-right');
-      await choose('Bench', 'Retreat cost', 'top-left');
-      assert.deepEqual(await tile(), { active: { hp: 'below', energy: 'top-right' }, bench: { retreat: 'top-left' } });
+      await choose('Bench', 'Attached energy', 'top-left');
+      assert.deepEqual(await tile(), { active: { hp: 'below', energy: 'top-right' }, bench: { energy: 'top-left' } });
       await drawn();
       assert.equal(await where('.trainer-a .active .art .hp'), 0, 'not on the picture any more');
       assert.equal(await where('.trainer-a .active .details .hp'), 1, 'but under it');
       assert.equal(await where('.trainer-a .active .band-top .corner-right .energies'), 1);
       assert.equal(await where('.trainer-a .active .band-bottom .corner-right .retreat'), 1, 'the retreat cost of the Active Pokémon stays');
-      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-top .corner-left .retreat'), 3);
+      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-top .corner-left .energies'), 3);
       assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-top .band-bar .hp'), 3, 'the bench keeps its HP bar');
     });
 
@@ -547,13 +548,13 @@ describe('design editor', { skip }, () => {
       const style = () => page.evaluate(() => window.oto.designEditor.model.draft.prizeStyle);
       const backOf = () => overlayFrame().evaluate(() => getComputedStyle(document.querySelector('.trainer-a .prize:not(.taken)')).backgroundImage);
 
-      it('offers the current card back, an English or a Japanese one and a Poké Ball, and starts with the current one', async () => {
-        assert.deepEqual(await prize().locator('option').allTextContents(), ['The current card back', 'English Pokémon card back', 'Japanese Pokémon card back', 'A Poké Ball']);
+      it('offers the design\'s own card back, an English or a Japanese one and a Poké Ball, and starts with the design\'s own (the English one when it has none)', async () => {
+        assert.deepEqual(await prize().locator('option').allTextContents(), ['The design\'s own card back', 'English Pokémon card back', 'Japanese Pokémon card back', 'A Poké Ball']);
         assert.equal(await prize().inputValue(), 'current');
         assert.equal(await style(), '');
-        assert.match(await page.locator('.prize-help').textContent(), /own prize card back or card back picture, or the built-in one/);
+        assert.match(await page.locator('.prize-help').textContent(), /own prize card back or card back picture, or the English card back when it has none/);
         await drawn();
-        assert.equal(await overlayFrame().evaluate(() => /(^|\s)prize-/.test(document.documentElement.className)), false, 'the overlay is as it always was');
+        assert.equal(await overlayFrame().evaluate(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-')).join()), 'prize-english');
       });
 
       it('changes the prize cards on the canvas as soon as one is chosen, and says which file the picture is', async () => {
@@ -572,7 +573,8 @@ describe('design editor', { skip }, () => {
 
         await prize().selectOption('current');
         assert.equal(await style(), '', 'the usual is not written down');
-        await page.waitForFunction(() => !/prize-/.test(document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.className));
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-english'));
+        assert.equal(await overlayFrame().evaluate(() => document.documentElement.classList.contains('prize-pokeball')), false);
       });
 
       it('keeps the taken prize cards grayed out whatever is printed on them', async () => {
@@ -588,6 +590,53 @@ describe('design editor', { skip }, () => {
         assert.ok(Number(taken.opacity) < 0.3, 'faded');
         assert.match(taken.filter, /grayscale/);
         assert.match(taken.back, /cardbacks\/english/, 'but still the same card back');
+      });
+
+      describe('the layout', () => {
+        const layout = () => page.locator('select[aria-label="Layout of the prize cards"]');
+        const chosen = () => page.evaluate(() => window.oto.designEditor.model.draft.prizeLayout);
+        const rootLayout = () => overlayFrame().evaluate(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-layout-')));
+
+        it('offers a row, a column, two rows of three and three rows of two, and starts with the row', async () => {
+          assert.deepEqual(await layout().locator('option').allTextContents(), ['A row of six', 'A column of six', 'Two rows of three', 'Three rows of two']);
+          assert.equal(await layout().inputValue(), 'row');
+          assert.equal(await chosen(), '');
+        });
+
+        it('lays the prize cards of the canvas out as soon as one is chosen, and does not write down the usual row', async () => {
+          await drawn();
+          await layout().selectOption('three-rows');
+          assert.equal(await chosen(), 'three-rows');
+          await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-layout-three-rows'));
+          const columns = await overlayFrame().evaluate(() => new Set([...document.querySelectorAll('.trainer-a .prize')].map((node) => node.offsetLeft)).size);
+          assert.equal(columns, 2);
+          await layout().selectOption('row');
+          assert.equal(await chosen(), '');
+          await page.waitForFunction(() => !document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.className.includes('prize-layout-'));
+        });
+
+        it('goes into the code view, is read back from it with a mistake refused, and is saved with the design', async () => {
+          await layout().selectOption('column');
+          await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+          assert.equal(JSON.parse(await page.locator('.code-input').inputValue()).prizeLayout, 'column');
+          await page.locator('.code-input').fill(JSON.stringify({ prizeLayout: 'two-rows' }));
+          await wait(450);
+          assert.equal(await chosen(), 'two-rows');
+          await page.locator('.code-input').fill(JSON.stringify({ prizeLayout: 'diagonal' }));
+          await wait(450);
+          assert.match(await page.locator('.code-status').textContent(), /The prize cards can be laid out as: "row", "column", "two-rows", "three-rows"/);
+          assert.equal(await chosen(), 'two-rows', 'the last good version stays');
+          await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+          assert.equal(await layout().inputValue(), 'two-rows');
+          await page.locator('.modal[aria-label="Design: Tile Test"]').getByRole('button', { name: 'Save', exact: true }).click();
+          await page.waitForFunction(() => !window.oto.designEditor.model.dirty);
+          assert.equal((await api('GET', '/api/themes/Tile%20Test')).json.prizeLayout, 'two-rows');
+          await layout().selectOption('row');
+          await page.locator('.modal[aria-label="Design: Tile Test"]').getByRole('button', { name: 'Save', exact: true }).click();
+          await page.waitForFunction(() => !window.oto.designEditor.model.dirty);
+          assert.equal('prizeLayout' in (await api('GET', '/api/themes/Tile%20Test')).json, false);
+          assert.deepEqual(page.problems, []);
+        });
       });
 
       it('goes into the code view, and is read back from it, with a mistake refused and its choices listed', async () => {
@@ -749,6 +798,32 @@ describe('design editor', { skip }, () => {
       assert.ok(Math.abs(rect.x - 0.03) < 0.001 && Math.abs(rect.y - 0.07) < 0.001, JSON.stringify(rect));
     });
 
+    describe('the crop of the prize cards', () => {
+      beforeEach(async () => { await page.locator('.crop-panel .seg', { hasText: 'Prize cards' }).click(); });
+      const prizeCrop = () => crop().then((all) => all.prize);
+      const WHOLE_CARD = { x: 0, y: 0, w: 1, h: 1 };
+
+      it('is a tab of its own, with the whole card as the usual, which is not written down, and no bench to share it with', async () => {
+        assert.equal(await page.locator('.crop-panel .switch').isHidden(), true, 'nothing to share with the bench');
+        assert.deepEqual(await rectFields(), { Left: '0', Top: '0', Width: '100', Height: '100' });
+        assert.equal(await page.locator('.crop-panel .btn[data-preset="full"]').getAttribute('aria-pressed'), 'true');
+        assert.deepEqual(await page.locator('.crop-presets .btn').allTextContents(), ['Full card', 'Art only']);
+        assert.equal(await prizeCrop(), undefined);
+      });
+
+      it('shows just the art on the prize cards of the canvas when asked, written down, and goes back to the whole card', async () => {
+        await page.locator('.crop-panel .btn[data-preset="art"]').click();
+        assert.deepEqual(await prizeCrop(), ART);
+        await drawn();
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .prize').getBoundingClientRect().height);
+        assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `the prize card is as tall as the art: ${height}`);
+        assert.deepEqual(await crop(), { prize: ART }, 'and the Pokémon are as they were');
+        await page.locator('.crop-panel .btn[data-preset="full"]').click();
+        assert.equal(await prizeCrop(), undefined, 'the whole card is the usual here');
+      });
+    });
+
     describe('the circle for Special Energy', () => {
       beforeEach(async () => { await page.locator('.crop-panel .seg', { hasText: 'Special energy' }).click(); });
       const circle = () => crop().then((all) => all.energy);
@@ -771,11 +846,11 @@ describe('design editor', { skip }, () => {
         for (const side of ['n', 'e', 's', 'w']) assert.equal(await page.locator(`.crop-handle.${side}`).isHidden(), true, side);
         for (const corner of ['nw', 'ne', 'se', 'sw']) assert.equal(await page.locator(`.crop-handle.${corner}`).isVisible(), true, corner);
         assert.match(await page.locator('.crop-card-field option').first().textContent(), /sample Special Energy card/);
-        assert.match(await page.locator('.crop-summary').textContent(), /A circle 53.6% as wide as the card, cut out of each Special Energy card/);
+        assert.match(await page.locator('.crop-summary').textContent(), /A circle 71.3% as wide as the card, cut out of each Special Energy card/);
       });
 
-      it('starts with the usual circle in the middle of the picture window, which is not written down', async () => {
-        assert.deepEqual([await fieldValue('Left'), await fieldValue('Top'), await fieldValue('Width')], ['23.2', '11.5', '53.6']);
+      it('starts with the usual circle, centered on the art of the card and as wide as the art is tall, which is not written down', async () => {
+        assert.deepEqual([await fieldValue('Left'), await fieldValue('Top'), await fieldValue('Width')], ['14.4', '13.6', '71.3']);
         assert.equal(await circle(), undefined, 'the usual circle is the same as nothing');
         assert.equal(await page.locator('.crop-circle-presets .btn').getAttribute('aria-pressed'), 'true');
       });
@@ -786,9 +861,9 @@ describe('design editor', { skip }, () => {
         const from = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
         await dragTo(from, { x: from.x + area.width * 0.06, y: from.y + area.height * 0.06 });
         const bigger = await circle();
-        assert.ok(bigger.w > 0.55, `wider than before: ${JSON.stringify(bigger)}`);
+        assert.ok(bigger.w > THEME_OPTIONS.ENERGY_CIRCLE.w, `wider than before: ${JSON.stringify(bigger)}`);
         assert.ok(Math.abs(bigger.w * 300 - bigger.h * 418) < 1, 'the same number of pixels across and down');
-        assert.ok(Math.abs(bigger.x - 0.232) < 0.002 && Math.abs(bigger.y - 0.115) < 0.002, 'the corner it grew from stayed');
+        assert.ok(Math.abs(bigger.x - THEME_OPTIONS.ENERGY_CIRCLE.x) < 0.002 && Math.abs(bigger.y - THEME_OPTIONS.ENERGY_CIRCLE.y) < 0.002, 'the corner it grew from stayed');
         assert.equal(await page.locator('.crop-circle-presets .btn').getAttribute('aria-pressed'), 'false');
 
         // far beyond the card: it stops at the edge
@@ -808,10 +883,10 @@ describe('design editor', { skip }, () => {
 
       it('moves, is drawn anew, takes numbers and goes back to the usual one', async () => {
         const area = await stage();
-        const middle = { x: area.x + area.width * 0.5, y: area.y + area.height * 0.3075 };
+        const middle = { x: area.x + area.width * 0.5, y: area.y + area.height * (THEME_OPTIONS.ENERGY_CIRCLE.y + THEME_OPTIONS.ENERGY_CIRCLE.h / 2) };
         await dragTo(middle, { x: middle.x, y: middle.y + area.height * 0.3 });
         const moved = await circle();
-        assert.ok(Math.abs(moved.y - 0.415) < 0.01 && Math.abs(moved.x - 0.232) < 0.002 && Math.abs(moved.w - 0.536) < 0.002, JSON.stringify(moved));
+        assert.ok(Math.abs(moved.y - (THEME_OPTIONS.ENERGY_CIRCLE.y + 0.3)) < 0.01 && Math.abs(moved.x - THEME_OPTIONS.ENERGY_CIRCLE.x) < 0.002 && Math.abs(moved.w - THEME_OPTIONS.ENERGY_CIRCLE.w) < 0.002, JSON.stringify(moved));
 
         // drawing on an empty part of the card makes a new one from where the drag began
         await dragTo({ x: area.x + area.width * 0.05, y: area.y + area.height * 0.8 }, { x: area.x + area.width * 0.3, y: area.y + area.height * 0.95 });
@@ -829,7 +904,7 @@ describe('design editor', { skip }, () => {
 
         await page.locator('.crop-circle-presets .btn').click();
         assert.equal(await circle(), undefined);
-        assert.deepEqual([await fieldValue('Left'), await fieldValue('Top'), await fieldValue('Width')], ['23.2', '11.5', '53.6']);
+        assert.deepEqual([await fieldValue('Left'), await fieldValue('Top'), await fieldValue('Width')], ['14.4', '13.6', '71.3']);
       });
 
       it('shows the circle on the Special Energy cards in the overlay, saves it, and writes it in the code', async () => {
@@ -964,6 +1039,376 @@ describe('design editor', { skip }, () => {
       await page.waitForFunction(() => !window.oto.designEditor.canvas.boxes.get('logo').hidden);
       await dragPiece('logo', 30, 20, { alt: true });
       assert.ok((await layout()).logo.x > 0);
+    });
+  });
+
+  describe('the screen of the design', () => {
+    const screen = () => page.locator('select[aria-label="The screen of the design"]');
+    const world = () => page.evaluate(() => { const node = document.querySelector('.editor-world'); const frame = document.querySelector('.editor-frame'); return { w: node.offsetWidth, h: node.offsetHeight, frameW: frame.offsetWidth, frameH: frame.offsetHeight }; });
+    const stageOf = () => overlayFrame().evaluate(() => { const stage = document.getElementById('stage'); return { w: stage.offsetWidth, h: stage.offsetHeight, portrait: stage.classList.contains('portrait') }; });
+
+    it('is a wide screen at first, and can be a mobile one: the stage, the canvas and the overlay in it follow', async () => {
+      await openEditorFor('Phone');
+      assert.deepEqual(await screen().locator('option').allTextContents(), ['Horizontal screen', 'Mobile screen']);
+      assert.equal(await screen().inputValue(), 'landscape');
+      assert.deepEqual(await world(), { w: 1920, h: 1080, frameW: 1920, frameH: 1080 });
+      const wide = await zoom();
+
+      await screen().selectOption('portrait');
+      assert.equal(await editor(() => window.oto.designEditor.model.draft.orientation), 'portrait');
+      assert.deepEqual(await world(), { w: 1080, h: 1920, frameW: 1080, frameH: 1920 });
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.getElementById('stage').classList.contains('portrait'));
+      assert.deepEqual(await stageOf(), { w: 1080, h: 1920, portrait: true });
+      const tall = await zoom();
+      assert.ok(tall < wide, `the whole tall stage fits on the canvas: ${tall} against ${wide}`);
+      const canvas = await page.locator('.editor-viewport').boundingBox();
+      assert.ok(1920 * tall <= canvas.height + 1 && 1080 * tall <= canvas.width + 1, 'inside the canvas');
+      await drawn();
+      // the pieces are where the mobile arrangement puts them, inside the tall stage
+      const rects = await editor(() => JSON.parse(JSON.stringify(window.oto.designEditor.canvas.rects)));
+      assert.ok(rects.trainerB.y > rects.trainerA.y + rects.trainerA.h - 1, 'one trainer above the other');
+      assert.ok(rects.scoreboard.x + rects.scoreboard.w <= 1080);
+
+      // it is part of the design: the code view says so, undo takes it back, and the usual screen is not written down
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      assert.match(await page.locator('.code-input').inputValue(), /"orientation": "portrait"/);
+      await page.keyboard.press('Escape'); // (nothing is picked: the first Escape would let go of a piece)
+      await editor(() => window.oto.designEditor.model.undo());
+      assert.equal(await screen().inputValue(), 'landscape', 'undo');
+      assert.deepEqual(await world(), { w: 1920, h: 1080, frameW: 1920, frameH: 1080 });
+      assert.doesNotMatch(await page.locator('.code-input').inputValue(), /orientation/);
+      await editor(() => window.oto.designEditor.model.redo());
+      assert.equal(await screen().inputValue(), 'portrait', 'redo');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is saved with the design, read again when the editor opens, and can be typed in the code view', async () => {
+      await openEditorFor('Phone');
+      await screen().selectOption('portrait');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.equal((await api('GET', '/api/themes/Phone')).json.orientation, 'portrait');
+
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      await page.locator('.code-input').fill(JSON.stringify({ orientation: 'landscape' }));
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.getElementById('stage').offsetWidth === 1920);
+      assert.equal(await screen().inputValue(), 'landscape');
+      await page.locator('.code-input').fill(JSON.stringify({ orientation: 'sideways' }));
+      await page.waitForFunction(() => /The screen can be/.test(document.querySelector('.code-status').textContent));
+      assert.equal(await screen().inputValue(), 'landscape', 'what does not make sense changes nothing');
+
+      await editorModal('Phone').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      await page.locator('.modal[aria-label="Close without saving?"]').getByRole('button', { name: 'Close without saving' }).click();
+      await page.locator('button', { hasText: 'Layout and crop' }).click();
+      await page.waitForFunction(() => window.oto.designEditor && Object.keys(window.oto.designEditor.canvas.rects).length > 0);
+      assert.equal(await screen().inputValue(), 'portrait', 'the design as it was saved');
+      assert.deepEqual((await world()).w, 1080);
+    });
+  });
+
+  describe('the grid', () => {
+    const toolbar = () => page.locator('.editor-toolbar');
+    const gridSwitch = () => toolbar().locator('.switch', { hasText: /^Grid$/ });
+    const snapSwitch = () => toolbar().locator('.switch', { hasText: 'Snap to grid' });
+    const size = () => toolbar().locator('input[aria-label="Size of the grid squares, in pixels"]');
+    const gridShown = () => page.$eval('.editor-grid', (node) => ({ shown: !node.hidden && getComputedStyle(node).display !== 'none', size: node.style.getPropertyValue('--grid'), image: getComputedStyle(node).backgroundImage.includes('linear-gradient') }));
+    const lineUp = (value, step) => Math.min(value % step, step - (value % step));
+
+    it('is a mask over the canvas that can be shown, with squares of the size the designer chooses, and is remembered', async () => {
+      await openEditorFor('Grid Test');
+      assert.deepEqual(await gridShown(), { shown: false, size: '40px', image: true });
+      assert.equal(await size().inputValue(), '40');
+      await gridSwitch().click();
+      assert.deepEqual(await gridShown(), { shown: true, size: '40px', image: true });
+      await size().fill('100');
+      await size().press('Tab');
+      assert.equal((await gridShown()).size, '100px');
+      await size().fill('3');
+      await size().press('Tab');
+      assert.equal(await size().inputValue(), '8', 'not smaller than 8');
+      await size().fill('9000');
+      await size().press('Tab');
+      assert.equal(await size().inputValue(), '480', 'and not bigger than 480');
+      await size().fill('60');
+      await size().press('Tab');
+      const box = await page.locator('.editor-grid').boundingBox();
+      const world = await page.locator('.editor-world').boundingBox();
+      assert.ok(Math.abs(box.width - world.width) < 1 && Math.abs(box.height - world.height) < 1, 'over the whole stage');
+      assert.equal(await page.$eval('.editor-grid', (node) => getComputedStyle(node).pointerEvents), 'none', 'and the clicks go through');
+      assert.deepEqual(await page.evaluate(() => JSON.parse(window.localStorage.getItem('oto-editor-grid'))), { show: true, snap: false, size: 60 });
+      assert.equal((await api('GET', '/api/themes/Grid%20Test')).json.grid, undefined, 'it is not part of the design');
+
+      // a new editor has the grid as it was left
+      await editorModal('Grid Test').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      await page.locator('button', { hasText: 'Layout and crop' }).click();
+      await page.waitForFunction(() => window.oto.designEditor && Object.keys(window.oto.designEditor.canvas.rects).length > 0);
+      assert.deepEqual(await gridShown(), { shown: true, size: '60px', image: true });
+      assert.equal(await size().inputValue(), '60');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('makes a piece jump onto its lines when asked to, and leaves it alone when not', async () => {
+      await openEditorFor('Grid Snap');
+      await toolbar().locator('.switch', { hasText: 'Snap to lines' }).click(); // (the lines of the other pieces would pull too)
+      await gridSwitch().click();
+      await size().fill('100');
+      await size().press('Tab');
+      const start = (await layout()).scoreboard;
+      assert.equal(start, undefined);
+      const before = (await editor(() => JSON.parse(JSON.stringify(window.oto.designEditor.canvas.rects.scoreboard)))).x;
+      const scale = await zoom();
+      // 63 pixels of the stage to the right: 3 pixels past a line, with the scoreboard's left edge at 340
+      await dragPiece('scoreboard', 63 * scale, 0, { steps: 4 });
+      assert.equal((await layout()).scoreboard.x, 63, 'free: where it was dropped, to the pixel');
+
+      await editor(() => window.oto.designEditor.model.undo());
+      await snapSwitch().click();
+      await dragPiece('scoreboard', 63 * scale, 0, { steps: 4 });
+      const moved = (await layout()).scoreboard;
+      assert.equal(moved.x, 60, `snapped: the left edge (${before}) lands on the line at 400`);
+      assert.deepEqual(await page.evaluate(() => JSON.parse(window.localStorage.getItem('oto-editor-grid'))), { show: true, snap: true, size: 100 });
+      assert.equal(lineUp(before + moved.x, 100), 0);
+
+      // Alt drops it exactly where the mouse is, as with the lines
+      await editor(() => window.oto.designEditor.model.undo());
+      await dragPiece('scoreboard', 63 * scale, 0, { steps: 4, alt: true });
+      assert.equal((await layout()).scoreboard.x, 63);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the reserved spaces', () => {
+    const tab = () => page.locator('.editor-side .tab[data-tab="spaces"]');
+    const draftSpaces = () => page.evaluate(() => JSON.parse(JSON.stringify(window.oto.designEditor.model.draft.spaces)));
+    const add = (shape) => page.locator(`.spaces-panel [data-add="${shape}"]`).click();
+    const cards = () => page.locator('.space-card');
+    const spaceBox = (index) => page.locator(`.editor-space[data-space="${index}"]`);
+    const overlaySpaces = () => overlayFrame().$$eval('.space', (nodes) => nodes.map((node) => ({ left: node.offsetLeft, top: node.offsetTop, w: node.offsetWidth, h: node.offsetHeight, shape: node.className.replace('space ', ''), frame: node.classList.contains('has-frame') })));
+    const selected = () => page.evaluate(() => window.oto.designEditor.canvas.selected);
+
+    async function dragBox(index, dx, dy, steps = 5) {
+      const rect = await spaceBox(index).boundingBox();
+      const from = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x + dx, from.y + dy, { steps });
+      await page.mouse.up();
+      await wait(80);
+    }
+
+    it('have a tab of their own that starts empty, and three ways to add one, in the middle of the stage', async () => {
+      await openEditorFor('Spaces Test');
+      await tab().click();
+      assert.match(await page.locator('.spaces-panel .empty').textContent(), /No reserved spaces yet/);
+      assert.equal(await page.locator('.spaces-panel .section-label .hint').textContent(), '0 of 6');
+      assert.deepEqual(await page.locator('.spaces-panel [data-add]').allTextContents(), ['A camera feed', 'Rounded', 'A circle']);
+      assert.equal(await overlayFrame().locator('.space').count(), 0);
+
+      await add('rect');
+      assert.deepEqual(await draftSpaces(), [{ id: 1, name: 'Camera', shape: 'rect', x: 720, y: 405, w: 480, h: 270 }]);
+      await add('circle');
+      const [first, circle] = await draftSpaces();
+      assert.deepEqual([circle.id, circle.name, circle.shape, circle.w, circle.h], [2, 'Round', 'circle', 320, 320]);
+      assert.ok(circle.x !== first.x || circle.y !== first.y, 'not on top of the first');
+
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.querySelectorAll('.space').length === 2);
+      const [one, two] = await overlaySpaces();
+      assert.deepEqual([one.left, one.top, one.w, one.h, one.shape], [720, 405, 480, 270, 'shape-rect']);
+      assert.equal(two.shape, 'shape-circle');
+      assert.equal(await page.locator('.editor-space').count(), 2, 'and a box for each, to pick it up by');
+      assert.equal(await cards().count(), 2);
+      assert.equal(await page.locator('.spaces-panel .section-label .hint').textContent(), '2 of 6');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('stop at six, and a new one takes the lowest number that is free', async () => {
+      await openEditorFor('Spaces Six', { spaces: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, shape: 'rect', x: 20 + i * 30, y: 20, w: 100, h: 100 })) });
+      await tab().click();
+      assert.equal(await cards().count(), 5);
+      await cards().nth(1).getByRole('button', { name: 'Remove space 2' }).click();
+      await add('rounded');
+      assert.deepEqual((await draftSpaces()).map((space) => space.id), [1, 3, 4, 5, 2], 'the number that was free');
+      assert.equal(await page.locator('.spaces-panel [data-add]').first().isDisabled(), false);
+      await add('rect');
+      assert.equal((await draftSpaces()).length, 6);
+      assert.equal(await page.locator('.spaces-panel .section-label .hint').textContent(), '6 of 6');
+      for (const button of await page.locator('.spaces-panel [data-add]').all()) assert.equal(await button.isDisabled(), true, 'no more');
+    });
+
+    it('are moved by dragging them on the canvas, nudged with the arrow keys, and taken away with Delete', async () => {
+      await openEditorFor('Spaces Move', { spaces: [{ id: 1, name: 'Camera', shape: 'rect', x: 700, y: 400, w: 480, h: 270 }] });
+      const scale = await zoom();
+      await dragBox(0, 100 * scale, 50 * scale);
+      const [moved] = await draftSpaces();
+      assert.ok(Math.abs(moved.x - 800) <= 12 && Math.abs(moved.y - 450) <= 12, `moved by about (100, 50): ${moved.x}, ${moved.y}`);
+      assert.equal(await selected(), 'space:0');
+      assert.equal(await page.locator('.editor-side .tab[data-tab="spaces"]').getAttribute('aria-selected'), 'true', 'its tab came up');
+      const selection = await page.locator('.editor-selection').boundingBox();
+      const body = await spaceBox(0).boundingBox();
+      assert.ok(Math.abs(selection.x - body.x) < 2 && Math.abs(selection.width - body.width) < 2, 'with handles around it');
+      assert.match(await page.locator('.editor-selection-label').textContent(), /Camera/);
+
+      await page.locator('.editor-viewport').focus();
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Shift+ArrowDown');
+      await wait(650);
+      const [nudged] = await draftSpaces();
+      assert.deepEqual([nudged.x - moved.x, nudged.y - moved.y], [1, 10]);
+      await page.waitForFunction(([x, y]) => [...document.querySelector('.editor-frame').contentDocument.querySelectorAll('.space')].some((node) => node.offsetLeft === x && node.offsetTop === y), [nudged.x, nudged.y]);
+
+      await page.keyboard.press('Delete');
+      assert.deepEqual(await draftSpaces(), []);
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.querySelectorAll('.space').length === 0);
+      assert.equal(await page.locator('.editor-selection').isHidden(), true);
+      await editor(() => window.oto.designEditor.model.undo());
+      assert.equal((await draftSpaces()).length, 1, 'undo brings it back');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('are resized by a corner, the corner opposite staying where it is, to a size that is not smaller than 40', async () => {
+      await openEditorFor('Spaces Resize', { spaces: [{ id: 1, shape: 'rect', x: 760, y: 520, w: 400, h: 200 }] });
+      await spaceBox(0).click();
+      const handle = page.locator('.editor-handle.se');
+      const scale = await zoom();
+      const drag = async (dx, dy, shift = false) => {
+        const at = await handle.boundingBox();
+        await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+        if (shift) await page.keyboard.down('Shift');
+        await page.mouse.down();
+        await page.mouse.move(at.x + at.width / 2 + dx, at.y + at.height / 2 + dy, { steps: 5 });
+        await page.mouse.up();
+        if (shift) await page.keyboard.up('Shift');
+        await wait(80);
+      };
+      await drag(100 * scale, 50 * scale);
+      let [space] = await draftSpaces();
+      assert.deepEqual([space.x, space.y], [760, 520], 'the top left corner stays');
+      assert.ok(Math.abs(space.w - 500) <= 12 && Math.abs(space.h - 250) <= 12, `bigger by about (100, 50): ${space.w} x ${space.h}`);
+
+      // from the other corner the bottom right one stays
+      const bottomRight = { x: space.x + space.w, y: space.y + space.h };
+      const north = page.locator('.editor-handle.nw');
+      const at = await north.boundingBox();
+      await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(at.x + at.width / 2 - 60 * scale, at.y + at.height / 2 - 30 * scale, { steps: 5 });
+      await page.mouse.up();
+      await wait(80);
+      [space] = await draftSpaces();
+      assert.deepEqual([space.x + space.w, space.y + space.h], [bottomRight.x, bottomRight.y], 'the bottom right corner stays');
+      assert.ok(space.x < 760 && space.y < 520);
+
+      // not smaller than 40, and Shift keeps the shape
+      await drag(-3000 * scale, -3000 * scale);
+      [space] = await draftSpaces();
+      assert.deepEqual([space.w, space.h], [40, 40]);
+      await editor(() => window.oto.designEditor.model.update({ spaces: [{ id: 1, shape: 'rect', x: 760, y: 520, w: 400, h: 200 }] }));
+      await page.waitForFunction(() => document.querySelector('.editor-selection') && !document.querySelector('.editor-selection').hidden);
+      await drag(100 * scale, 0, true);
+      [space] = await draftSpaces();
+      assert.ok(Math.abs(space.w / space.h - 2) < 0.05, `still twice as wide as high: ${space.w} x ${space.h}`);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can be typed: the name, the shape and where it is and how big, each kept to what is allowed', async () => {
+      await openEditorFor('Spaces Fields', { spaces: [{ id: 1, name: 'Camera', shape: 'rect', x: 100, y: 100, w: 300, h: 200 }] });
+      await tab().click();
+      const card = cards().first();
+      const field = (label) => card.locator(`input[aria-label="${label} (space 1)"]`);
+      assert.deepEqual(await Promise.all(['Across', 'Down', 'Wide', 'High'].map((label) => field(label).inputValue())), ['100', '100', '300', '200']);
+
+      await field('Across').fill('250');
+      await field('Across').press('Tab');
+      await field('Wide').fill('5');
+      await field('Wide').press('Tab');
+      await field('High').fill('99999');
+      await field('High').press('Tab');
+      await card.locator('input[aria-label="Name of space 1"]').fill('Face cam');
+      await card.locator('input[aria-label="Name of space 1"]').press('Tab');
+      await card.locator('select[aria-label="Shape of space 1"]').selectOption('circle');
+      assert.deepEqual((await draftSpaces())[0], { id: 1, name: 'Face cam', shape: 'circle', x: 250, y: 100, w: 40, h: 3840 });
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.querySelector('.space.shape-circle'));
+      assert.equal(await field('Wide').inputValue(), '40', 'the box shows what was kept');
+      assert.equal((await page.locator('.editor-space-label').textContent()), 'Face cam');
+
+      await card.locator('input[aria-label="Name of space 1"]').fill('');
+      await card.locator('input[aria-label="Name of space 1"]').press('Tab');
+      assert.equal('name' in (await draftSpaces())[0], false);
+      assert.equal(await page.locator('.editor-space-label').textContent(), 'Space 1', 'and a space with no name is called by its number');
+    });
+
+    it('go with the overlay: picking one on the list picks it on the canvas, and picking a piece goes back to the pieces', async () => {
+      await openEditorFor('Spaces Pick', { spaces: [{ id: 1, shape: 'rect', x: 700, y: 400, w: 300, h: 200 }, { id: 2, name: 'Second', shape: 'rounded', x: 100, y: 700, w: 300, h: 200 }] });
+      await tab().click();
+      assert.equal(await selected(), null);
+      await cards().nth(1).locator('.space-head').click({ position: { x: 5, y: 5 } });
+      assert.equal(await selected(), 'space:1');
+      assert.equal(await cards().nth(1).evaluate((node) => node.classList.contains('on')), true);
+      assert.match(await page.locator('.editor-selection-label').textContent(), /Second/);
+      assert.equal(await page.locator('.block-fields').isHidden(), true, 'the layout fields are for the pieces');
+
+      await box('scoreboard').click();
+      assert.equal(await selected(), 'scoreboard');
+      assert.equal(await page.locator('.editor-side .tab[data-tab="layout"]').getAttribute('aria-selected'), 'true');
+      assert.equal(await page.locator('.block-fields').isVisible(), true);
+      assert.equal(await editor(() => window.oto.designEditor.canvas.selectedSpace), null, 'no space is picked any more');
+    });
+
+    it('can have a picture each, put on from the tab and taken off again, and the overlay draws it over the space', async () => {
+      await openEditorFor('Spaces Frames', { spaces: [{ id: 1, shape: 'rounded', x: 700, y: 400, w: 400, h: 225 }] });
+      await tab().click();
+      assert.equal(await cards().first().locator('.space-frame .image-preview').textContent(), 'None');
+      const chooser = page.waitForEvent('filechooser');
+      await cards().first().getByRole('button', { name: 'Upload' }).click();
+      await (await chooser).setFiles({ name: 'frame.png', mimeType: 'image/png', buffer: S.PNG });
+      await page.waitForFunction(() => document.querySelector('.space-frame .image-preview img'));
+      assert.ok((await api('GET', '/api/themes/Spaces%20Frames')).json.images.spaceFrame1, 'saved at once, with the design\'s pictures');
+      assert.match(await page.locator('.space-frame .image-preview img').getAttribute('src'), /\/api\/themes\/Spaces%20Frames\/assets\/images\/spaceFrame1\.png\?v=\d+/);
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.querySelector('.space.has-frame'));
+      assert.match(await overlayFrame().$eval('.space', (node) => getComputedStyle(node).backgroundImage), /spaceFrame1\.png/);
+      assert.equal(await cards().first().getByRole('button', { name: 'Replace' }).count(), 1);
+
+      await cards().first().getByRole('button', { name: 'Remove', exact: true }).last().click();
+      await page.waitForFunction(() => !document.querySelector('.space-frame .image-preview img'));
+      assert.equal((await api('GET', '/api/themes/Spaces%20Frames')).json.images.spaceFrame1, undefined);
+      await page.waitForFunction(() => !document.querySelector('.editor-frame').contentDocument.querySelector('.space.has-frame'));
+
+      // a picture that is too big is not sent
+      const big = page.waitForEvent('filechooser');
+      await cards().first().getByRole('button', { name: 'Upload' }).click();
+      await (await big).setFiles({ name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(5 * 1024 * 1024) });
+      await page.waitForFunction(() => /larger than 4.5 MB/.test(document.querySelector('.toast').textContent));
+      assert.equal((await api('GET', '/api/themes/Spaces%20Frames')).json.images.spaceFrame1, undefined);
+      assert.deepEqual(nativeDialogs, []);
+    });
+
+    it('are saved with the design, listed as code, read again, and the list of pictures in the settings has a slot for each', async () => {
+      await openEditorFor('Spaces Saved');
+      await tab().click();
+      await add('rounded');
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      assert.match(await page.locator('.code-input').inputValue(), /"spaces": \[\s*\{\s*"id": 1,\s*"name": "Camera",\s*"shape": "rounded"/);
+      // another space, typed as code
+      const code = JSON.parse(await page.locator('.code-input').inputValue());
+      code.spaces.push({ id: 3, shape: 'circle', x: 10, y: 10, w: 100, h: 100 });
+      await page.locator('.code-input').fill(JSON.stringify(code));
+      await page.waitForFunction(() => document.querySelectorAll('.editor-space').length === 2);
+      await page.locator('.code-input').fill(JSON.stringify({ spaces: [{ shape: 'blob', x: 1, y: 1, w: 100, h: 100 }] }));
+      await page.waitForFunction(() => /Space 1: the shape can be/.test(document.querySelector('.code-status').textContent));
+      assert.equal(await page.locator('.editor-space').count(), 2, 'a mistake changes nothing');
+      await page.locator('.code-input').fill(JSON.stringify(code));
+      await page.waitForFunction(() => /Applied/.test(document.querySelector('.code-status').textContent));
+
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      const saved = (await api('GET', '/api/themes/Spaces%20Saved')).json;
+      assert.deepEqual(saved.spaces.map((space) => space.id), [1, 3]);
+      await editorModal('Spaces Saved').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('.modal[aria-label="Design: Spaces Saved"]'));
+      await page.waitForFunction(() => [...document.querySelectorAll('.image-row .image-info strong')].some((node) => node.textContent === 'Space 1: frame'));
+      const slots = await page.locator('.image-row .image-info strong').allTextContents();
+      assert.ok(slots.includes('Space 1: frame') && slots.includes('Space 3: frame'), `a slot for each space: ${slots.join(', ')}`);
+      assert.ok(!slots.includes('Space 2: frame') && !slots.includes('Space 4: frame'), 'and none for the others');
     });
   });
 

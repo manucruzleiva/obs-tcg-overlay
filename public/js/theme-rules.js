@@ -14,12 +14,15 @@
  *   { "active": { "hp": "bottom", "retreat": "top-right" } }
  * Prize style: the picture on the prize cards: "current" (usual), "english" or "japanese" card back, or a "pokeball".
  *   "pokeball"
+ * Orientation: the screen: "landscape" (a wide 1920 x 1080 one, the usual) or "portrait" (a tall 1080 x 1920 one, for a phone).
+ * Spaces: places kept clear for something else (a camera feed), each with a shape and where it is, in pixels of the stage.
+ *   [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./theme-options'));
   else root.OTO_THEME_RULES = factory(root.OTO_THEME);
 }(typeof self !== 'undefined' ? self : this, function (THEME) {
-  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, TILE_PARTS, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT } = THEME;
+  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, tilePartsOf, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT, PRIZE_LAYOUT_KEYS, PRIZE_LAYOUT_DEFAULT, PRIZE_CROP_DEFAULT, ORIENTATION_KEYS, ORIENTATION_DEFAULT, SPACE_SHAPE_KEYS, SPACE_LIMITS } = THEME;
   const MAX_COLOR_LENGTH = 200;
 
   // A complaint that can be shown to a person as it is
@@ -108,7 +111,7 @@
     }
     for (const [key, value] of Object.entries(input)) {
       if (!CROP_KEYS.includes(key)) {
-        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active", "bench", "stadium" or "energy")`);
+        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active", "bench", "stadium", "prize" or "energy")`);
         continue;
       }
       const circle = key === 'energy';
@@ -122,7 +125,8 @@
         continue;
       }
       // what is usual (the picture of the card, the Stadium's own picture window, and for energy the usual circle) is not listed; the whole card is
-      if (circle ? !isUsualCircle(rect) : !isUsualCrop(rect, key === 'stadium' ? STADIUM_CROP_DEFAULT : CROP_DEFAULT)) crop[key] = rect;
+      const usual = key === 'stadium' ? STADIUM_CROP_DEFAULT : key === 'prize' ? PRIZE_CROP_DEFAULT : CROP_DEFAULT;
+      if (circle ? !isUsualCircle(rect) : !isUsualCrop(rect, usual)) crop[key] = rect;
     }
     return crop;
   }
@@ -146,9 +150,10 @@
       }
       const entry = {};
       for (const [part, place] of Object.entries(value)) {
-        const known = TILE_PARTS.find((item) => item.key === part);
+        const parts = tilePartsOf(key);
+        const known = parts.find((item) => item.key === part);
         if (!known) {
-          if (strict) throw new RuleError(`There is no part of a tile called "${part}" (use ${TILE_PARTS.map((item) => `"${item.key}"`).join(', ')})`);
+          if (strict) throw new RuleError(`There is no part of a tile called "${part}" for "${key}" (use ${parts.map((item) => `"${item.key}"`).join(', ')})`);
           continue;
         }
         if (!known.places.includes(place)) {
@@ -172,5 +177,76 @@
     return input === PRIZE_DEFAULT ? '' : input;
   }
 
-  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, cleanRect, cleanCircle, isWholeCard, isUsualCrop, isUsualCircle, MAX_COLOR_LENGTH };
+  // How the prize cards are laid out: one of PRIZE_LAYOUT_KEYS. The usual one ("row") is not listed: the result is an empty string for it.
+  function sanitizePrizeLayout(input, { strict = false } = {}) {
+    if (input === undefined || input === null || input === '') return '';
+    if (typeof input !== 'string' || !PRIZE_LAYOUT_KEYS.includes(input)) {
+      if (strict) throw new RuleError(`The prize cards can be laid out as: ${PRIZE_LAYOUT_KEYS.map((key) => `"${key}"`).join(', ')}`);
+      return '';
+    }
+    return input === PRIZE_LAYOUT_DEFAULT ? '' : input;
+  }
+
+  // The screen of the design: one of ORIENTATION_KEYS. The usual ("landscape") is not listed: the result is an empty string for it.
+  function sanitizeOrientation(input, { strict = false } = {}) {
+    if (input === undefined || input === null || input === '') return '';
+    if (typeof input !== 'string' || !ORIENTATION_KEYS.includes(input)) {
+      if (strict) throw new RuleError(`The screen can be: ${ORIENTATION_KEYS.map((key) => `"${key}"`).join(', ')}`);
+      return '';
+    }
+    return input === ORIENTATION_DEFAULT ? '' : input;
+  }
+
+  // The reserved spaces of a design, as a list of { id, name, shape, x, y, w, h }: the id (1 to 6) says which picture is the space's frame
+  // ("spaceFrame<id>"); a space without one gets the lowest that is free. Without `strict` a bad entry is dropped, with it the entry is refused.
+  function sanitizeSpaces(input, { strict = false } = {}) {
+    if (input === undefined || input === null) return [];
+    const { max, minSize, maxSize, offset, nameLength } = SPACE_LIMITS;
+    if (!Array.isArray(input)) {
+      if (strict) throw new RuleError('The spaces must be a list');
+      return [];
+    }
+    if (strict && input.length > max) throw new RuleError(`A design can have ${max} reserved spaces at most`);
+    const taken = new Set();
+    const spaces = [];
+    input.slice(0, max).forEach((value, index) => {
+      const label = `Space ${index + 1}`;
+      const refuse = (message) => { if (strict) throw new RuleError(`${label}: ${message}`); };
+      if (!isObject(value)) return refuse('it must be an object such as { "x": 700, "y": 400, "w": 480, "h": 270 }');
+      const shape = value.shape === undefined ? 'rect' : value.shape;
+      if (!SPACE_SHAPE_KEYS.includes(shape)) return refuse(`the shape can be ${SPACE_SHAPE_KEYS.map((key) => `"${key}"`).join(', ')}`);
+      const numbers = {};
+      for (const [key, low, high] of [['x', -offset, offset], ['y', -offset, offset], ['w', minSize, maxSize], ['h', minSize, maxSize]]) {
+        const given = value[key];
+        if (!isNumber(given) || given < low || given > high) return refuse(`"${key}" must be a number from ${low} to ${high}`);
+        numbers[key] = Math.round(given);
+      }
+      if (value.name !== undefined && typeof value.name !== 'string') return refuse('the name must be text');
+      const name = typeof value.name === 'string' ? value.name.trim() : '';
+      if (name.length > nameLength) return refuse(`the name can have ${nameLength} letters at most`);
+      let id = value.id;
+      if (id !== undefined && (!Number.isInteger(id) || id < 1 || id > max)) {
+        if (strict) return refuse(`"id" must be a whole number from 1 to ${max}`);
+        id = undefined;
+      }
+      if (id !== undefined && taken.has(id)) {
+        if (strict) return refuse(`another space already has the id ${id}`);
+        id = undefined;
+      }
+      if (id !== undefined) taken.add(id);
+      spaces.push({ id, ...(name ? { name } : {}), shape, ...numbers });
+    });
+    // the ones with no id (or a repeated one) take the lowest free
+    for (const space of spaces) {
+      if (space.id !== undefined) continue;
+      let id = 1;
+      while (taken.has(id)) id++;
+      taken.add(id);
+      space.id = id;
+    }
+    // (id first, whatever the order they were given in)
+    return spaces.map(({ id, name, shape, x, y, w, h }) => ({ id, ...(name ? { name } : {}), shape, x, y, w, h }));
+  }
+
+  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, cleanRect, cleanCircle, isWholeCard, isUsualCrop, isUsualCircle, MAX_COLOR_LENGTH };
 }));

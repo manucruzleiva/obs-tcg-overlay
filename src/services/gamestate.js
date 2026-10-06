@@ -22,7 +22,7 @@ const MAX_PRIZES = 6;
 const MIN_BENCH = 2;
 const MAX_BENCH = 8;
 const DEFAULT_BENCH = 5;
-const MAX_FEATURE_CARDS = 10;
+const MAX_FEATURE_ENTRIES = 14; // feature cards and the separators between them
 const MAX_FAVORITES = 50;
 
 // Used by forked copies so a draft preview never writes to the database
@@ -167,7 +167,8 @@ class GameStateService {
       deckIcon: '',
       record: { wins: 0, losses: 0, ties: 0 },
       // penalty: how many prize cards the OTHER trainer counts as already taken (0 to 6); they are marked red on that trainer's side
-      prizes: { count: MAX_PRIZES, hidden: false, penalty: 0, cards: emptyPrizeCards() },
+      // (hidden: the prize cards are face down until the producer shows them, and so are the cards put on them)
+      prizes: { count: MAX_PRIZES, hidden: true, penalty: 0, cards: emptyPrizeCards() },
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
@@ -195,6 +196,10 @@ class GameStateService {
     merged.paused = merged.paused === true;
     // A feature card used to carry a note for the casters; it does not any more
     for (const card of merged.featureCards || []) if (card && typeof card === 'object') delete card.note;
+    // what is featured is cards, and the separators between them (see addFeatureSeparator): nothing else
+    merged.featureCards = (Array.isArray(merged.featureCards) ? merged.featureCards : [])
+      .filter((entry) => entry && typeof entry === 'object' && (entry.separator === undefined ? typeof entry.name === 'string' : GAME.FEATURE_SEPARATORS.some((one) => one.symbol === entry.separator)))
+      .slice(-MAX_FEATURE_ENTRIES);
     // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
     if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
     if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
@@ -426,6 +431,14 @@ class GameStateService {
     pokemon.hp.current = keep ? Math.max(0, newMax - damageTaken) : newMax;
   }
 
+  // The attacks and the retreat cost of the card found after the Pokémon was put there
+  fillPokemonDetails(side, slot, { attacks, retreat }) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon) return;
+    pokemon.attacks = Array.isArray(attacks) ? attacks.slice(0, MAX_ATTACKS) : pokemon.attacks;
+    if (Number.isInteger(retreat)) pokemon.retreat = Math.max(0, Math.min(MAX_RETREAT, retreat));
+  }
+
   // Change how many Energy it costs to retreat (an effect can make it cheaper or dearer)
   setRetreat(side, slot, cost) {
     const pokemon = this.pokemonAt(side, slot);
@@ -582,6 +595,7 @@ class GameStateService {
       this.state[side].prizes.count = MAX_PRIZES;
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
+      this.state[side].prizes.hidden = true; // new prizes are face down again
     }
     this.resetGameMarkers();
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
@@ -643,6 +657,7 @@ class GameStateService {
       this.state[side].prizes.count = MAX_PRIZES;
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
+      this.state[side].prizes.hidden = true;
       this.resetAbilities(side, { includeGame: true });
     }
     this.resetGameMarkers();
@@ -692,9 +707,17 @@ class GameStateService {
     }
   }
 
+  // The featured cards are in the order they were added, the way they are read: the overlay shows the last ones. The oldest go when there are too many.
   addFeatureCard({ cardId, name, image }) {
-    this.state.featureCards.unshift({ id: randomUUID(), cardId, name, image, addedAt: Date.now() });
-    if (this.state.featureCards.length > MAX_FEATURE_CARDS) this.state.featureCards.pop();
+    this.state.featureCards.push({ id: randomUUID(), cardId, name, image, addedAt: Date.now() });
+    while (this.state.featureCards.length > MAX_FEATURE_ENTRIES) this.state.featureCards.shift();
+  }
+
+  // A sign between two feature cards ("+", "→", "=" or "or") that says how they go together
+  addFeatureSeparator(symbol) {
+    if (!GAME.FEATURE_SEPARATORS.some((one) => one.symbol === symbol)) return;
+    this.state.featureCards.push({ id: randomUUID(), separator: symbol, addedAt: Date.now() });
+    while (this.state.featureCards.length > MAX_FEATURE_ENTRIES) this.state.featureCards.shift();
   }
 
   // Remove by id (stable even if another producer changed the list) or, for older clients, by index

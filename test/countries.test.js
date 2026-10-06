@@ -93,7 +93,7 @@ describe('the flag of a country', () => {
 describe('showing the nationality as a flag is a choice of the overlay', () => {
   it('is off to begin with, and is a way of drawing the nationality, not a piece to show or hide', () => {
     assert.equal(DISPLAY.DEFAULTS.nationalityFlag, false, 'the text stays unless someone chooses flags');
-    assert.deepEqual(DISPLAY.STYLE_KEYS, ['nationalityFlag']);
+    assert.deepEqual(DISPLAY.STYLE_KEYS, ['nationalityFlag', 'benchRow'], 'the other way of drawing something is the bench in a row');
     assert.ok(DISPLAY.KEYS.includes('nationalityFlag'));
     const group = DISPLAY.GROUPS.find((entry) => entry.options.some((option) => option.key === 'nationalityFlag'));
     assert.equal(group.id, 'trainer');

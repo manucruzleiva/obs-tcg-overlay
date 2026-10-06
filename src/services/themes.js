@@ -20,13 +20,19 @@
  *     "layout": { "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } },
  *     "crop": { "active": { "x": 0, "y": 0, "w": 1, "h": 1 } },
  *     "tile": { "active": { "hp": "bottom" } },
- *     "prizeStyle": "english"
+ *     "prizeStyle": "english",
+ *     "prizeLayout": "two-rows",
+ *     "orientation": "portrait",
+ *     "spaces": [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
  *   }
  *
  * "layout" moves and resizes pieces of the overlay (see BLOCKS in public/js/theme-options.js); "crop"
  * shows only part of the card picture for the Active Pokémon, the bench and the Stadium (the artwork unless it says otherwise);
  * "tile" says where the HP bar, the attached energy and the retreat cost go on that picture; "prizeStyle" is the picture on the prize
- * cards: "english" or "japanese" card back, or a "pokeball" (left out, they keep the design's card back or the built-in one).
+ * cards: "english" or "japanese" card back, or a "pokeball" (left out, they keep the design's card back, or have the English one);
+ * "prizeLayout" is how the six are laid out: "column", "two-rows" or "three-rows" (left out, a row of six); "orientation" is the screen:
+ * "portrait" for a tall mobile one (left out, a wide 1920 x 1080 one); "spaces" are places kept clear for a camera feed or the like, each with
+ * a picture of its own that can be drawn over it (the image slot "spaceFrame<id>").
  *
  * Everything a design uses is a file inside its folder: nothing is fetched from the web while it is on
  * air, so it works offline, and a shared design can never make an overlay contact someone's server.
@@ -116,6 +122,10 @@ const sanitizeTile = (input, options) => asThemeError(() => rules.sanitizeTile(i
 
 // The picture on the prize cards (an empty string for the usual one)
 const sanitizePrize = (input, options) => asThemeError(() => rules.sanitizePrize(input, options));
+// How the prize cards are laid out (an empty string for the usual row)
+const sanitizePrizeLayout = (input, options) => asThemeError(() => rules.sanitizePrizeLayout(input, options));
+const sanitizeOrientation = (input, options) => asThemeError(() => rules.sanitizeOrientation(input, options));
+const sanitizeSpaces = (input, options) => asThemeError(() => rules.sanitizeSpaces(input, options));
 
 // ------------------------------------------------------------------------------------- files
 
@@ -199,7 +209,7 @@ function writeAtomic(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, data);
-  fs.renameSync(temp, file);
+  moveFolder(temp, file); // (a file is moved into place the same way: Windows may keep the old one busy for a moment)
 }
 
 // The references a design may hold: one fixed name per slot, so a reference can never point anywhere else
@@ -284,10 +294,16 @@ class ThemeStore {
     const crop = sanitizeCrop(raw.crop);
     const tile = sanitizeTile(raw.tile);
     const prizeStyle = sanitizePrize(raw.prizeStyle);
+    const prizeLayout = sanitizePrizeLayout(raw.prizeLayout);
+    const orientation = sanitizeOrientation(raw.orientation);
+    const spaces = sanitizeSpaces(raw.spaces);
     if (Object.keys(layout).length) design.layout = layout;
     if (Object.keys(crop).length) design.crop = crop;
     if (Object.keys(tile).length) design.tile = tile;
     if (prizeStyle) design.prizeStyle = prizeStyle;
+    if (prizeLayout) design.prizeLayout = prizeLayout;
+    if (orientation) design.orientation = orientation;
+    if (spaces.length) design.spaces = spaces;
 
     for (const key of IMAGE_KEYS) {
       const ref = raw.images && raw.images[key];
@@ -329,7 +345,13 @@ class ThemeStore {
     if ('crop' in input) design.crop = sanitizeCrop(input.crop, { strict: true });
     if ('tile' in input) design.tile = sanitizeTile(input.tile, { strict: true });
     if ('prizeStyle' in input) design.prizeStyle = sanitizePrize(input.prizeStyle, { strict: true });
+    if ('prizeLayout' in input) design.prizeLayout = sanitizePrizeLayout(input.prizeLayout, { strict: true });
+    if ('orientation' in input) design.orientation = sanitizeOrientation(input.orientation, { strict: true });
+    if ('spaces' in input) design.spaces = sanitizeSpaces(input.spaces, { strict: true });
     if (!design.prizeStyle) delete design.prizeStyle;
+    if (!design.prizeLayout) delete design.prizeLayout;
+    if (!design.orientation) delete design.orientation;
+    if (design.spaces && !design.spaces.length) delete design.spaces;
     if (!design.author) delete design.author;
     if (!design.description) delete design.description;
     if (design.layout && !Object.keys(design.layout).length) delete design.layout;
@@ -462,6 +484,9 @@ class ThemeStore {
     if (design.crop) resolved.crop = design.crop;
     if (design.tile) resolved.tile = design.tile;
     if (design.prizeStyle) resolved.prizeStyle = design.prizeStyle;
+    if (design.prizeLayout) resolved.prizeLayout = design.prizeLayout;
+    if (design.orientation) resolved.orientation = design.orientation;
+    if (design.spaces) resolved.spaces = design.spaces;
     for (const [key, ref] of Object.entries(design.images)) resolved.images[key] = url(ref);
     if (design.font) resolved.font = url(design.font);
     return resolved;
@@ -531,10 +556,16 @@ class ThemeStore {
       const crop = sanitizeCrop(parts.crop);
       const tile = sanitizeTile(parts.tile);
       const prizeStyle = sanitizePrize(parts.prizeStyle);
+      const prizeLayout = sanitizePrizeLayout(parts.prizeLayout);
+      const orientation = sanitizeOrientation(parts.orientation);
+      const spaces = sanitizeSpaces(parts.spaces);
       if (Object.keys(layout).length) design.layout = layout;
       if (Object.keys(crop).length) design.crop = crop;
       if (Object.keys(tile).length) design.tile = tile;
       if (prizeStyle) design.prizeStyle = prizeStyle;
+      if (prizeLayout) design.prizeLayout = prizeLayout;
+      if (orientation) design.orientation = orientation;
+      if (spaces.length) design.spaces = spaces;
 
       let total = 0;
       const put = (ref, buffer) => {
@@ -590,5 +621,5 @@ class ThemeStore {
 
 module.exports = {
   ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, MIME,
-  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, cleanName, cleanText, folderName
+  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, cleanName, cleanText, folderName
 };

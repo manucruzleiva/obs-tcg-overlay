@@ -338,7 +338,16 @@ class CatalogService extends EventEmitter {
     const write = (kind, content) => {
       const temp = `${this.file(id, kind)}.${process.pid}.tmp`;
       fs.writeFileSync(temp, content);
-      fs.renameSync(temp, this.file(id, kind));
+      // (Windows can hold a file for a moment, a virus scanner looking at it: try again a few times)
+      for (let attempt = 1; ; attempt++) {
+        try {
+          fs.renameSync(temp, this.file(id, kind));
+          return;
+        } catch (error) {
+          if (attempt >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * attempt);
+        }
+      }
     };
     // The small "meta" file is written last: a library only counts as there once it exists
     write('json', JSON.stringify(queries ? { version: FILE_VERSION, id, cards: records, queries } : { version: FILE_VERSION, id, cards: records }));

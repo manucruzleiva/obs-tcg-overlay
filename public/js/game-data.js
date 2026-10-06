@@ -100,5 +100,13 @@
   // How many prize cards a knocked-out Pokémon is usually worth
   const PRIZE_CHOICES = [1, 2, 3];
 
-  return { ENERGY_TYPES, ENERGY_KEYS, STATUS_CONDITIONS, STATUS_KEYS, cleanStatus, CARD_SERVICES, CARD_SOURCES, SECRET_SETTINGS, maskSecret, isSecretValue, CARD_LANGUAGES, PRIZE_CHOICES };
+  // What can go between the feature cards, to say how they go together (a combo): "A + B → C"
+  const FEATURE_SEPARATORS = [
+    { symbol: '+', label: 'plus' },
+    { symbol: '→', label: 'then' },
+    { symbol: '=', label: 'equals' },
+    { symbol: 'or', label: 'or' }
+  ];
+
+  return { ENERGY_TYPES, ENERGY_KEYS, STATUS_CONDITIONS, STATUS_KEYS, cleanStatus, FEATURE_SEPARATORS, CARD_SERVICES, CARD_SOURCES, SECRET_SETTINGS, maskSecret, isSecretValue, CARD_LANGUAGES, PRIZE_CHOICES };
 }));
