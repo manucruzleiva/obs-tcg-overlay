@@ -766,23 +766,23 @@ describe('design editor', { skip }, () => {
       await handleNear('.crop-handle.se', moved.x + moved.w, moved.y + moved.h);
 
       // resize it by a corner, then by an edge; it never leaves the card or gets smaller than 5%
-      // (a handle is grabbed in its middle, not at a corner of its box, and every drag stays inside the window: beyond the card is enough)
+      // A handle is reached with hover(): it scrolls the handle into view and checks that nothing covers it, and the card is measured again after that,
+      // because the page may have moved. Every drag stays inside the window: beyond the card is enough.
       const view = page.viewportSize();
       const inside = (x, y) => ({ x: Math.min(x, view.width - 2), y: Math.min(y, view.height - 2) });
-      const middleOf = (box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
-      const corner = middleOf(await page.locator('.crop-handle.se').boundingBox());
-      await page.mouse.move(corner.x, corner.y);
+      await page.locator('.crop-handle.se').hover();
+      const card = await page.locator('.crop-stage').boundingBox();
       await page.mouse.down();
-      const beyond = inside(stage.x + stage.width * 1.3, stage.y + stage.height * 1.4);
+      const beyond = inside(card.x + card.width * 1.3, card.y + card.height * 1.4);
       await page.mouse.move(beyond.x, beyond.y, { steps: 5 });
       await page.mouse.up();
       rect = (await crop()).active;
-      assert.ok(Math.abs(rect.x + rect.w - 1) < 0.002 && Math.abs(rect.y + rect.h - 1) < 0.002, `stopped at the edge of the card: ${JSON.stringify(rect)}`);
+      assert.ok(Math.abs(rect.x + rect.w - 1) < 0.002 && Math.abs(rect.y + rect.h - 1) < 0.002, `stopped at the edge of the card: ${JSON.stringify({ rect, card, view, beyond })}`);
       await handleNear('.crop-handle.w', rect.x, rect.y + rect.h / 2);
-      const edge = middleOf(await page.locator('.crop-handle.w').boundingBox());
-      await page.mouse.move(edge.x, edge.y);
+      await page.locator('.crop-handle.w').hover();
+      const edge = await page.locator('.crop-handle.w').boundingBox();
       await page.mouse.down();
-      await page.mouse.move(inside(stage.x + stage.width * 2, edge.y).x, edge.y, { steps: 5 });
+      await page.mouse.move(inside(card.x + card.width * 2, edge.y).x, edge.y + edge.height / 2, { steps: 5 });
       await page.mouse.up();
       rect = (await crop()).active;
       assert.ok(Math.abs(rect.w - 0.05) < 0.002, `no smaller than 5%: ${JSON.stringify(rect)}`);
