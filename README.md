@@ -6,181 +6,87 @@
 
 [![CI](https://github.com/manucruzleiva/obs-tcg-overlay/actions/workflows/ci.yml/badge.svg)](https://github.com/manucruzleiva/obs-tcg-overlay/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-ea4aaa.svg)](https://github.com/sponsors/manucruzleiva)
 
-**OTO** (OBS TCG Overlay) puts a live scoreboard on your Pokémon TCG stream. Prizes, active and benched Pokémon, HP, the stadium, the match score and the hype announcements show up on screen in OBS, while a producer runs everything from a control panel on a laptop, tablet or phone. Several producers can work at the same time without stepping on each other.
+**OTO** (OBS TCG Overlay) puts a live scoreboard on your Pokémon TCG stream: prizes, Active and benched Pokémon, HP, tools, energy, the Stadium, the score and the hype announcements, drawn on screen in OBS. A producer runs it all from a control panel on a laptop, tablet or phone, and several producers can work at the same time without stepping on each other.
 
 <p align="center">
   <img src="assets/screenshots/overlay.png" alt="The overlay on a stream" width="720">
 </p>
 
-> **Status:** early-stage but complete end to end: you can run a whole match, with several producers, a password, your own look and sounds, and an offline card library. Read [Known issues](#known-issues) first.
+> **Status:** early, but complete end to end. You can run a whole match with several producers, a password, your own look and sounds, and an offline card library. Read [Known issues](#known-issues) first.
 >
-> This is an unofficial fan project, not affiliated with The Pokémon Company, Nintendo, Creatures or GAME FREAK. See [NOTICE.md](NOTICE.md).
+> This is an unofficial fan project. It is not affiliated with The Pokémon Company, Nintendo, Creatures or GAME FREAK ([NOTICE.md](NOTICE.md)).
 >
-> **AI disclosure:** this project was built entirely with AI. See [AI disclosure](#ai-disclosure).
+> **Made entirely with AI.** See the [AI disclosure](#ai-disclosure).
 
-**Jump to:** [Who it's for](#who-its-for) · [Get started](#get-started-windows) · [Run a match](#run-a-match) · [Producing together](#producing-together) · [Show and hide](#show-and-hide-anything) · [Sounds](#sound-effects) · [Designs and .oto packages](#designs-and-oto-packages) · [Card library](#card-library-and-working-offline) · [Installing and updating](#installing-repairing-and-updating) · [Troubleshooting](#troubleshooting) · [For developers](#for-developers)
+## Pick your path
+
+| You are | Start here |
+|---------|------------|
+| **A streamer, producer or store organizer.** You run matches and do not want to touch code | [For streamers and producers](#for-streamers-and-producers) and the [full guide](docs/USING.md) |
+| **An artist or designer.** You want to give a stream, a store or an event its own look | [For artists and designers](#for-artists-and-designers) and the [design guide](docs/DESIGNING.md) |
+| **A developer.** You want to run it from source, fix something or build on it | [For developers](#for-developers) and the [developer guide](docs/DEVELOPING.md) |
 
 ---
 
-## Who it's for
+## For streamers and producers
 
-- **Local game stores and leagues** that stream or record tournaments, League Challenges and casual nights, and want a clean, professional look without a production crew.
-- **Content creators, casters and tournament organizers** who cover Pokémon TCG matches and need an overlay that someone else can drive while they commentate.
-- **Artists and designers** who give a stream, store or event its own identity: colors, logos, backgrounds, avatars, card backs, fonts and even sound effects, shared as a single `.oto` file. See [Designs and .oto packages](#designs-and-oto-packages).
+You do not need to be technical. If you can install a program and add a source in OBS, you can use OTO.
 
-You do not need to be technical. If you can install a program and add a source in OBS, you can use this.
-
-## How it works, in plain words
+### How it works
 
 OTO runs quietly on one computer (usually the streaming PC) and gives you two web pages:
 
 | Page | What it is | Who uses it |
 |------|-----------|-------------|
-| **Control panel** | Buttons for prizes, damage, turn, knock-outs, announcements, and all the settings | The producer(s), in any web browser |
-| **Overlay** | The graphics themselves, on a transparent background | OBS, as a Browser Source |
+| **Control panel** | Buttons for prizes, damage, turns, knock-outs, announcements and all the settings | The producer(s), in any web browser |
+| **Overlay** | The graphics, on a transparent background | OBS, as a Browser Source |
 
-Whatever a producer does in the control panel appears on the overlay instantly. Nothing is uploaded anywhere: it all stays on your own network. (The only things that use the internet are looking up card data and pictures, which you can [keep on your computer](#card-library-and-working-offline), and checking for updates.)
+What a producer does in the control panel shows on the overlay at once. Nothing is uploaded anywhere: it all stays on your own network. (Only card data and pictures, and the check for updates, use the internet, and you can [keep the cards on your computer](docs/USING.md#card-library-and-working-offline).)
 
 <p align="center">
   <img src="assets/screenshots/control-panel.png" alt="The control panel" width="820">
 </p>
 
-## Get started (Windows)
+### Install it (Windows)
 
-1. **Download** from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page (if there is no release yet, see [For developers](#for-developers) to build it):
-   - **`OTO-Setup-x.y.z.exe`** installs OTO for your user account and keeps itself up to date. **Recommended.**
-   - **`OTO-x.y.z-portable.exe`** runs without installing, for example from a USB stick. It does not update itself, and it unpacks itself every time it starts, so it opens more slowly than the installed version (up to a minute the first time).
-2. **Run it.** A small icon appears in the system tray (near the clock) and the control panel opens.
-   - Windows may show a blue *"Windows protected your PC"* screen the first time, because the app is not code-signed yet. Click **More info, then Run anyway**.
-   - Windows Firewall may ask whether to allow OTO on your network. Choose **Private networks** so other devices can reach it.
-3. **Add the overlay to OBS:**
-   1. In OBS, click **+** under *Sources* and choose **Browser**.
-   2. Set **URL** to `http://localhost:6767/overlay`
-   3. Set **Width** to `1920` and **Height** to `1080`.
-   4. Untick **Shutdown source when not visible**, so the overlay keeps its state when you switch scenes.
-   5. Optional, for [sound effects](#sound-effects): tick **Control audio via OBS**.
-4. **Run your match** from the control panel (next section).
+1. Download from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page:
+   - **`OTO-Setup-x.y.z.exe`**: installs OTO for your user and keeps itself up to date. **Recommended.**
+   - **`OTO-x.y.z-portable.exe`**: runs without installing (a USB stick, say). It does not update itself and opens slowly the first time.
+2. Run it. An icon appears in the system tray (near the clock) and the control panel opens.
+   - Windows may show a blue *"Windows protected your PC"* screen, because OTO is not code-signed yet ([why](docs/SIGNING.md)). Click **More info, then Run anyway**.
+   - If Windows Firewall asks, allow OTO on **Private networks** so your other devices can reach it.
+3. Add the overlay to OBS: **+** under *Sources*, choose **Browser**, set the URL to `http://localhost:6767/overlay`, width `1920`, height `1080`, and untick *Shutdown source when not visible*.
 
-If OBS runs on a *different* computer than OTO, use OTO's computer's network address instead of `localhost` (see [Producing together](#producing-together)).
+That is all. Open the control panel, type the trainers' names and run the match.
 
-## Run a match
+### What you can do
 
-Set the trainers' names and nationalities, pick their Pokémon, and keep score as the game goes. Everything has a button and, for the things you do all game, a key. Press **`?`** in the control panel to see the list.
+- **Run a whole match from the keyboard.** Prizes, damage, heal, energy, evolve and go back a stage, tools and maximum HP, knock outs (several at once), moving damage between Pokémon, abilities, special conditions, Stadium, feature cards for the commentary, pause, undo and redo. Press **`?`** in the control panel for every shortcut.
+- **Produce together.** Share a link and other people drive the same match from their own device. Clicks are never counted twice, undo is shared, and a shared **draft mode** lets the team prepare changes and send them to the overlay all at once. The host can rename or remove producers and set a password from the tray icon.
+- **Several overlays for one match.** A second (or third) overlay with its own design and options, for a vertical stream next to the horizontal one.
+- **Choose what the audience sees.** A switch for every piece of the overlay, banners and full-screen effects for every big moment, and optional sound effects.
+- **Work offline.** Keep the Standard, Gym Leader Challenge or Expanded card library and the pictures on your computer.
+- **Wear a design.** Install a `.oto` file an artist made, or make your own in the editor.
 
-| Key | Action |
-|-----|--------|
-| `Space` | Pass the turn |
-| `1` / `2` | The keys below apply to Trainer A / Trainer B (they follow whoever has the turn on their own) |
-| `↑` / `↓` | The player whose turn it is takes / gives back a prize card. Add `Shift` for the player who does not have the turn (before anybody has it: Trainer A, and with `Shift` Trainer B) |
-| `A` | Deploy a new Active Pokémon (search for a card, or bring one up from the bench) |
-| `B` | Edit the bench |
-| `Shift` + `B` | Put the bench back to 5 slots (when a Stadium that made it bigger is gone) |
-| `D` | Damage: choose the Pokémon (one or several) and the amount |
-| `H` | Heal |
-| `E` | Attach energy: counts as the turn's attachment, or switch that off for a special attachment |
-| `K` | Knock out: pick the Pokémon and how many prizes the opponent takes; announces it, clears the slot and offers the next Active |
-| `S` | Put a Stadium in play |
-| `Shift` + `S` | Supporter played this turn |
-| `X` | Ability tokens: mark a Pokémon's ability used (once per turn, or once per game) |
-| `I` / `V` | Item lock / Evolution lock on or off |
-| `C` | Announce an attack (name and damage, and apply the damage if you like) |
-| `T` | Top Deck announcement |
-| `P` | Pause the game (a banner, and the rest grayed out), or resume it |
-| `Ctrl` + `Z` | Undo |
-| `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
-| `Ctrl` + `Enter` | Send your draft to the overlay (see [Producing together](#producing-together)) |
-| `Esc` | Close a dialog |
+**Learn more:** [the complete guide for streamers and producers](docs/USING.md) has the keyboard table, every setting and the troubleshooting list.
 
-Shortcuts are ignored while you are typing in a text box.
+---
 
-**More that helps**
+## For artists and designers
 
-- **Ability tokens** show on each Pokémon, ready or used. A once-per-turn ability becomes ready again when its trainer's turn begins.
-- **Drag and drop:** drag a Pokémon card (the Active or one on the bench) onto an empty slot to move it, or onto another Pokémon to swap places. A special condition ends when a Pokémon leaves the Active spot. **Right-click an energy** on a Pokémon to attach another of the same type (it is the turn's attachment while that is free, and a special attachment after).
-- **Special conditions:** Asleep, Burned, Confused, Paralyzed, Poisoned and Trapped (cannot retreat) go on the Active Pokémon with the chips under it, and show as icons on the overlay.
-- **Deck or GLC type:** under each trainer's name, write their deck (`Charizard ex`, `Lightning GLC`, `Lost Zone Box`). The overlay shows it next to the record, with a picture in front of it: the Pokémon the deck names (its official artwork) or, when it names no Pokémon, the icon of the energy type it names (`Water Box`, `Electric`, `Dark` work too). Write something else in the **Picture** box to choose another picture (`Gardevoir` for a deck called `Control`), or `none` for no picture. The line under the boxes says what the overlay will show. A Pokémon's picture is downloaded the first time it is shown and kept on the computer, like card pictures.
-- **The bench** is stacked down the edge of the screen, one Pokémon under the other, with the name and the abilities on the side toward the middle (a second column starts when there are more than fit). A switch in Settings, Overlay, puts it in a row under the Active Pokémon instead. Another switch (off at first) shows the **attacks of each benched Pokémon**, the name and the damage as the card says. The **retreat cost** is only shown on the Active Pokémon, and the energy, Stadium and Supporter counters only for the player whose turn it is.
-- **Set prizes:** the **Set prizes** button on a player's Prize cards opens a dialog with the six prize cards. Choose the card of each with the card search, then **Set prizes**: those cards show on that player's prize cards on the overlay, and the small prize pips in the control panel show them too. The prize cards start **face down** (hidden, with a question mark, and the English card back) at the beginning of each game; the **Hide prizes** switch turns them face up, and then the cards you set show in place of the card back, cropped as the design says. The **Hide prizes** switch turns them face down with a question mark; the prize cards that are taken fade out, from the right, with their card still on them. They start again for the next game.
-- **Penalties:** a penalty is set on the player who got it. That many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
-- **Victory by itself:** when a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and **that player gets a game win**. **Next game** (in the Match box) starts the next game: prizes and penalties start again and the GX and VSTAR markers come back, while the score and the names stay. **New match** starts over with the score at 0.
-- **Pause:** **Pause game** (or `P`) puts a PAUSED banner in the middle of the overlay and grays out everything else until you resume. Resuming shows a short "game resumed" banner.
-- **Stadium:** putting a Stadium in play uses the Stadium play of the player who played it (the one whose turn it is, unless you pick the other). Turn the switch in the picker off for a correction, or a Stadium an effect put there.
-- **Bench size:** `Shift+B` (or **Reset to 5** next to Edit bench) puts the bench back to 5 slots when a Stadium that made it bigger is gone.
-- **The Pokémon cards and the Stadium in the control panel** show just the art of the card. Settings, then General, can show the whole card instead (this is only for your browser: the overlay has its own crop, set by a design).
-- **Undo and redo** both say what they did in a short banner (`Undid: …`, `Redid: …`).
-- **Feature cards** let you show something to the audience during commentary. They have a box of their own, apart from the Stadium. The overlay shows the last three, in the order you added them, and **Between cards** adds a sign (`+`, `→`, `=` or `or`) after the last card to explain a combo: *Boss's Orders + Ultra Ball → …*. A sign is taken away like a card.
-- **Winner** (in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change, and the victory that comes by itself when the prizes are taken (above) still does.
-- **Attacks:** `C` lists the attacks of the Active Pokémon, from its card. Pick one and its name and damage are filled in, ready to be changed (the damage comes in tens). A list that is closed until you open it holds the attacks of the benched Pokémon, for an attack that is copied from the bench.
-- **Preview** shows the overlay inside the control panel.
-- **Autosave:** if OTO closes unexpectedly, your match is restored when it reopens.
-- **Match history:** every change is recorded in the activity feed with the name of the person who made it.
+A **design** is the look of the overlay: colors, logo, background, avatars, card backs, icons, fonts, sounds, and where every piece sits on the screen. Everything is made in the **Look** tab of Settings, with a canvas that shows the overlay as you change it, and shared as a single `.oto` file.
 
-## Producing together
+- **Start from the built-in look.** *Copy of the built-in look* gives you a design with every color and font written out. The same design is in this repository as code, [docs/examples/built-in-look/design.json](docs/examples/built-in-look/design.json), so you can read it, change it and drop it into a folder.
+- **A font for each kind of text.** Names, numbers, labels, banner titles, subtitles and small text can each have their own font file, or a list of fonts installed on the machine that shows the overlay.
+- **Move and resize every piece** on a zoomable canvas with snapping lines and a grid. A design can be a wide screen (1920 × 1080) or a **tall mobile screen** (1080 × 1920).
+- **Reserve spaces** for a camera feed (up to six: rectangle, rounded or oval) and draw your own frame over each.
+- **Crop the cards** (just the art, the whole card, or any rectangle), place the HP bar, energy, retreat cost and status icons, choose the picture on the prize cards and how they are laid out.
+- **Bring sounds** for any of the moments of a match.
+- **Share it.** *Save as .oto* gives a ZIP-based file that carries the design, its sounds and, if you like, your control settings. You can also make one by hand by zipping a folder.
 
-Often the person running the game is not the person at the streaming PC. They can use their own laptop, tablet or phone on **the same network** (the same Wi-Fi or router).
-
-**Sharing the link**
-
-- At the top of the control panel you will see a link such as `http://192.168.1.20:6767/control`. Click it to copy, then send it to the other producer.
-- Or right-click the tray icon and choose **Copy Control Link for Other Devices**. Settings, then General, lists every address too.
-- The same address works for the overlay if OBS runs on another computer: replace `/control` with `/overlay`.
-
-**Working at the same time is safe.** If two people open the control panel:
-
-- **Their pages stay in sync**, live. You see who else is connected at the top.
-- **A click is never counted twice.** If someone changes the same thing a moment before you click, your click is refused with a short message ("Maya just changed this") so a prize card is not taken twice. Look at the new value, and click again if you still need to.
-- **Undo and redo are shared** (`Ctrl+Z`, `Ctrl+Y`). The activity feed says who did what.
-- Only the overlay and control panel see the state; there is nothing to merge afterwards.
-
-**Edit & send drafts.** Click **Edit & send** to prepare changes without the overlay showing them. There is **one draft for the whole table**: every producer's page goes into it, sees the same preview and the same list of changes (with the name of who made each), and anybody's changes join it. When you are ready, any of you can **Send to overlay** (or `Ctrl+Enter`), which applies them all at once as a single step you can undo, or throw the draft away (the others are told who did). If something changed the same things meanwhile, you are shown what clashes and can send only the rest, send everything anyway, or keep editing. **Undo** takes a sent draft back in one step, and **redo** does not apply it straight away: it **opens the draft again** with the changes that were sent, in case somebody wants to change something before it goes once more.
-
-**Password.** Settings, then General, lets you set a password for the control panel. It can be any text, with no rules. Everyone has to sign in once; the overlay for OBS never needs it. The password is stored scrambled, never as typed. Wrong guesses are slowed down.
-
-- To set it before the app starts, use the `OTO_PASSWORD` environment variable (it takes priority and cannot be changed in the app).
-- **Forgot it?** Quit OTO and start it once with the environment variable `OTO_RESET_PASSWORD=1`; the password is removed and you can choose a new one. (Anyone who can start OTO on the computer can already read its files, so this gives nothing away.)
-
-**Good to know**
-
-- Without a password, anyone on the network who has the link can control your overlay. Share it only with people you trust, avoid open public Wi-Fi, and set a password on shared networks. To accept only the local computer, start with `HOST=127.0.0.1` (see [Configuration](#configuration)).
-- Guest Wi-Fi networks often stop devices talking to each other. If the link does not open, see [Troubleshooting](#troubleshooting).
-
-## Show and hide anything
-
-Settings, then **Overlay**, has a switch for every element: the scoreboard, match score, round label, names, nationality, tournament record, prize cards, energy and stadium counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, ability tokens, the stadium, feature cards, banners and full-screen animations. Two presets help: **Show everything**, and **Minimal** (score, names, the Active Pokémon and HP).
-
-Under **Pokémon**, **Attacks of the benched Pokémon** is off until you switch it on, and under **Table**, **Frames of the reserved spaces** hides the frames a design draws for a camera feed (see [Designs](#designs-and-oto-packages)). Under **Trainers**, the deck can be hidden, or just the picture next to it. **Nationality as a flag emoji** shows a flag (🇺🇸) instead of the letters when what you typed is a country: a code such as `USA` or `US`, or a name such as `Chile`. Anything else stays as text. Windows draws no flags of its own, so OTO brings a small flag font (credited in [NOTICE.md](NOTICE.md)). The control panel shows the flag next to the box as you type, so you know the country was understood. **Show everything** and **Minimal** leave this option as it is.
-
-The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out, game pause) where each can show a **banner**, a **full-screen effect**, or both, and sets **how long** banners and effects stay on screen (1 to 30 seconds each). The **All** column switches a whole row at once, and the **All moments** row switches a whole column (every banner, or every effect). A new announcement always replaces the one still showing, so the screen never fills up during a fast turn. The pause banner is the exception: it stays until you resume. A **Picture** section sets the overlay's opacity and whether it scales to fit the browser source.
-
-## Sound effects
-
-Settings, then **Sounds**. Sound effects play from the overlay, so OBS picks them up as browser source audio. They are **off until you switch them on**, because a surprise noise on a live stream is worse than none.
-
-- Each moment has its own switch and volume: deploying, benching, damage, heal, knock out, passing the turn, attaching energy, an ability, a stadium, taking a prize, winning a game or the match, an attack, a Top Deck.
-- Every moment has a built-in sound. Click **Use my own** to give it your own MP3, WAV, OGG, M4A or WebM file (up to 1.5 MB), or let a [design](#designs-and-oto-packages) bring its own. **Test** plays any of them.
-- Your own sound beats the design's, which beats the built-in one.
-- To put sounds on their own audio track in OBS, tick **Control audio via OBS** on the browser source.
-
-## Designs and `.oto` packages
-
-The **Look** tab is where artists and organizers give OTO its own identity. A **design** holds:
-
-- **Colors:** panels, text, highlight, trainer colors, warning and danger colors, corner roundness and animation speed.
-- **Pictures:** logo, background, trainer A and B avatars, prize card back, card back, an energy icon strip, a status icon strip, and a frame for each reserved space.
-- **A font** for names, numbers and announcements.
-- **Sounds** for any of the moments above.
-- **Layout:** move and resize the pieces of the overlay (the scoreboard, each trainer's prizes, tokens, Active Pokémon and bench, the feature cards, the Stadium, the banners). The editor shows the overlay on a canvas you can zoom (scroll or pinch) and pan, with snapping lines, or you can edit the design's code. A **grid** can be shown over the canvas, with squares of the size you choose (8 to 480 pixels), and pieces can jump onto its lines (**Snap to grid**). The grid is a choice of that browser, for editing only: it is not part of the design.
-- **Screen:** the overlay is a wide 1920 × 1080 screen, or, for a **mobile** design, a tall 1080 × 1920 one: the scoreboard on top, the trainers one under the other with the Stadium and the feature cards between them, the bench in a row. The editor's canvas follows the choice, and set the OBS browser source to the same size.
-- **Reserved spaces:** places the overlay keeps clear for something else, a **camera feed** for example (up to six). Each is a rectangle, a rounded one or a circle or oval, with a name for the editor, where it is and how big. Drag it on the canvas, resize it by a corner (`Shift` keeps its shape) or type its numbers (Spaces tab). The overlay draws an outline of the shape, or a **picture of your own** over it: a frame with a see-through middle, uploaded in the same tab. What is inside stays see-through, so the camera in OBS shows through.
-- **Card crop:** which part of a card shows for the Active Pokémon, the bench and the Stadium. The usual is just the art, with the Stadium's name below it; you can show the whole card, the name and the art, or any rectangle you draw. Special Energy cards on a Pokémon show as a circle cut out of the card, which you can move and resize too.
-- **Tile:** where the HP bar, the attached energy, the retreat cost and the status icons go on a Pokémon's picture (on it, at the top or bottom or in a corner, or below it).
-- **Prize cards:** the picture on the back of the prize cards: the design's own (or, when it has none, the **English** Pokémon card back), a **Japanese Pokémon card back**, or a **Poké Ball**. The prize cards stay cards: they fade out when they are taken. They can be laid out as **a row of six**, **a column**, **two rows of three** or **three rows of two**, and a **crop** says which part of a card shows when a card is set on a prize card (the whole card, or just its art). The card backs are the files in `assets/cardbacks` (see [assets/README.md](assets/README.md)); a plain drawing is shown when a file is not there.
-- A **name, author and description**, shown when someone installs it.
-
-The icons for the energy types and the special conditions are files in the `assets` folder (see [assets/README.md](assets/README.md)); a design can replace either set with its own strip of pictures.
-
-Changes save by themselves, and if the design is on the overlay you see them on stream as you make them.
+**Learn more:** [the design guide](docs/DESIGNING.md) walks through making a design, and [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md) is the exact file format.
 
 <p align="center">
   <img src="assets/screenshots/designs.png" alt="The design editor" width="820">
@@ -189,118 +95,11 @@ Changes save by themselves, and if the design is on the overlay you see them on 
   <img src="assets/screenshots/overlay-design.png" alt="The overlay wearing a design" width="720">
 </p>
 
-### Sharing a design: the `.oto` file
-
-A **`.oto` file** puts a design, its sounds **and your control settings** in one compressed file:
-
-- **Design:** colors, pictures, font and sounds.
-- **Control settings:** what the overlay shows or hides, how long announcements stay, which announcements and sounds are on, and sound volumes. (Never your card API key or password.)
-
-It is an ordinary ZIP file with another name, so artists can make one by zipping a folder, and anyone can open one to see what is inside. See the [package format](docs/PACKAGE-FORMAT.md).
-
-- **Save one:** Look tab, **Save as .oto** (a design, with or without your settings), or Settings, General, **Save my setup as .oto**.
-- **Install one:** Look tab, **Install a .oto**, or **drop the file on the control panel**, or **double-click it** with the desktop app. You are shown what is inside first, and choose whether to install the design, put it on the overlay, and apply its control settings. If you already have a design with that name, you can keep both or replace it. Applying control settings can be undone with `Ctrl+Z`.
-
-Packages are checked as they are opened: a `.oto` can only ever hold pictures, a font, sounds and settings, never code, and a damaged or tricky file is refused without installing any of it. Designs work offline, because everything they use is inside them.
-
-## Card library and working offline
-
-Searching for cards normally asks an online service, which can be slow, rate-limited, or unreachable at a venue with poor Wi-Fi. Settings, then **Cards**, lets you keep a copy of the cards you need on your computer:
-
-| Library | What is in it |
-|---------|---------------|
-| **Standard** | The current rotation (regulation marks H, I and J) and basic Energy |
-| **Gym Leader Challenge** | Every Expanded-legal card except Pokémon with a rule box (ex, V, VMAX, VSTAR, GX and the like) |
-| **Expanded** | Every Expanded-legal card. A big download (around 15,000 cards): you are asked first |
-
-- **Download** runs in the background with a progress bar, and **you can keep producing** while it does. If the card service fails halfway, which it sometimes does, it carries on from where it stopped. Stop it any time.
-- **Update** brings only what is new: it asks the card service how many cards each part of the library has now (a few small requests), skips the parts that did not change, and downloads only the new cards of the ones that did. After a rotation, the cards that left the format go. It says how it went ("Standard is up to date: 3,291 cards. 12 new."). Only when the library came from another service than the one chosen now (or from TCGdex, which does not count its cards, when a new set is out) is it downloaded again in full, and the Cards tab says so beforehand.
-- Pick one library to **search**. Searching it is instant and works with no internet, and a card it does not have is looked up online. Gym Leader Challenge is built from Expanded without downloading again if you already have that.
-- **Card pictures** are saved on your computer the first time they are shown, so a card shown once still shows offline. You can also **save the pictures ahead of time** (small ones for the search, or the full-size art the overlay shows), and delete them again.
-- A free API key from [pokemontcg.io](https://pokemontcg.io/) raises the request limits. Paste it in the same tab.
-
-**Which service answers.** The same tab chooses where cards come from: *Automatic* asks the Pokémon TCG API and, when it does not answer (it often does not), [TCGdex](https://tcgdex.dev/), which needs no account and has the cards in many languages; or you can pick one on purpose, or **Scrydex** with your own account (paste the API key and the team ID: they are kept on your computer, always shown as the first three characters, three stars and the last four, and never go into an exported file or a `.oto`). The library can be built from any of the three: Standard from all of them, while Gym Leader Challenge and Expanded always come from the Pokémon TCG API, which is the one that says what is legal in Expanded.
-
-## Installing, repairing and updating
-
-**The installer** installs OTO for your user account. If you run it again while OTO is installed, it first asks what you want:
-
-- **Repair:** put the program files back (and update them if the installer is newer). Your matches, designs, sounds and settings stay as they are.
-- **Reinstall from scratch:** as Repair, and OTO starts with empty data. What you had is **moved into a backup folder, not deleted**, so you can put it back.
-- **Uninstall:** remove OTO. Your data stays on disk.
-
-If OTO is running, the installer **closes it for you the polite way**: OTO is asked to save the match and quit, and is only ended by force if it does not finish within about fifteen seconds. (For scripts: `OTO-Setup.exe /S` repairs silently, and `OTO-Setup.exe /S --mode=reinstall` starts fresh.)
-
-**Updates.** The installed version checks GitHub for a newer release shortly after it starts and every few hours afterwards. A new version downloads in the background and is **never installed while you are live**: it applies the next time you quit, or at once if you choose **Restart to update** from the tray menu. The portable version does not update itself. Set `OBS_TCG_DISABLE_UPDATES=1` to turn the check off. The only thing sent is the request to GitHub for release information.
-
-**The tray icon** (near the clock) keeps OTO running when you close the window: Settings, General, **Keep running in the tray when the window is closed**. Right-click it for:
-
-- Open the control panel or the overlay, and copy the control link for other devices
-- **Troubleshooting:** restart the service, open the data or logs folder, or **Back up and start fresh** (moves everything OTO saved into a backup folder and restarts empty)
-- Update actions and **Quit**
-
-**Where is my data?** In `%APPDATA%\obs-tcg-overlay\`: the `data` folder holds the match database, designs, sounds, card libraries and pictures, and `logs` holds the logs. Set `OTO_DATA_DIR` to keep everything in a folder of your choice instead (a USB stick, say).
-
-## Troubleshooting
-
-**The overlay is blank in OBS.** Make sure OTO is running (look for the tray icon), the URL is exactly `http://localhost:6767/overlay`, and open that address in a normal browser to check. Another program may be using port 6767.
-
-**The producer's device can't open the link.**
-- Both devices must be on the same network. Guest Wi-Fi often blocks devices from talking to each other.
-- Allow OTO through Windows Firewall for **Private networks** (Windows Security, Firewall & network protection, *Allow an app through firewall*).
-- Check the link starts with this computer's current address. It can change if the router restarts; the top of the control panel always shows the current one.
-- If you started OTO with `HOST=127.0.0.1`, it only accepts connections from the same computer.
-
-**There is no sound.** Sound effects are off until you switch them on (Settings, Sounds). In OBS, the browser source must not be muted, and tick **Control audio via OBS** if you want them on their own track. Use **Test** next to a sound to hear it from the control panel.
-
-**Card search shows nothing.** Searching online needs an internet connection and the card service, which is sometimes slow or down. Keep a [card library](#card-library-and-working-offline) to be independent of it.
-
-**Windows warns me when I run it.** OTO is not code-signed yet, so SmartScreen asks for confirmation. Choose **More info, then Run anyway**.
-
-**I forgot the password.** See [Producing together](#producing-together).
-
-**Something is badly wrong.** Tray, **Troubleshooting**, **Back up and start fresh**, or run the installer again and choose **Repair**.
-
-## Roadmap
-
-These are plans, not promises. Ideas and pull requests are welcome (see [Contributing](#contributing)).
-
-### Version 2: the overlay understands the cards
-
-Today the producer types every number in by hand. Version 2 teaches the overlay what the cards in play actually do, so the board keeps itself up to date. It also adds a layout for players who record their own matches.
-
-- **Card logic.** When a card changes the numbers on the table, the overlay applies it automatically: a Pokémon Tool that adds HP raises that Pokémon's maximum HP while it is attached; a Stadium that changes retreat cost changes it on the overlay. Anything the automation gets wrong can be corrected by hand, and automatic changes show in the activity feed. (The offline card library is the groundwork for this.)
-- **Discard pile display** for each trainer, hideable like every other element.
-- **Card counters:** cards **in hand, in the deck and in the discard pile** for each trainer.
-- **Vertical overlay for player POV recordings.** A portrait (9:16) version for players who record their own matches, for example for short-form video.
-
 ---
 
 ## For developers
 
-### Architecture
-
-```
-┌──────────────┐   Socket.io    ┌──────────────────────────────┐   Socket.io    ┌──────────────┐
-│ Control panel│ ─────────────▶ │ Node.js server               │ ─────────────▶ │   Overlay    │
-│ (any browser)│  action:*      │ Express + Socket.io          │  state:update  │ (OBS browser │
-└──────────────┘ ◀───────────── │  ├ one authoritative state   │  announce, sfx │   source)    │
-        ▲        presence,      │  ├ designs, sounds, packages │                └──────────────┘
-        │        activity,      │  ├ card library + pictures   │
-        │        drafts         │  ├ SQLite (sql.js) file      │──▶ pokemontcg.io (cards)
-   password gate                └──────────────────────────────┘
-        Electron wraps the server in a tray app (installer and portable builds)
-```
-
-- The server owns **one game state** with a `revision`. Clients send `action:*` events carrying the revision they last saw; the server applies the action, records it (undo, activity, conflict detection) and broadcasts the new state. Every change goes through `Session.finish()`.
-- **Conflicts.** An action declares which parts of the state it touches. If another producer changed an overlapping part since the sender's revision, the action is refused (`action:rejected`, reason `conflict`) rather than applied twice. Absolute actions ("set the name to X") are last-writer-wins.
-- **Drafts** fork the state per producer, queue the actions, and replay them atomically on send.
-- **Announcements and sounds are events, not state:** `announce` and `sfx` fire once, so a reconnecting overlay never replays them.
-- The control panel and overlay are plain HTML, CSS and JavaScript (ES modules in the control panel) with **no build step**. The overlay targets the Chromium that ships with OBS, so it avoids newer CSS and JavaScript.
-
-### Run from source
-
-You need [Node.js](https://nodejs.org/) 22 or newer.
+OTO is a Node.js server (Express and Socket.io) with a plain HTML, CSS and JavaScript control panel and overlay, **no build step** for the web parts, wrapped in an Electron tray app for Windows.
 
 ```bash
 git clone https://github.com/manucruzleiva/obs-tcg-overlay.git
@@ -312,140 +111,41 @@ npm start              # http://localhost:6767/control
 | Command | What it does |
 |---------|--------------|
 | `npm start` | Run the server only |
-| `npm run electron` | Run the desktop (tray) app from source |
-| `npm run electron:dev` | Server plus Electron window |
-| `npm test` | Server and logic tests: boots the real server and drives it over HTTP and socket.io (a few hundred tests, about a minute) |
-| `npm run test:ui` | The control panel and settings in a real browser (needs Chrome or Edge; set `BROWSER_PATH` to use another) |
-| `npm run test:desktop` | The desktop app end to end: opening a `.oto`, `--quit`, the fresh-start backup (needs the Electron binary) |
-| `npm run pack` | Build an unpacked desktop app into `dist/` |
-| `npm run dist` | Build the Windows installer and portable `.exe` into `dist/` |
+| `npm run electron:dev` | The server plus the Electron window |
+| `npm test` | Server and logic tests: they boot the real server and drive it over HTTP and socket.io |
+| `npm run test:ui` | The control panel, settings and overlay in a real browser (Chrome or Edge) |
+| `npm run test:desktop` | The desktop app end to end |
+| `npm run dist` | Build the Windows installer and the portable `.exe` into `dist/` |
 
-Releases are built and published by GitHub Actions when a version tag is pushed; see [CONTRIBUTING.md](CONTRIBUTING.md#releasing-maintainers).
+- **One authoritative game state** with a `revision`. Every change goes through `Session.finish()`, and an action that touches something another producer just changed is refused instead of applied twice.
+- Shared **catalog modules** (UMD, used by the server and the browser) keep the options, designs and card rules in one place.
+- Everything is tested: about a thousand automated tests over the server, a real browser and the Electron app. Pull requests are welcome.
 
-### Configuration
+**Learn more:** [the developer guide](docs/DEVELOPING.md) covers the architecture, configuration, the security model, the REST and socket API, the tests, releases and code signing. To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Environment variables:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | `6767` | HTTP and WebSocket port |
-| `HOST` | `0.0.0.0` | Interface to bind. Use `127.0.0.1` to accept only local connections |
-| `OTO_PASSWORD` | unset | Password for the control panel (wins over one set in the app) |
-| `OTO_RESET_PASSWORD` | unset | Set to `1` for one start to remove a forgotten password |
-| `DB_PATH` | `data/overlay.sqlite` | SQLite database file. Designs, sounds, card libraries and pictures are kept in folders beside it |
-| `LOG_DIR` | `logs/` | Where log files are written |
-| `LOG_LEVEL` | `info` | Winston log level |
-| `OTO_DATA_DIR` | `%APPDATA%\obs-tcg-overlay` | Desktop app: keep all its data in this folder |
-| `OTO_PORT` | `6767` | Desktop app: use another port (to run a second copy) |
-| `OBS_TCG_DISABLE_UPDATES` | unset | Set to `1` to disable update checks in the desktop app |
-| `POKEMONTCG_API_URL` | `https://api.pokemontcg.io/v2` | Another card API server (the tests use a local mock) |
-| `OTO_IMAGE_BASE` | `https://images.pokemontcg.io` | Where card pictures are fetched from |
-| `OTO_SCRYDEX_IMAGE_BASE` | `https://images.scrydex.com` | Where the card pictures of the newest sets are fetched from |
-| `OTO_SPRITE_BASE` | the PokeAPI sprites repository (official artwork) | Where the pictures of Pokémon next to a deck are fetched from (`<base>/<Pokédex number>.png`) |
-
-### Security model
-
-By default OTO is built for a trusted local network.
-
-- **Password (optional).** Scrypt-hashed, in a signed cookie bound to the current password, with a login throttle. Unsafe HTTP requests and socket handshakes that name another site as their origin are refused, so a web page cannot drive your overlay. Pages and API calls are redirected to a sign-in page, or answer `401`. The overlay, its files and card pictures stay open for OBS.
-- **No password set:** anyone who can reach the port can drive the overlay. Bind to `127.0.0.1` on untrusted networks, set a password, and never expose the port to the internet.
-- **`.oto` packages and designs** are untrusted input: strict ZIP parsing (name checks, declared-size enforcement, checksums, a cap on what unpacks), content sniffing, SVGs with scripts or links refused, no web addresses in designs, and design files served with a restrictive content security policy.
-- Security headers (CSP, `nosniff`) via Helmet. See [SECURITY.md](SECURITY.md) to report a vulnerability.
-
-### Project layout
-
-```
-├── src/
-│   ├── server.js            # Express + Socket.io wiring, password gate, pictures route
-│   ├── session.js           # live actions, conflicts, undo/redo, drafts, presence
-│   ├── actions.js           # every action: what it touches, what it does, how it is described
-│   ├── api/routes.js        # REST routes
-│   ├── db/database.js       # SQLite via sql.js (persisted to a file)
-│   └── services/
-│       ├── gamestate.js     # match state and its mutations
-│       ├── announcements.js # toasts and full-screen effects
-│       ├── collab.js        # change log, undo/redo stacks, activity
-│       ├── auth.js          # the optional password and sessions
-│       ├── themes.js        # designs: folders of files
-│       ├── sounds.js        # the producer's own sounds
-│       ├── package.js, zip.js  # .oto packages and the ZIP reader/writer
-│       ├── catalog.js, images.js, pokemon-tcg.js, cache.js  # card library, pictures, card API
-│       └── network.js       # LAN addresses for the share link
-├── public/
-│   ├── control/, js/control/ # control panel (ES modules)
-│   ├── overlay/, js/overlay.js
-│   ├── login/
-│   └── css/, js/            # styles and the shared catalogs (display, sounds, themes, sfx)
-├── electron/                # desktop wrapper: main process, preload, updater
-├── installer/installer.nsh  # Windows installer: graceful close, repair/reinstall page
-├── test/                    # server and logic tests (node:test)
-├── test-ui/                 # browser tests (Playwright driving Chrome or Edge)
-├── test-desktop/            # Electron end-to-end tests
-├── test-support/            # the test harness and sample files
-├── docs/                    # the .oto package format
-└── assets/                  # logo, app icon, energy icons, README screenshots (see assets/README.md)
-```
-
-### Designs and `.oto` in the code
-
-A design is a **folder** under the data folder: `themes/<name>/design.json` plus `images/`, `fonts/` and `sounds/`. The overlay asks `GET /api/theme` for the design on air and receives colors plus an address for each file; the server serves only the files that design holds. A `.oto` is that folder zipped, with a `manifest.json` and a `controls.json` for the control settings. The format, limits and safety rules are in [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md). Designs saved by earlier versions (one JSON file with the pictures inside) are converted automatically.
-
-### REST API
-
-Open (no password needed): `GET /api/health`, `GET /api/auth/status`, `POST /api/login`, `POST /api/logout`, `GET /api/theme` (the design on air), `GET /api/theme/assets/:folder/:file`, `GET /api/sounds`, `GET /api/sounds/:cue`, `GET /img/:set/:file` (card pictures, and the pictures of Pokémon as `/img/sprite/<Pokédex number>.png`, saved on first use).
-
-Behind the password:
-
-| Method and path | Description |
-|-----------------|-------------|
-| `GET /api/state`, `/state/trainerA`, `/state/trainerB`, `/state/match` | The match state, or parts of it |
-| `GET /api/settings`, `POST /api/settings` | Read or update settings |
-| `POST /api/auth/password` | Set or remove the password |
-| `GET /api/cards/search?q=&supertype=&subtype=&rarity=&set=&evolvesFrom=&page=` | Search cards (the library first, then online) |
-| `GET /api/cards/:id`, `GET /api/evolution/search` | Card details, evolution search |
-| `GET /api/cards/popular`, `POST/DELETE /api/cards/used`, `POST /api/cards/known` | The cards the picker starts from: favorites, the most used, and the ones saved on this computer |
-| `GET /api/favorites`, `POST /api/favorites/:id` | List or toggle favorites |
-| `GET /api/matches` | Finished matches |
-| `GET /api/cache/stats`, `POST /api/cache/clear` | Remembered searches |
-| `GET /api/config/export`, `POST /api/config/import` | The match and settings as JSON (the API key is never exported) |
-| `GET /api/network` | Addresses the control panel and overlay can be reached on |
-| `GET /api/catalog`, `POST /api/catalog/:library/download`, `POST /api/catalog/cancel`, `PUT /api/catalog/active`, `DELETE /api/catalog/:library` | The card libraries |
-| `POST /api/catalog/pictures`, `DELETE /api/catalog/pictures` | Save or delete card pictures |
-| `GET/PUT/DELETE /api/themes[/:name]`, `PUT/DELETE /api/themes/:name/images/:slot`, `/font`, `/sounds/:cue`, `GET /api/themes/:name/assets/...`, `POST /api/theme/active` | Designs and their files |
-| `PUT/DELETE /api/sounds/:cue` | The producer's own sounds |
-| `GET /api/packages/export`, `POST /api/packages/inspect`, `POST /api/packages/install` | `.oto` packages |
-
-### Socket.io
-
-- **Server to client:** `state:full` (on connect), `state:update` (after every change), `announce`, `sfx`, `presence`, `you`, `activity`, `activity:history`, `action:applied`, `action:rejected`, `draft:state`, `draft:sent`, `draft:closed`, `draft:conflicts`, `theme:changed`, `sounds:changed`, `catalog:progress`.
-- **Client to server:** `action:trainerA`, `action:trainerB`, `action:match`, `action:toast`, `action:card`, `action:settings`, `action:reset`, `action:undo`, `action:redo`, `draft:start`, `draft:send`, `draft:discard`, `presence:rename`. Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The handlers live in [src/actions.js](src/actions.js). Among them: `moveSlot` (`{ from, to }`, `-1` is the Active spot: move or swap), `swapWithActive`, `benchSizeReset`, `toggleStatus` / `clearStatus`, `setRetreat`, `attachEnergy` / `attachSpecialEnergy` (with `countsAsTurn`), `gxPlus` / `vstarPlus` (and `Minus`, `Reset`), `prizePenaltySet` (the penalty of that trainer, in prize cards the other counts as taken), `prizeCardsSet` (`{ cards }`: up to six `{ cardId, name, image }`, or `null`, one for each prize card of that trainer), `setDeck` (`{ deck }`) and `setDeckIcon` (`{ icon }`: a Pokémon or an energy type, `none`, or empty for what the deck names), and on `action:match`: `nextGame`, `startGame`, `togglePause` (`{ enabled }`); a Stadium put in play with `select` (target `stadium`) or `setStadium` takes `playedBy` and `consume`.
-
-### Tests
-
-`npm test` runs against the real server with a throwaway database and a mock card API ([test-support/harness.js](test-support/harness.js)): game logic, every action, multi-producer conflicts and drafts, the password, designs, sounds, `.oto` packages, the card library, and the REST surface. `npm run test:ui` drives the control panel and settings in a real browser (keyboard shortcuts, dialogs, drafts, two producers, designs, packages, the library). `npm run test:desktop` runs the Electron app itself. Scratch folders go in `.local/` (git-ignored).
-
-### Contributing
-
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). Changes come in through pull requests.
+---
 
 ## Known issues
 
 These are open for contributions:
 
-- **OTO is not code-signed**, so Windows shows a SmartScreen warning on first run.
+- **OTO is not code-signed**, so Windows shows a SmartScreen warning on first run. The release workflow already signs when it is given a certificate ([docs/SIGNING.md](docs/SIGNING.md)).
 - **Only Windows installers are built.** The server runs anywhere Node 22+ does, but macOS and Linux desktop builds are untested.
-- **Nationalities show as a text code** (USA, JPN); no flag pictures are bundled.
 - **The card service can be slow or down.** OTO retries and resumes downloads, but the first library download needs the service to be reachable.
-- The overlay has not been tried on every OBS version; it is written for the Chromium that ships with OBS, so it avoids newer browser features.
-- The Version 2 items above are not built yet.
+- The overlay has not been tried on every OBS version. It is written for the Chromium that ships with OBS, so it avoids newer browser features.
+- The cards are not understood by the overlay yet: a producer types the numbers (see the roadmap in [docs/USING.md](docs/USING.md#roadmap)).
+
+## Support the project
+
+OTO is free and made in spare time. If it helps your streams, you can sponsor the maintainer on [GitHub Sponsors](https://github.com/sponsors/manucruzleiva). Bug reports, ideas, designs and pull requests help just as much.
 
 ## AI disclosure
 
 This project was made **entirely with AI**. The code, tests, documentation and build scripts were written by AI coding assistants ([Claude](https://www.anthropic.com/claude) through Claude Code), working from requirements and decisions given by the maintainer, [@manucruzleiva](https://github.com/manucruzleiva). Commits made that way say so with a `Co-Authored-By` line.
 
-We say this plainly so you can decide for yourself. If software made with AI is not something you want to use or contribute to, that is a fair choice and no hard feelings. If you do use it, treat it like any early-stage project: it has a large automated test suite, but it has had no independent audit, so read the [known issues](#known-issues) and the [security model](#security-model) first.
+We say this plainly so you can decide for yourself. If software made with AI is not something you want to use or contribute to, that is a fair choice and no hard feelings. If you do use it, treat it like any early-stage project: it has a large automated test suite, but no independent audit, so read the [known issues](#known-issues) and the [security model](docs/DEVELOPING.md#security-model) first.
 
-Contributions are welcome whether you write them by hand or with AI help. Either way, you are responsible for what you submit and it must pass the same checks (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+Contributions are welcome whether you write them by hand or with AI help. Either way you are responsible for what you submit, and it must pass the same checks ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## License
 
@@ -453,6 +153,4 @@ Contributions are welcome whether you write them by hand or with AI help. Either
 
 ## Acknowledgments
 
-- [Pokémon TCG API](https://pokemontcg.io/) for card data
-- [OBS Studio](https://obsproject.com/)
-- [Electron](https://www.electronjs.org/) and [Socket.io](https://socket.io/)
+[Pokémon TCG API](https://pokemontcg.io/), [TCGdex](https://tcgdex.dev/), [PokeAPI](https://pokeapi.co/) and [Limitless TCG](https://limitlesstcg.com/) for the data that makes the cards and decks easy to pick; [OBS Studio](https://obsproject.com/); [Electron](https://www.electronjs.org/) and [Socket.io](https://socket.io/).

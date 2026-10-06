@@ -14,17 +14,21 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 **The match**
 - Producer control panel and OBS browser-source overlay, synced over Socket.io, both redesigned from scratch
 - Match state: trainers, prizes, active Pokémon, 2 to 8 bench slots, stadium, item and evolution locks, energy, stadium and supporter per-turn tokens, best-of-1/3/5 score, round label
-- Keyboard-first control: deploy (`A`), bench (`B`), attack announcement (`C`), damage (`D`), energy (`E`, as the turn's attachment or a special one), heal (`H`), item and evolution locks (`I`, `V`), knock out (`K`), stadium (`S`), supporter (`Shift+S`), abilities (`X`), Top Deck and Pass Turn announcements (`T`, `P`), pass the turn (`Space`), prizes (arrows), trainer focus (`1`, `2`), undo and redo (`Ctrl+Z`, `Ctrl+Y`), help (`?`)
+- Keyboard-first control: deploy (`A`), bench (`B`), attack announcement (`C`), damage (`D`), energy (`E`, as the turn's attachment or a special one), heal (`H`), item and evolution locks (`I`, `V`), knock out (`K`), move damage (`M`), stadium (`S`), supporter (`Shift+S`), abilities (`X`), Top Deck announcement (`T`), pause (`P`), pass the turn (`Space`), prizes (arrows), trainer focus (`1`, `2`), draft mode (`Shift+Enter`), undo and redo (`Ctrl+Z`, `Ctrl+Y`), help (`?`)
+- **Evolve and go back a stage** on the Active Pokémon and on the bench, keeping the energy, tools and damage; **Pokémon Tools** on any Pokémon, shown on the overlay, with the HP they add; a stepper for a Pokémon's **maximum HP**; **Fossils and Dolls** (Item cards played as Pokémon) in the same card picker
+- **Move damage** (`M`) from any Pokémon to any other, of either trainer (the first is healed, the second damaged); **knock out several Pokémon at once**, each with its prize cards (DOUBLE KO!, TRIPLE KO!); an attack that says `×` or `+` asks for the number of times or the extra damage (in tens); a player with **no Pokémon left** after a knock out or a removal loses at once
+- **Compact control panel**: the turn tracker and the prize cards side by side, icon-only buttons and no HP bar on the Pokémon cards, GX and VSTAR markers hidden when the overlay does not show them; the prize cards show no "?" on the overlay
+- **Feature cards and signs** can be put in any order by dragging them; the card picker's star (and a right-click on a card) marks a favorite
 - Special conditions (Asleep, Burned, Confused, Paralyzed, Poisoned) and Trapped on the Active Pokémon, with icons from the assets folder; the GX attack and VSTAR Power as once-per-game markers (hidden by default, back at the end of each game)
 - Attacks and retreat costs come from the card; damage comes in tens; the attack dialog lists the Active's attacks and abilities
 - A penalty is a number of prize cards: that many of the other player's prizes show in red, and that player needs that many fewer to win. The victory is announced by itself when a player has taken the prizes they need, adds a game to their score, and **Next game** starts the next one
-- **Deck or GLC type** for each trainer, shown next to the record on the scoreboard, with the Pokémon it names (official artwork from the PokeAPI sprites, downloaded once and kept) or the icon of its energy type; another picture, or none, can be chosen
+- **Deck or GLC type** for each trainer, shown next to the record on the scoreboard, with the Pokémon it names (official artwork from the PokeAPI sprites, downloaded once and kept) or the icon of its energy type; another picture, or none, can be chosen. The deck box suggests the most played decks of the moment (a snapshot of Limitless TCG, with the Pokémon of each), including the new Mega decks
 - **Set prizes**: choose, with the card search, the card of each of a player's six prize cards. They show on the prize cards of the overlay (face down with a question mark while the prizes are hidden, faded when taken) and on the prize pips of the control panel, and start again for the next game
 - The **bench** is stacked at the side of the screen by default, with a switch for a row under the Active Pokémon; the **retreat cost** is only for the Active Pokémon; the energy, Stadium and Supporter counters are only shown for the player whose turn it is; Pokémon whose card details (attacks, retreat cost) were not on file get them in the background, a moment after they are put in play
 - A **Winner** button in the Hype box, for the player whose turn it is
 - **Feature cards** have a box of their own, apart from the Stadium (which shows as its art in the control panel too), are shown in the order they were added, and can have a sign between them (`+`, `→`, `=`, `or`) to explain a combo
 - The attack dialog has a list, closed until it is wanted, with the attacks of the benched Pokémon, and an option (off at first) shows them on the overlay
-- **Pause**: a banner in the middle of the overlay that stays, with everything else grayed out, until the game is resumed (`Shift+P`)
+- **Pause**: a banner in the middle of the overlay that stays, with everything else grayed out, until the game is resumed (`P`)
 - Drag and drop Pokémon between the Active spot and the bench (move or swap), right-click an energy to attach another, `Shift+B` and a button to put the bench back to 5 slots, prize arrows for the player whose turn it is, a Stadium that uses the playing player's Stadium play (or not), and undo and redo that say what they did
 - Ability tokens on each Pokémon: ready or used, once per turn (they reset when that trainer's turn begins) or once per game
 - Hype announcements as one-shot events: a new one replaces the one still showing; banner and effect durations are configurable
@@ -34,7 +38,9 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 **Producing together**
 - Several producers at once: live-synced pages, presence, a named activity feed, and conflict protection (a click on something another producer just changed is refused, so nothing counts twice)
 - Shared undo and redo
-- **Edit & send** drafts: one draft shared by all the producers (everybody sees the same preview and who made each change, anybody can send or throw it away), sent all at once as one undoable step, with clash handling. Redoing the send of a draft opens the draft again with its changes, to edit before it goes once more
+- **Draft mode** (`Shift+Enter`): one draft shared by all the producers (everybody sees the same preview and who made each change, anybody can send it), sent all at once as one undoable step, with clash handling. Draft mode stays on after a send, until somebody leaves it. Redoing the send of a draft opens the draft again with its changes, to edit before it goes once more
+- **The host** (the person at the computer that runs OTO) can rename other producers and remove them (they are refused for an hour, or until the host lets them back in); anybody renames themselves with a double-click on their name at the top; Shift+click on Preview opens the overlay in a browser tab
+- **Several overlays for one match**: Settings, Overlay, More overlays adds up to three more, each with an address of its own (`/overlay?screen=<id>`), its own design (a mobile one for a vertical stream), its own switches and a sound switch
 - Optional control panel password (any text), scrypt-hashed, with signed sessions and a login throttle; `OTO_PASSWORD` overrides it and `OTO_RESET_PASSWORD=1` removes a forgotten one
 - A visible share link in the control panel and tray menu, and `GET /api/network`
 
@@ -43,7 +49,9 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 - Pokémon shown as the art of their card (the whole card when a design asks) with the HP bar, attached energy, retreat cost and status icons placed on it, each editable per design; the Stadium shows as its art with its name below; a **design editor** with zoom, drag, a code view, crop and tile editors, and sample Stadium and Pokémon cards
 - The control panel shows the art of the Pokémon cards too, or the whole card as a choice of that browser
 - Sound effects for the moments of a match, off by default, each with its own switch and volume, a built-in sound for every cue, and your own files per cue
-- **Designs**: colors, picture slots (including a frame for each reserved space), a font and sounds, edited in the Look tab and reaching the overlay live
+- **Designs**: colors, picture slots (including a frame for each reserved space), fonts and sounds, edited in the Look tab and reaching the overlay live
+- **A font for each kind of text**: the main font plus names, numbers, labels, announcement titles, announcement subtitles and small text can each have a font file in the design and/or a list of fonts installed on the computer (a Fonts tab in the editor)
+- **A copy of the built-in look** to learn from, in the Look tab, and as [docs/examples/built-in-look/design.json](docs/examples/built-in-look/design.json)
 - **The picture on the prize cards**, chosen in each design (Tile tab): the design's own (the English card back when it has none), an English or a Japanese Pokémon card back, or a Poké Ball. The card backs are files in `assets/cardbacks` (a PNG, JPG or WebP each), and a plain drawing shows when there is none. The prize cards start face down, can be laid out as a row, a column, two rows of three or three rows of two, and have a crop of their own for the cards set on them
 - **A mobile screen**: a design can be a tall 1080 × 1920 screen for a phone, with its own arrangement of the overlay. The editor's canvas follows it
 - **Reserved spaces** for a camera feed or the like (up to six, each a rectangle, a rounded one or a circle), with a picture of the designer's own drawn over each, moved and resized on the canvas or typed in a Spaces tab; and a **grid** on the canvas, with squares of the size the designer chooses, for lining things up and snapping to
@@ -61,16 +69,17 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 
 **The desktop app**
 - Electron tray app for Windows, built as a self-updating installer (`OTO-Setup-x.y.z.exe`) and a portable `.exe` (`OTO-x.y.z-portable.exe`); the default port is **6767**
-- The installer offers **Repair**, **Reinstall from scratch** (your data is moved to a backup, never deleted) or **Uninstall** when OTO is already installed, and **closes a running OTO gracefully** so the match is saved first
-- Tray menu: control link for other devices, keep running in the tray when the window closes, and Troubleshooting (restart the service, open the data or logs folder, back up and start fresh)
+- The installer offers **Repair**, **Reinstall from scratch** (your data is moved to a backup, never deleted), **Uninstall** (which asks whether to also delete what OTO saved, starting with No) or **Destroy** (uninstall and delete everything OTO saved, after asking once) when OTO is already installed, and **closes a running OTO gracefully** so the match is saved first. `"Uninstall OTO.exe" /S --destroy` does it from a script
+- Tray menu: control link for other devices, **Control panel password** (the host sets, changes or removes it from the tray icon), keep running in the tray when the window closes, and Troubleshooting (restart the service, open the data or logs folder, back up and start fresh)
+- The release workflow signs the `.exe` files when a code signing certificate is in the repository secrets (see [docs/SIGNING.md](docs/SIGNING.md)); the builds are unsigned until then
 - `.oto` file association, `OTO_DATA_DIR` and `OTO_PORT`
 - Over-the-air updates through GitHub Releases for the installer build: they download in the background and install on quit or from the tray menu, never mid-stream
 
 **Project**
 - GitHub Actions: CI (server tests on Node 22 and 24, browser tests, `npm audit`) and a release workflow that builds and publishes the Windows installer, portable `.exe` and update manifest when a version tag is pushed
 - Dependabot for npm packages and GitHub Actions
-- A few hundred automated tests: server and logic (`npm test`), the control panel and settings in a real browser (`npm run test:ui`) and the desktop app end to end (`npm run test:desktop`)
-- A README for both non-technical users (stores, creators, artists) and developers
+- About a thousand automated tests: server and logic (`npm test`), the control panel, settings and overlay in a real browser (`npm run test:ui`) and the desktop app end to end (`npm run test:desktop`)
+- Documentation in three parts for three kinds of reader: a [guide for streamers and producers](docs/USING.md), a [guide for artists and designers](docs/DESIGNING.md) with the [package format](docs/PACKAGE-FORMAT.md), and a [guide for developers](docs/DEVELOPING.md); a short README that links them; [docs/SIGNING.md](docs/SIGNING.md); a sponsor link
 
 ### Fixed
 

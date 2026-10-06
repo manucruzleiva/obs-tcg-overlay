@@ -322,14 +322,14 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .mon-card.dragging { opacity: 0.4; }
 .mon-card.drop-target, .empty-slot.drop-target { outline: 2px dashed var(--accent); outline-offset: 2px; background: rgba(124, 140, 255, 0.14); }
 
-.mon-card { display: flex; gap: 12px; padding: 10px; border-radius: var(--radius-sm); background: var(--bg-tertiary); border: 1px solid var(--border); }
+.mon-card { display: flex; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-tertiary); border: 1px solid var(--border); }
 .mon-art { flex: none; display: flex; align-items: center; justify-content: center; width: 92px; height: 128px; border-radius: 8px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
 .mon-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .art-fallback { color: var(--fg-muted); }
 .mon-card.compact .mon-art { width: 56px; height: 78px; }
 /* Art only (the usual): just the picture of the card, the part the overlay shows too, so the box is wide instead of tall */
 :root { --art-x: 0.07; --art-y: 0.115; --art-w: 0.86; --art-h: 0.385; }
-.mon-art.cropped { position: relative; width: 128px; height: calc(128px * 1.393333 * var(--art-h) / var(--art-w)); }
+.mon-art.cropped { position: relative; width: 104px; height: calc(104px * 1.393333 * var(--art-h) / var(--art-w)); }
 .mon-card.compact .mon-art.cropped { width: 76px; height: calc(76px * 1.393333 * var(--art-h) / var(--art-w)); }
 .mon-art.cropped img {
   position: absolute;
@@ -407,8 +407,9 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .mon-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .mini-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); font-size: 12px; font-weight: 600; color: var(--fg-secondary); }
 .mini-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--fg-primary); }
-.mon-card.compact .mini-btn span { display: none; }
-.mon-card.compact .mini-btn { padding: 5px 7px; }
+/* the buttons of a Pokémon are icons (the name is in the tooltip, and the keys are listed above): a single row */
+.mini-btn span { display: none; }
+.mini-btn { padding: 5px 7px; }
 
 .bench-title { margin-top: 18px; }
 .bench-controls { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font: 500 11px var(--font-body); letter-spacing: 0; text-transform: none; }

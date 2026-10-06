@@ -51,3 +51,6 @@ temp/
 # Coverage
 coverage/
 .nyc_output/
+
+# Notes for the maintainer that are not part of the project (the post to announce it)
+Publish.md

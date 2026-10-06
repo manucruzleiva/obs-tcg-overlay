@@ -41,7 +41,7 @@ Useful commands:
 | `npm run pack` | Build an unpacked Electron app into `dist/` |
 | `npm run dist` | Build the Windows installer and portable `.exe` into `dist/` |
 
-The project layout is described in the [README](README.md#for-developers).
+The architecture, the project layout, the configuration and the API are in the [developer guide](docs/DEVELOPING.md).
 
 ### The `.local/` folder
 
@@ -78,6 +78,16 @@ A click in the control panel becomes a socket event, `action:<target>` with `{ a
 3. [src/services/gamestate.js](src/services/gamestate.js) holds the game state and the methods that change it.
 
 When you add a control, add a method to the game state if needed, an entry to the action registry (with its `targets` and `label`), the control itself, and a test in `test/`. If it changes what a producer sees or clicks, add or extend a test in `test-ui/` too.
+
+### Documentation
+
+The docs are written for three kinds of reader, so put a change where its reader will look:
+
+- [docs/USING.md](docs/USING.md): streamers and producers (no code, plain words, what to click and press)
+- [docs/DESIGNING.md](docs/DESIGNING.md) and [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md): artists and designers (the guide, and the exact format)
+- [docs/DEVELOPING.md](docs/DEVELOPING.md): developers (architecture, configuration, API, tests)
+
+The [README](README.md) stays short: a taste of each, with links. Add a line to `CHANGELOG.md` for anything a user can notice.
 
 ### Tests
 
@@ -127,5 +137,7 @@ Releases are built by GitHub Actions ([release.yml](.github/workflows/release.ym
 3. The workflow checks that the tag matches `package.json`, runs the tests, builds the Windows installer and portable `.exe`, and publishes them with `latest.yml` as a GitHub Release
 
 Installed copies (the installer build, not the portable one) pick the new version up automatically from that release. A tag containing a hyphen, such as `v1.3.0-beta.1`, is published as a pre-release and is not offered to installed apps.
+
+The build is unsigned unless the repository has a code signing certificate in its secrets: see [docs/SIGNING.md](docs/SIGNING.md).
 
 To test the build without publishing, run the **Release** workflow manually from the Actions tab; the files are attached to the run instead.

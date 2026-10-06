@@ -4,7 +4,7 @@ A **`.oto` file** carries a design for the overlay, the sounds that go with it, 
 
 It is an ordinary **ZIP file with a different extension**. You can open one with any zip tool (rename it to `.zip` first if your tool insists), and you can make one by zipping a folder and renaming the result to `.oto`. No special software is needed to create designs.
 
-This page is for artists, designers and anyone building tools around OTO. If you only want to share or install a package, the Settings screens in OTO do it for you (see the [README](../README.md#designs-and-oto-packages)).
+This page is the exact reference, for artists who want to build a package by hand and for anyone making tools around OTO. To learn how to make a design, read the [design guide](DESIGNING.md). To share or install a package, the Settings screens in OTO do it for you. A complete example with every field written out is [examples/built-in-look/design.json](examples/built-in-look/design.json).
 
 ## Contents
 
@@ -17,7 +17,8 @@ my-design.oto
 │   ├── backgroundImage.jpg
 │   └── ...
 ├── fonts/
-│   └── font.woff2       the font for names, numbers and announcements
+│   ├── font.woff2       the main font, for names, numbers and announcements
+│   └── names.woff2      a font for one group of text (optional, see Fonts)
 ├── sounds/              sound effects for the overlay        (optional)
 │   ├── damage.mp3
 │   └── ...
@@ -65,6 +66,7 @@ Every part is optional, but a package must hold a design, control settings, or b
 | `tile` | Where the parts of a Pokémon's tile go, for `active` and `bench`: `{ "active": { "hp": "bottom", "retreat": "top-right" } }`. `hp`: `top`, `bottom` or `below` the picture. `energy`, `retreat` and `status`: a corner of the picture (`top-left`, `top-right`, `bottom-left`, `bottom-right`) or `below` it. The usual: HP on top, energy bottom left, retreat cost bottom right, status icons top right. Only what differs from the usual is kept |
 | `prizeStyle` | The picture on the prize cards: `english` or `japanese` (a Pokémon card back) or `pokeball`. Left out (or `current`), the prize cards keep the design's own `prizeCardBack` or `cardBackImage` picture, or the built-in look. The pictures themselves come with OTO (`assets/cardbacks`), not with the package. Anything else is ignored |
 | `prizeLayout` | How the six prize cards are laid out: `column`, `two-rows` (two rows of three) or `three-rows` (three rows of two). Left out, a row of six. Anything else is ignored |
+| `fontFamilies` | Fonts to use for a group of text, as a CSS font-family list, for fonts installed on the computer that shows the overlay: `{ "numbers": "Impact, 'Arial Black', sans-serif" }`. The groups are `display` (the main font), `names`, `numbers`, `labels`, `banners`, `subtitles` and `text` (small text). Up to 160 characters each, made of letters, digits, spaces and `, ' " . _ -` only. A group that has a font file uses the file first, then this list, then the main font |
 | `orientation` | The screen: `portrait` for a tall 1080 × 1920 mobile screen. Left out, the usual wide 1920 × 1080 one (so `layout` and `spaces` use the pixels of the stage that is chosen). Anything else is ignored |
 | `spaces` | Up to six places the overlay keeps clear for a camera feed or the like: `[ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]`. `shape` is `rect` (the usual), `rounded` or `circle`; `x` and `y` are pixels of the stage (up to ±3840), `w` and `h` are 40 to 3840; `name` (up to 24 letters) is only for the editor. `id` (1 to 6, each once) says which picture is the frame of the space: the slot `spaceFrame<id>`; one that is missing is given the lowest number that is free. A space that does not fit these is dropped |
 
@@ -87,7 +89,19 @@ OTO does not read file names out of `design.json`. It looks for these exact name
 | `statusSymbols` | A strip of 6 equal squares: Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped |
 | `spaceFrame1` to `spaceFrame6` | A picture drawn over the reserved space with that `id`, stretched to its size (a frame with a see-through middle, for example). Without one the space is drawn as an outline of its shape |
 
-**Font**, `fonts/font.<type>` with the type `woff2`, `woff`, `ttf` or `otf`.
+**Fonts**, `fonts/<group>.<type>` with the type `woff2`, `woff`, `ttf` or `otf`. The main font is `fonts/font.<type>`; the text of the overlay is in groups, and each can have a font of its own:
+
+| File | Used for |
+|------|----------|
+| `font` | The main font: names, numbers, labels and announcements unless a group below says otherwise |
+| `names` | Trainers, Pokémon, feature cards and the Stadium |
+| `numbers` | The score, the HP and the damage |
+| `labels` | The round, TURN, the counters, the locks, conditions, abilities, tools and attacks |
+| `banners` | The big words of a banner or effect (TOP DECK, KNOCKED OUT, PAUSED) |
+| `subtitles` | The line under the big words |
+| `text` | Small text: everything else |
+
+A group without a font takes the main font's (and the main font, the usual font of the page).
 
 **Sounds**, `sounds/<cue>.<type>` with the type `mp3`, `wav`, `ogg`, `m4a` or `webm`. The cues are:
 
@@ -106,7 +120,7 @@ If a slot has files of several types (`logoImage.png` and `logoImage.jpg`), the 
 
 | | |
 |---|---|
-| One picture or font | 4.5 MB |
+| One picture or one font file | 4.5 MB |
 | One sound | 1.5 MB |
 | All the files of one design | 40 MB |
 | The `.oto` file | 48 MB |

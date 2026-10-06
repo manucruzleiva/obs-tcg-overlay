@@ -862,7 +862,8 @@ describe('control panel', { skip }, () => {
   it('knocks out a Pokémon with K: prizes, announcement, and straight on to the next', async () => {
     await press('k');
     await page.waitForSelector('.modal');
-    await modal().locator('.choice', { hasText: 'Pikachu' }).click();
+    // the Active Pokémon of the trainer in focus is already chosen when the dialog opens (a click on it would take it off the list)
+    assert.equal(await modal().locator('.choice', { hasText: 'Pikachu' }).getAttribute('aria-pressed'), 'true');
     await modal().locator('.seg', { hasText: '2 prizes' }).click();
     await modal().locator('.modal-foot button.danger').click();
 
@@ -1129,7 +1130,7 @@ describe('control panel', { skip }, () => {
 
   describe('the attack dialog', () => {
     const picks = () => modal().locator('.attack-pick:not(.ability)');
-    const damageBox = () => modal().locator('.amount-input');
+    const damageBox = () => modal().locator('.amount-input[aria-label="Damage"]');
 
     beforeEach(async () => {
       await producer.act('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100, abilities: ['Static'], attacks: [{ name: 'Gnaw', damage: '20' }, { name: 'Thunder Jolt', damage: '30+' }] });
@@ -1402,7 +1403,7 @@ describe('control panel', { skip }, () => {
   it('shows the retreat cost of every Pokémon and changes it with a stepper', async () => {
     const active = '.trainer-panel.side-a .mon-card:not(.compact)';
     const bench = '.trainer-panel.side-a .mon-card.compact';
-    const number = (where) => page.locator(`${where} .retreat-number`).textContent();
+    const number = (where) => page.locator(`${where} .retreat-number[aria-label="Retreat cost"]`).textContent();
     assert.equal(await page.locator('.trainer-panel.side-a .retreat-line').count(), 2, 'one for the Active Pokémon, one for the bench');
     assert.equal(await number(active), '0');
     assert.equal(await page.locator(`${active} button[aria-label="Retreat cost one less"]`).isDisabled(), true, 'it cannot go below nothing');
