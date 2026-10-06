@@ -77,7 +77,7 @@ A click in the control panel becomes a socket event, `action:<target>` with `{ a
 2. [src/actions.js](src/actions.js) is the registry of every action: how to validate it, which part of the game it touches (so two producers changing the same thing are noticed), and how to describe it.
 3. [src/services/gamestate.js](src/services/gamestate.js) holds the game state and the methods that change it.
 
-When you add a control, add a method to the game state if needed, an entry to the action registry (with its `targets` and `label`), the control itself, and a test in `test/`. If it changes what a producer sees or clicks, add or extend a test in `test-ui/` too.
+When you add a control, add a method to the game state if needed, an entry to the action registry (with its `targets` and `label`), the control itself, and a test in `tests/server/`. If it changes what a producer sees or clicks, add or extend a test in `tests/ui/` too.
 
 ### Documentation
 
@@ -91,9 +91,9 @@ The [README](README.md) stays short: a taste of each, with links. Add a line to 
 
 ### Tests
 
-- `test/` holds server and logic tests with `node:test`. They boot the real server through [test-support/harness.js](test-support/harness.js) (a throwaway database, a mock card API and card image host) and drive it over HTTP and socket.io. Use a **fresh client id for each test producer**: the server ignores an action it has already seen from the same client id and sequence number.
-- `test-ui/` drives the control panel and settings in a real browser with `playwright-core`; no browser is downloaded, it uses the Chrome or Edge you already have. Wait for the page to show a change before pressing the next key, rather than sleeping.
-- `test-desktop/` launches the Electron app in a throwaway data folder (`OTO_DATA_DIR`) on its own port (`OTO_PORT`). Run it before a release.
+- `tests/server/` holds server and logic tests with `node:test` (`npm test`). They boot the real server through [tests/support/harness.js](tests/support/harness.js) (a throwaway database, a mock card API and card image host) and drive it over HTTP and socket.io. Use a **fresh client id for each test producer**: the server ignores an action it has already seen from the same client id and sequence number.
+- `tests/ui/` (`npm run test:ui`) drives the control panel and settings in a real browser with `playwright-core`; no browser is downloaded, it uses the Chrome or Edge you already have. Wait for the page to show a change before pressing the next key, rather than sleeping.
+- `tests/desktop/` (`npm run test:desktop`) launches the Electron app in a throwaway data folder (`OTO_DATA_DIR`) on its own port (`OTO_PORT`). Run it before a release.
 - Never write a test that depends on the real card API or the internet.
 
 ## Pull request checklist

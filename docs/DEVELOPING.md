@@ -22,8 +22,8 @@ npm start              # http://localhost:6767/control
 | `npm start` | Run the server only |
 | `npm run electron` | Run the desktop (tray) app from source |
 | `npm run electron:dev` | The server plus the Electron window |
-| `npm test` | Server and logic tests: they boot the real server and drive it over HTTP and socket.io (about 740 tests, a couple of minutes) |
-| `npm run test:ui` | The control panel, settings and overlay in a real browser (needs Chrome or Edge; set `BROWSER_PATH` to use another). About 320 tests, several minutes |
+| `npm test` | Server and logic tests: they boot the real server and drive it over HTTP and socket.io (about 780 tests, a couple of minutes) |
+| `npm run test:ui` | The control panel, settings and overlay in a real browser (needs Chrome or Edge; set `BROWSER_PATH` to use another). About 340 tests, several minutes |
 | `npm run test:desktop` | The desktop app end to end: opening a `.oto`, `--quit`, the fresh-start backup, the tray password window (needs the Electron binary) |
 | `npm run pack` | Build an unpacked desktop app into `dist/` |
 | `npm run dist` | Build the Windows installer and portable `.exe` into `dist/` |
@@ -87,10 +87,11 @@ Scratch work (test databases, one-off scripts, screenshots, test builds) goes in
 │   └── css/, js/            # styles and the shared catalogs
 ├── electron/                # desktop wrapper: main process, preload, tray, updater, password window
 ├── installer/installer.nsh  # Windows installer: graceful close, repair/reinstall/uninstall/destroy page
-├── test/                    # server and logic tests (node:test)
-├── test-ui/                 # browser tests (Playwright driving Chrome or Edge)
-├── test-desktop/            # Electron end-to-end tests
-├── test-support/            # the test harness and sample files
+├── tests/
+│   ├── server/              # server and logic tests (node:test): npm test
+│   ├── ui/                  # browser tests (Playwright driving Chrome or Edge): npm run test:ui
+│   ├── desktop/             # Electron end-to-end tests: npm run test:desktop
+│   └── support/             # the test harness and sample files, shared by the three
 ├── docs/                    # guides, the .oto format, the built-in look as a design file
 └── assets/                  # logo, app icon, energy and status icons, card backs, flag font, README screenshots
 ```
@@ -194,9 +195,9 @@ Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The ha
 
 ## Tests
 
-`npm test` runs against the real server with a throwaway database and a mock card API ([test-support/harness.js](../test-support/harness.js)): game logic, every action, multi-producer conflicts and drafts, host powers, the password, designs, fonts, sounds, `.oto` packages, the card library, the installer script and the REST surface. The harness can open a **guest** connection (a non-loopback `Host` header) to test what the host alone may do.
+`npm test` runs against the real server with a throwaway database and a mock card API ([tests/support/harness.js](../tests/support/harness.js)): game logic, every action, multi-producer conflicts and drafts, host powers, the password, designs, fonts, sounds, `.oto` packages, the card library, the installer script and the REST surface. The harness can open a **guest** connection (a non-loopback `Host` header) to test what the host alone may do.
 
-`npm run test:ui` drives the control panel, settings and overlay in a real browser: keyboard shortcuts, dialogs, drafts, two producers, designs and the editor, packages, screens and the library. It is slow, and under load a test can time out; run it again alone before suspecting a bug (`node --test --test-name-pattern="..." test-ui/control.test.js`).
+`npm run test:ui` drives the control panel, settings and overlay in a real browser: keyboard shortcuts, dialogs, drafts, two producers, designs and the editor, packages, screens and the library. It is slow, and under load a test can time out; run it again alone before suspecting a bug (`node --test --test-name-pattern="..." tests/ui/control.test.js`).
 
 `npm run test:desktop` runs the Electron app itself (the tray password window uses the `OTO_TEST_HOOKS=1` hook, which exposes the main process to the test).
 

@@ -7,9 +7,9 @@
     "start": "node src/server.js",
     "electron": "electron electron/main.js",
     "electron:dev": "concurrently \"npm start\" \"wait-on http://localhost:6767 && electron electron/main.js\"",
-    "test": "node --test \"test/*.test.js\"",
-    "test:ui": "node --test \"test-ui/*.test.js\"",
-    "test:desktop": "node --test \"test-desktop/*.test.js\"",
+    "test": "node --test \"tests/server/*.test.js\"",
+    "test:ui": "node --test \"tests/ui/*.test.js\"",
+    "test:desktop": "node --test \"tests/desktop/*.test.js\"",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --publish never",
     "update:decks": "node scripts/update-popular-decks.js"
