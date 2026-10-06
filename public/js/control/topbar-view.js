@@ -37,6 +37,7 @@ export class TopBar {
       this.viewers,
       h('div', { class: 'bar-actions' },
         this.undoButton, this.redoButton, this.draftButton,
+        h('button', { class: 'btn activity-btn', type: 'button', title: 'Everything any producer has done', onclick: () => app.openActivity() }, icon('list', 16), 'Activity'),
         h('button', { class: 'btn preview-btn', type: 'button', title: 'See the overlay here. Shift+click opens it in the browser.', onclick: (event) => app.openPreview(event.shiftKey) }, icon('eye', 16), 'Preview'),
         h('button', { class: 'icon-btn', type: 'button', title: 'Keyboard shortcuts (?)', 'aria-label': 'Keyboard shortcuts', onclick: () => app.openHelp() }, icon('keyboard')),
         h('button', { class: 'icon-btn', type: 'button', title: 'Settings', 'aria-label': 'Settings', onclick: () => app.openSettings() }, icon('gear'))));

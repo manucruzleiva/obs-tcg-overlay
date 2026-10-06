@@ -395,6 +395,32 @@ describe('the draft the producers share', () => {
     assert.equal(undone.state.trainerA.name, 'Trainer A');
   });
 
+  it('wins the game by itself, as a step of the system, when the draft that was sent takes the last prize card, and the undo takes it back on its own', async () => {
+    await startDraft(bob);
+    for (let i = 0; i < 6; i++) await bob.draftAct('action:trainerA', { action: 'prizeMinus' });
+    const sentEntry = alice.expect('activity', (a) => /^Sent 6 changes/.test(a.label));
+    const autoEntry = alice.expect('activity', (a) => a.kind === 'auto');
+    const won = alice.expect('announce', (a) => a.type === 'win');
+    alice.emit('draft:send', {});
+    const sent = await sentEntry;
+    const automatic = await autoEntry;
+    assert.equal(sent.label.includes('won the game'), false, 'the sent changes are what the producer did');
+    assert.deepEqual([sent.by.name, sent.kind], ['Alice', 'draft']);
+    assert.deepEqual([automatic.by.name, automatic.by.clientId, automatic.kind], ['OTO (automatic)', 'system', 'auto']);
+    assert.match(automatic.label, /Trainer A won the game by itself \(took the last prize card\): score 1–0/);
+    assert.equal((await won).side, 'trainerA');
+    await inSync();
+    let state = await fetch(`${server.base}/api/state`).then((r) => r.json());
+    assert.deepEqual([state.trainerA.prizes.count, state.matchScore.trainerAWins], [0, 1]);
+
+    // the first undo takes back the game that was won, the second the whole draft that was sent
+    state = (await bob.act('action:undo', {})).state;
+    assert.match(bob.last('activity').label, /^Undid: Trainer A won the game \(automatic\)/);
+    assert.deepEqual([state.trainerA.prizes.count, state.matchScore.trainerAWins], [0, 0], 'the game is not won, the prize cards are still taken');
+    state = (await bob.act('action:undo', {})).state;
+    assert.deepEqual([state.trainerA.prizes.count, state.matchScore.trainerAWins], [6, 0], 'the sent draft goes back');
+  });
+
   describe('redoing the send of a draft', () => {
     // a draft of two changes by two producers, sent and then undone
     async function sentAndUndone() {

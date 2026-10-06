@@ -19,6 +19,9 @@ const TCGDEX_BASE = (process.env.OTO_TCGDEX_ASSETS || 'https://assets.tcgdex.net
 // The official artwork of a Pokémon, from the PokeAPI sprites repository: <host>/<Pokédex number>.png
 const SPRITE_BASE = (process.env.OTO_SPRITE_BASE || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork').replace(/\/+$/, '');
 
+// The sprite that Limitless TCG puts on a deck (the icon of its Pokémon): <host>/<name>.png, as in "ogerpon.png"
+const DECKICON_BASE = (process.env.OTO_DECKICON_BASE || 'https://r2.limitlesstcg.net/pokemon/gen9').replace(/\/+$/, '');
+
 // Only plain names are served, so a request can never reach outside the picture folder or the image hosts
 const SET_ID = /^[\w-]{1,40}$/;
 const FILE_NAME = /^[\w-]{1,80}\.(png|jpe?g|webp)$/i;
@@ -41,6 +44,10 @@ const isSprite = (file) => {
   const match = SPRITE_FILE.exec(file);
   return Boolean(match) && Number(match[1]) <= POKEDEX.COUNT;
 };
+
+// A deck's sprite is kept as deckicon/<name>.png (no card set is called "deckicon"). Only plain lowercase names.
+const DECKICON_SET = 'deckicon';
+const DECKICON_FILE = /^[a-z0-9-]{1,40}\.png$/;
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 20_000;
@@ -69,12 +76,13 @@ function localImageUrl(url, base = IMAGE_BASE) {
 }
 
 class ImageCache {
-  constructor({ dir, base = IMAGE_BASE, scrydexBase = SCRYDEX_BASE, tcgdexBase = TCGDEX_BASE, spriteBase = SPRITE_BASE, fetchImpl = fetch, timeoutMs = FETCH_TIMEOUT_MS }) {
+  constructor({ dir, base = IMAGE_BASE, scrydexBase = SCRYDEX_BASE, tcgdexBase = TCGDEX_BASE, spriteBase = SPRITE_BASE, deckIconBase = DECKICON_BASE, fetchImpl = fetch, timeoutMs = FETCH_TIMEOUT_MS }) {
     this.dir = dir;
     this.base = base;
     this.scrydexBase = scrydexBase;
     this.tcgdexBase = tcgdexBase;
     this.spriteBase = spriteBase;
+    this.deckIconBase = deckIconBase;
     this.fetch = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.pending = new Map(); // pictures being fetched right now, so two requests share one download
@@ -85,6 +93,7 @@ class ImageCache {
     // a TCGdex picture has a name of its own shape (see TCGDEX_FILE), which is longer than the others, and a Pokémon's is a number
     if (!SET_ID.test(set)) return false;
     if (set === SPRITE_SET) return isSprite(file);
+    if (set === DECKICON_SET) return DECKICON_FILE.test(file);
     return set === TCGDEX_SET ? TCGDEX_FILE.test(file) : FILE_NAME.test(file);
   }
 
@@ -112,6 +121,7 @@ class ImageCache {
   // Where a picture is fetched from. The names are checked, so this can only ever be one of the image hosts.
   sourceOf(set, file) {
     if (set === SPRITE_SET) return isSprite(file) ? `${this.spriteBase}/${file}` : null;
+    if (set === DECKICON_SET) return DECKICON_FILE.test(file) ? `${this.deckIconBase}/${file}` : null;
     if (set === SCRYDEX_SET) {
       const match = SCRYDEX_FILE.exec(file);
       return match ? `${this.scrydexBase}/pokemon/${match[1]}/${match[2]}` : null;

@@ -494,7 +494,7 @@ const TRAINER = {
     label: (gs, side, p, ctx) => `${ctx.from} went back to ${ctx.to}`
   },
 
-  // A Pokémon Tool on any Pokémon; what it adds to the maximum HP (`hp`, in tens) goes with it
+  // A Pokémon Tool on any Pokémon (its maximum HP is changed on the Pokémon, not here)
   attachTool: {
     sfx: () => 'bench',
     targets: (side, p) => [slotKey(side, p.slot)],
@@ -505,15 +505,14 @@ const TRAINER = {
       const tool = {
         cardId: text(p.cardId ?? '', 'cardId', 64),
         name: text(p.name ?? '', 'name', 80),
-        image: imageUrl(p.image, 'image'),
-        hp: p.hp === undefined ? 0 : inTens(integer(p.hp, 'hp', 0, 500), 'the maximum HP a tool adds')
+        image: imageUrl(p.image, 'image')
       };
       if (!tool.name) throw new ActionError('the tool needs a name');
       ctx.name = pokemon.name;
       ctx.tool = tool;
       if (!gs.attachTool(side, slot, tool)) throw new ActionError(`${pokemon.name} already has as many Pokémon Tools as it can hold`);
     },
-    label: (gs, side, p, ctx) => `${ctx.tool.name} attached to ${ctx.name}${ctx.tool.hp ? ` (+${ctx.tool.hp} HP)` : ''}`
+    label: (gs, side, p, ctx) => `${ctx.tool.name} attached to ${ctx.name}`
   },
   removeTool: {
     targets: (side, p) => [slotKey(side, p.slot)],
@@ -926,6 +925,56 @@ const RESET = {
 
 // The actions that take a Pokémon off the table: when a trainer has none left after one of them, the other trainer wins the game
 const LEAVES_THE_TABLE = new Set(['knockOut', 'knockOutMany', 'clearSlot']);
+const leavesTheTable = (action) => LEAVES_THE_TABLE.has(action);
+
+// ----------------------------------------------------------------- what the game does by itself
+//
+// Some changes follow from others without anybody asking: the trainer who has taken the last prize card they need has won the game, and one who has
+// no Pokémon left on the table has lost it. They are made as steps of their own, after the change that caused them, written in the activity as done
+// by the system ("OTO (automatic)"), and a producer can undo each of them (taking the win back, with the prize cards as they were).
+const SYSTEM = { clientId: 'system', name: 'OTO (automatic)' };
+
+// What to compare with afterwards: who has already won the prizes they need, and who has a Pokémon on the table
+const watch = (gs) => ({
+  winning: { trainerA: gs.isWinning('trainerA'), trainerB: gs.isWinning('trainerB') },
+  had: { trainerA: gs.hasPokemon('trainerA'), trainerB: gs.hasPokemon('trainerB') }
+});
+
+// Look at the game after a change (or after several, a draft that was sent) and, when it has a winner now that it did not have, make it so: the score
+// goes up and the victory is announced. Returns the step to record, or null when nothing follows. `leaves` says whether a Pokémon may have gone off
+// the table (a knock out, a Pokémon taken off). The opponent's penalty counts as prize cards already taken.
+function automaticChanges(gs, watched, leaves = false) {
+  const winners = ['trainerA', 'trainerB'].filter((trainer) => !watched.winning[trainer] && gs.isWinning(trainer));
+  const noPokemon = [];
+  if (leaves) {
+    for (const loser of ['trainerA', 'trainerB']) {
+      const rival = opponent(loser);
+      if (!watched.had[loser] || gs.hasPokemon(loser) || watched.winning[rival] || winners.includes(rival)) continue;
+      winners.push(rival);
+      noPokemon.push(loser);
+    }
+  }
+  if (winners.length === 0) return null;
+
+  const before = gs.snapshot();
+  const announced = [];
+  for (const winner of winners) {
+    gs.matchWin(winner);
+    const victory = announcements.build(gs.state, 'win', { side: winner, game: true });
+    if (victory) announced.push(victory);
+  }
+  const { trainerAWins, trainerBWins } = gs.state.matchScore;
+  const names = winners.map((winner) => who(gs, winner)).join(' and ');
+  const why = noPokemon.length ? `${noPokemon.map((loser) => who(gs, loser)).join(' and ')} has no Pokémon left` : 'took the last prize card';
+  return {
+    before,
+    announced,
+    targets: ['score'],
+    cues: ['win'],
+    label: `${names} won the game by itself (${why}): score ${trainerAWins}–${trainerBWins}`,
+    undoLabel: `${names} won the game (automatic)`
+  };
+}
 
 // ----------------------------------------------------------------- public API
 
@@ -971,48 +1020,22 @@ function resolve(event, payload) {
     silent: Boolean(spec.silent),
     // Parts of the game this touches, or null for "last writer wins" changes
     targets: () => (spec.targets ? spec.targets(side, payload) : null),
-    // Applies the action to `gs` and returns the announcements it triggers
+    // Applies the action to `gs` and returns the announcements it triggers (what follows from it by itself is `automatic`, below)
     run(gs) {
       const out = [];
-      const winning = { trainerA: gs.isWinning('trainerA'), trainerB: gs.isWinning('trainerB') };
-      const had = { trainerA: gs.hasPokemon('trainerA'), trainerB: gs.hasPokemon('trainerB') };
+      ctx.watched = watch(gs);
       spec.run(gs, side, payload, out, ctx);
-      // Whoever has just taken the last prize card they need has won the game: the score goes up and the victory is announced by
-      // itself, whatever took the card (a knock out, the minus button, a draft sent from somewhere else) or gave the opponent the
-      // penalty that made the last one unnecessary. The opponent's penalty counts as prize cards already taken.
-      for (const trainer of ['trainerA', 'trainerB']) {
-        if (winning[trainer] || !gs.isWinning(trainer)) continue;
-        gs.matchWin(trainer);
-        const victory = announcements.build(gs.state, 'win', { side: trainer, game: true });
-        if (victory) out.push(victory);
-        ctx.won = true;
-        ctx.winners = [...(ctx.winners || []), trainer];
-      }
-      // A trainer who has no Pokémon left on the table after one was knocked out or taken off it has lost the game at once: the other one wins
-      if (LEAVES_THE_TABLE.has(action) && event !== 'action:reset') {
-        for (const loser of ['trainerA', 'trainerB']) {
-          const rival = opponent(loser);
-          if (!had[loser] || gs.hasPokemon(loser) || winning[rival] || (ctx.winners || []).includes(rival)) continue;
-          gs.matchWin(rival);
-          const victory = announcements.build(gs.state, 'win', { side: rival, game: true });
-          if (victory) out.push(victory);
-          ctx.won = true;
-          ctx.winners = [...(ctx.winners || []), rival];
-          ctx.noPokemon = [...(ctx.noPokemon || []), loser];
-        }
-      }
       return out;
     },
-    // Human-readable description, to be called after run()
-    label: (gs) => {
-      const text = spec.label(gs, side, payload, ctx);
-      if (!ctx.winners) return text;
-      const { trainerAWins, trainerBWins } = gs.state.matchScore;
-      const why = ctx.noPokemon ? ` (${ctx.noPokemon.map((loser) => who(gs, loser)).join(' and ')} has no Pokémon left)` : '';
-      return `${text} · ${ctx.winners.map((winner) => who(gs, winner)).join(' and ')} won the game${why} (${trainerAWins}–${trainerBWins})`;
+    // What the game does by itself because of what the action did, as a step of its own (see automaticChanges), to be called after run(); it
+    // has been applied to `gs` when it answers with something. A draft's preview applies it after each action.
+    automatic(gs) {
+      return ctx.watched ? automaticChanges(gs, ctx.watched, leavesTheTable(action) && event !== 'action:reset') : null;
     },
+    // Human-readable description, to be called after run()
+    label: (gs) => spec.label(gs, side, payload, ctx),
     // The sound cues this action makes, to be called after run(). Independent of the visual announcements.
-    cues: () => [...(spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : []), ...(ctx.won ? ['win'] : [])]
+    cues: () => (spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : [])
   };
 }
 
@@ -1037,4 +1060,4 @@ async function prepare(gs, event, payload) {
   return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities, attacks: details.attacks, retreat: details.retreat, evolvesFrom: details.evolvesFrom } : details };
 }
 
-module.exports = { resolve, prepare, ActionError, SIDE_LABEL };
+module.exports = { resolve, prepare, ActionError, SIDE_LABEL, watch, automaticChanges, leavesTheTable, SYSTEM };

@@ -20,6 +20,7 @@ describe('settings', { skip }, () => {
   let server;
   let api;
   let host;
+  let decksPage; // a stand-in for the deck page of Limitless TCG
   let page;
   let extra = [];
 
@@ -35,11 +36,22 @@ describe('settings', { skip }, () => {
 
   before(async () => {
     host = await startMockImageHost();
+    const deckRow = (rank, slug, name) => `<tr><td>${rank}</td><td><img class="pokemon" src="https://r2.limitlesstcg.net/pokemon/gen9/${slug}.png" alt="${slug}"></td><td><a href="/decks/${rank}">${name}</a></td><td>10</td><td>${20 - rank}%</td></tr>`;
+    const decksHtml = `<table>${[['dragapult', 'Test Deck One'], ['zoroark', 'Test Deck Two'], ['slowking', 'Test Deck Three'], ['alakazam', 'Test Deck Four'], ['hydrapple', 'Test Deck Five']].map(([slug, name], index) => deckRow(index + 1, slug, name)).join('')}</table>`;
+    decksPage = require('node:http').createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(decksHtml); });
+    await new Promise((resolve) => decksPage.listen(0, '127.0.0.1', resolve));
     const pool = [
       card('sv4-1', 'Pikachu'), card('sv4-2', 'Raichu', { evolvesFrom: 'Pikachu' }), card('sv5-3', 'Eevee'),
       card('sv8-4', 'Iono', { supertype: 'Trainer', subtypes: ['Supporter'], hp: undefined })
     ];
+    const withAttacks = (id) => {
+      const found = pool.find((entry) => entry.id === id);
+      return { data: { ...found, attacks: [{ name: `${found.name} Attack`, damage: '30', cost: ['Lightning'], convertedEnergyCost: 1 }], convertedRetreatCost: 2 } };
+    };
     api = await startMockCardApi({
+      '/cards/sv4-1': () => withAttacks('sv4-1'),
+      '/cards/sv4-2': () => withAttacks('sv4-2'),
+      '/cards/sv5-3': () => withAttacks('sv5-3'),
       '/cards?': (url) => {
         const params = new URL(url, 'http://mock').searchParams;
         const page = Number(params.get('page') || 1);
@@ -49,7 +61,7 @@ describe('settings', { skip }, () => {
     });
     server = await startServer({
       label: 'ui-settings',
-      env: { POKEMONTCG_API_URL: api.url, OTO_IMAGE_BASE: host.url, OTO_CATALOG_PACE_MS: '0', OTO_CATALOG_RETRY_MS: '2' }
+      env: { POKEMONTCG_API_URL: api.url, OTO_IMAGE_BASE: host.url, OTO_CATALOG_PACE_MS: '0', OTO_CATALOG_RETRY_MS: '2', OTO_LIMITLESS_URL: `http://127.0.0.1:${decksPage.address().port}/decks` }
     });
     browser = await launch();
   });
@@ -57,7 +69,7 @@ describe('settings', { skip }, () => {
   after(async () => {
     if (browser) await browser.close();
     if (server) await server.stop();
-    await Promise.all([api && api.close(), host && host.close()]);
+    await Promise.all([api && api.close(), host && host.close(), decksPage && new Promise((resolve) => { decksPage.closeAllConnections(); decksPage.close(resolve); })]);
   });
 
   // The server ignores an action it has already seen from the same client id and number, so each test producer needs its own id
@@ -487,12 +499,14 @@ describe('settings', { skip }, () => {
       let settings = (await call('GET', '/api/state')).json.settings;
       assert.equal(settings.toastSeconds, 8);
       assert.equal(settings.display.nationality, false);
-      assert.match(await page.locator('.feed').textContent(), /Settings from "Neon Night"/);
 
-      // the producers can take the settings back
+      // (the Settings dialog is still open: the activity is read once it is closed)
       await page.locator('.modal-backdrop').first().click({ position: { x: 5, y: 5 } }).catch(() => {});
       await page.keyboard.press('Escape');
       await page.waitForSelector('.modal', { state: 'detached' });
+      assert.match(await feedText(), /Settings from "Neon Night"/);
+
+      // the producers can take the settings back
       await page.keyboard.press('Control+z');
       await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).settings.toastSeconds === 2);
       settings = (await call('GET', '/api/state')).json.settings;
@@ -575,6 +589,17 @@ describe('settings', { skip }, () => {
     });
   });
 
+  // The activity of the producers is in a popup: open it, read it and close it
+  const feedText = async (from = page) => {
+    await from.getByRole('button', { name: 'Activity' }).click();
+    const feed = from.locator('.modal[aria-label="Activity"] .feed');
+    await feed.waitFor();
+    const text = await feed.textContent();
+    await from.keyboard.press('Escape');
+    await from.waitForSelector('.modal[aria-label="Activity"]', { state: 'detached' });
+    return text;
+  };
+
   // Waits until reading the live game gives what is expected, and fails showing what it gave
   const until = async (read, expected) => {
     for (let waited = 0; waited < 80; waited++) {
@@ -599,6 +624,70 @@ describe('settings', { skip }, () => {
       await page.getByRole('button', { name: 'Show everything' }).click();
       await until(async () => (await live()).settings.display.nationality, true);
       assert.equal((await live()).settings.display.nationalityFlag, true, 'and Show everything does not choose it either');
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the popular decks', () => {
+    it('start from the list that comes with OTO, are read again from Limitless TCG when asked, and every deck box suggests the new names at once', async () => {
+      await openSettings('Cards');
+      const box = page.locator('.decks-box');
+      await box.waitFor();
+      await box.locator('.library-state[data-built-in="true"]').waitFor();
+      assert.match(await box.textContent(), /the list that comes with OTO/);
+      assert.equal(await box.getByRole('button', { name: 'Use the list that comes with OTO' }).count(), 0, 'nothing to go back from');
+      assert.equal(await page.evaluate(() => Boolean(window.OTO_DECK_POPULAR.find('Test Deck One'))), false);
+
+      await box.getByRole('button', { name: 'Update from Limitless TCG' }).click();
+      await box.locator('.library-state[data-built-in="false"]').waitFor();
+      assert.match(await box.textContent(), /5 decks from Limitless TCG, read on/);
+      assert.match(await box.textContent(), /The most played: Test Deck One, Test Deck Two, Test Deck Three, Test Deck Four, Test Deck Five/);
+      await page.locator('.toast-success', { hasText: 'The list of decks is up to date: 5 decks' }).waitFor();
+
+      // the page has the new list without being reloaded: the suggestions of the deck boxes, and the picture of a deck that is named by it
+      assert.equal(await page.evaluate(() => window.OTO_DECK_POPULAR.find('test deck one').pokemon[0]), 887);
+      await page.waitForFunction(() => [...document.querySelectorAll('#deck-names option')].some((option) => option.value === 'Test Deck Three'));
+      assert.equal(await page.evaluate(() => document.querySelector('#deck-names option').value), 'Test Deck One', 'the most played first');
+
+      await box.getByRole('button', { name: 'Use the list that comes with OTO' }).click();
+      await box.locator('.library-state[data-built-in="true"]').waitFor();
+      await page.waitForFunction(() => ![...document.querySelectorAll('#deck-names option')].some((option) => option.value === 'Test Deck Three'));
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the card data check', () => {
+    it('finds the Pokémon of a library that lack their attacks, mends them with Repair, and finds nothing wrong afterwards', async () => {
+      // (a library whose cards were listed short, with no attacks: Standard)
+      const status = (await call('GET', '/api/catalog')).json;
+      if (!status.profiles[0].ready) {
+        await call('POST', '/api/catalog/standard/download', {});
+        for (let waited = 0; waited < 100 && !(await call('GET', '/api/catalog')).json.profiles[0].ready; waited++) await wait(50);
+      }
+      await openSettings('Cards');
+      const box = page.locator('.health-box');
+      await box.waitFor();
+      await box.locator('.library-state', { hasText: 'Not checked yet' }).waitFor();
+      assert.equal(await box.getByRole('button', { name: 'Repair' }).isDisabled(), true, 'nothing to mend before it has looked');
+
+      await box.getByRole('button', { name: 'Check now' }).click();
+      const standard = box.locator('.health-list li[data-store="standard"]');
+      await standard.waitFor();
+      assert.equal(await standard.evaluate((node) => node.classList.contains('bad')), true);
+      assert.match(await standard.textContent(), /Standard library\s*4 cards, 3 Pokémon: 3 with no attacks and no abilities/);
+      assert.match(await box.locator('.health-report .library-state').first().textContent(), /3 cards lack some of it/);
+      assert.match(await box.locator('.health-list li[data-store="table"]').textContent(), /every Pokémon has what its card says/);
+      assert.equal(await box.getByRole('button', { name: 'Repair' }).isEnabled(), true);
+
+      await box.getByRole('button', { name: 'Repair' }).click();
+      await box.locator('.library-state', { hasText: /Done: 3 library cards mended/ }).waitFor();
+      assert.equal(await standard.evaluate((node) => node.classList.contains('good')), true);
+      assert.match(await standard.textContent(), /all have their data/);
+      assert.equal(await box.getByRole('button', { name: 'Repair' }).isDisabled(), true, 'nothing left to mend');
+
+      // the card lookup has the attacks now
+      const found = (await call('GET', '/api/cards/sv4-1')).json;
+      assert.deepEqual([found.attacks.map((attack) => attack.name), found.retreat], [['Pikachu Attack'], 2]);
       assert.deepEqual(page.problems, []);
     });
   });

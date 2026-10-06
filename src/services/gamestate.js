@@ -52,14 +52,13 @@ function cleanPrizeCards(list) {
   return cards;
 }
 
-// What a Pokémon Tool is when it is kept: the card, and how much it adds to the maximum HP of the Pokémon (0 for most)
+// What a Pokémon Tool is when it is kept: the card (its HP is the Pokémon's own: the maximum HP is changed on the Pokémon)
 function cleanTools(list) {
   if (!Array.isArray(list)) return [];
   return list.filter((tool) => tool && typeof tool === 'object' && typeof tool.name === 'string' && tool.name).slice(0, MAX_TOOLS).map((tool) => ({
     cardId: typeof tool.cardId === 'string' ? tool.cardId.slice(0, 64) : '',
     name: tool.name.slice(0, 80),
-    image: typeof tool.image === 'string' ? tool.image : '',
-    hp: Number.isInteger(tool.hp) ? Math.max(0, Math.min(999, tool.hp)) : 0
+    image: typeof tool.image === 'string' ? tool.image : ''
   }));
 }
 
@@ -90,7 +89,7 @@ const emptyPokemon = (slot) => ({
   // What the card says it can do: [{ name, damage, mod }] (see attacks.js), and how many Energy it costs to retreat
   attacks: [],
   retreat: 0,
-  // Pokémon Tools: { cardId, name, image, hp } where hp is what the tool adds to the maximum HP
+  // Pokémon Tools: { cardId, name, image }
   tools: [],
   // the card this Pokémon was before it evolved (the last one is the stage just before this one)
   stages: [],
@@ -450,13 +449,11 @@ class GameStateService {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
 
-    // What the tools add to the maximum HP stays with the Pokémon while it evolves, so the card's own HP is what is left
-    const toolBonus = keep ? cleanTools(pokemon.tools).reduce((sum, tool) => sum + tool.hp, 0) : 0;
-    const newMax = (Number.isFinite(hp) && hp > 0 ? hp : 0) + (Number.isFinite(hp) && hp > 0 ? toolBonus : 0);
+    const newMax = Number.isFinite(hp) && hp > 0 ? hp : 0;
     const damageTaken = Math.max(0, pokemon.hp.max - pokemon.hp.current);
 
     if (keep && !back && (pokemon.cardId || pokemon.name)) {
-      const own = Math.max(0, pokemon.hp.max - cleanTools(pokemon.tools).reduce((sum, tool) => sum + tool.hp, 0));
+      const own = pokemon.hp.max;
       pokemon.stages = cleanStages([...(pokemon.stages || []), {
         cardId: pokemon.cardId, name: pokemon.name, image: pokemon.image, hp: own,
         abilities: (pokemon.abilities || []).map((ability) => ability.name), attacks: pokemon.attacks, retreat: pokemon.retreat, evolvesFrom: pokemon.evolvesFrom
@@ -499,8 +496,7 @@ class GameStateService {
     return true;
   }
 
-  // A Pokémon Tool on a Pokémon (any slot). `tool.hp` is what it adds to the maximum HP: the Pokémon has that much more HP while it is there.
-  // False when it already holds as many as it may.
+  // A Pokémon Tool on a Pokémon (any slot). False when it already holds as many as it may.
   attachTool(side, slot, tool) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon || !(pokemon.cardId || pokemon.name)) return false;
@@ -509,19 +505,14 @@ class GameStateService {
     pokemon.tools = cleanTools(pokemon.tools);
     if (pokemon.tools.length >= MAX_TOOLS) return false;
     pokemon.tools.push(clean);
-    pokemon.hp.max += clean.hp;
-    pokemon.hp.current += clean.hp;
     return true;
   }
 
-  // Take a tool off: what it added to the maximum HP goes with it (the damage counters stay)
+  // Take a tool off
   removeTool(side, slot, index) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon || !Array.isArray(pokemon.tools) || index < 0 || index >= pokemon.tools.length) return;
-    const [tool] = pokemon.tools.splice(index, 1);
-    const bonus = Number(tool.hp) || 0;
-    pokemon.hp.max = Math.max(0, pokemon.hp.max - bonus);
-    pokemon.hp.current = Math.max(0, Math.min(pokemon.hp.max, pokemon.hp.current - bonus));
+    pokemon.tools.splice(index, 1);
   }
 
   // Move damage from one Pokémon to another (an effect that moves damage counters): the first is healed by as much as the second is damaged.

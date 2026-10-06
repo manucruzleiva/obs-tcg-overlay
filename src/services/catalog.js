@@ -237,7 +237,10 @@ function summary(record) {
 // The shape a single card lookup returns (see PokemonTCGService.parseCardResponse)
 function detail(record) {
   // a library saved before attacks and retreat costs were kept has neither: undefined says so, and the card is asked for online
-  return { ...summary(record), rules: '', artist: '', flavorText: '', regulationMark: record.mark, attacks: record.attacks, retreat: record.retreat, abilities: record.abilities };
+  return {
+    ...summary(record), rules: '', artist: '', flavorText: '', regulationMark: record.mark, attacks: record.attacks, retreat: record.retreat, abilities: record.abilities,
+    evolvesFrom: record.evolvesFrom || '', detailed: record.detailed === true
+  };
 }
 
 // "Pokémon" matches "pokemon", and every word typed has to start some word of the name
@@ -334,25 +337,60 @@ class CatalogService extends EventEmitter {
     return { cards: data.cards, queries };
   }
 
-  writeLibrary(id, records, source = 'pokemontcg', queries = null) {
-    const write = (kind, content) => {
-      const temp = `${this.file(id, kind)}.${process.pid}.tmp`;
-      fs.writeFileSync(temp, content);
-      // (Windows can hold a file for a moment, a virus scanner looking at it: try again a few times)
-      for (let attempt = 1; ; attempt++) {
-        try {
-          fs.renameSync(temp, this.file(id, kind));
-          return;
-        } catch (error) {
-          if (attempt >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * attempt);
-        }
+  // One of the files of a library, all at once (a half-written file is never seen)
+  writeFile(id, kind, content) {
+    const temp = `${this.file(id, kind)}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, content);
+    // (Windows can hold a file for a moment, a virus scanner looking at it: try again a few times)
+    for (let attempt = 1; ; attempt++) {
+      try {
+        fs.renameSync(temp, this.file(id, kind));
+        return;
+      } catch (error) {
+        if (attempt >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * attempt);
       }
-    };
+    }
+  }
+
+  writeLibrary(id, records, source = 'pokemontcg', queries = null) {
     // The small "meta" file is written last: a library only counts as there once it exists
-    write('json', JSON.stringify(queries ? { version: FILE_VERSION, id, cards: records, queries } : { version: FILE_VERSION, id, cards: records }));
-    write('meta.json', JSON.stringify({ version: FILE_VERSION, id, count: records.length, builtAt: Date.now(), revision: PROFILES[id].revision || 1, source, tracked: Boolean(queries) }));
+    this.writeFile(id, 'json', JSON.stringify(queries ? { version: FILE_VERSION, id, cards: records, queries } : { version: FILE_VERSION, id, cards: records }));
+    this.writeFile(id, 'meta.json', JSON.stringify({ version: FILE_VERSION, id, count: records.length, builtAt: Date.now(), revision: PROFILES[id].revision || 1, source, tracked: Boolean(queries) }));
     this.refreshMeta(id);
+  }
+
+  // The libraries that are here, what one is called, and the service it was built from
+  libraryIds() {
+    return Object.keys(PROFILES).filter((id) => this.metas[id]);
+  }
+
+  labelOf(id) {
+    return PROFILES[id] ? PROFILES[id].label : id;
+  }
+
+  sourceOf(id) {
+    return this.metas[id] ? this.metas[id].source : 'pokemontcg';
+  }
+
+  // Put what was found out about some cards (their attacks, retreat cost, abilities) into a library that is here: `patches` is a Map of card id to the
+  // fields to set. The cards, the count and the date it was built stay as they were. Returns how many cards changed.
+  patchRecords(id, patches) {
+    if (!PROFILES[id] || !this.metas[id]) throw new CatalogError('That library has not been downloaded yet', { status: 409 });
+    if (this.running('library', id)) throw new CatalogError('Wait for the download to finish', { status: 409 });
+    const { cards, queries } = this.readLibraryFile(id);
+    let changed = 0;
+    for (const card of cards) {
+      const patch = patches.get(card.id);
+      if (!patch) continue;
+      Object.assign(card, patch);
+      changed++;
+    }
+    if (changed === 0) return 0;
+    this.writeFile(id, 'json', JSON.stringify(queries ? { version: FILE_VERSION, id, cards, queries } : { version: FILE_VERSION, id, cards }));
+    this.refreshMeta(id);
+    if (this.activeId === id) this.index = buildIndex(id, cards);
+    return changed;
   }
 
   discard(id) {

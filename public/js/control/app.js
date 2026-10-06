@@ -98,16 +98,15 @@ class App {
     append(root, [this.topbar.root, this.banner.root,
       h('main', { class: 'board' }, this.trainers.trainerA.root, this.center.root, this.trainers.trainerB.root)]);
     append(document.body, h('datalist', { id: 'nationalities' }, COUNTRIES.COMMON.map((code) => h('option', { value: code, label: COUNTRIES.nameOf(code) }))));
-    const deckNames = DECK.suggestions(); // the decks that are played the most first, then the energy types and every Pokémon
-    append(document.body,
-      h('datalist', { id: 'deck-names' }, deckNames.map((name) => h('option', { value: name }))),
-      h('datalist', { id: 'deck-pictures' }, [DECK.NO_PICTURE, ...deckNames].map((name) => h('option', { value: name }))));
+    append(document.body, h('datalist', { id: 'deck-names' }), h('datalist', { id: 'deck-pictures' }));
+    this.drawDeckNames();
+    // the list of the decks that are played the most can be read again (Settings, Cards): the boxes suggest from the new one
+    this.conn.on('decks:changed', () => this.loadDecks());
 
     this.wire();
     this.listenForPackages();
     document.addEventListener('keydown', (event) => this.onKey(event));
     // Keep "2 min ago" honest
-    setInterval(() => { if (this.conn.state) this.center.updateActivity(this.conn.activity, this.conn.you); }, 15000);
   }
 
   // A .oto file dropped anywhere on the page, or opened with the desktop app, offers to install itself
@@ -185,10 +184,7 @@ class App {
     });
     conn.on('presence', (presence) => this.topbar.updatePresence(presence, conn.you));
     conn.on('you', () => this.topbar.updatePresence(conn.presence, conn.you));
-    conn.on('activity', (entries) => {
-      this.center.updateActivity(entries, conn.you);
-      this.topbar.updateHistory(entries.length > 0);
-    });
+    conn.on('activity', (entries) => this.topbar.updateHistory(entries.length > 0));
     conn.on('rejected', (rejected) => this.explainRejection(rejected));
     conn.on('kicked', () => this.showKicked());
     conn.on('draft-conflicts', (data) => modals.openDraftConflicts(this, data));
@@ -353,10 +349,30 @@ class App {
   // ---- dialogs
 
   openPicker(purpose) { modals.openPicker(this, purpose); }
+  // What the deck boxes suggest: the decks that are played the most first, then the energy types and every Pokémon
+  drawDeckNames() {
+    const names = DECK.suggestions();
+    replace($('#deck-names'), names.map((name) => h('option', { value: name })));
+    replace($('#deck-pictures'), [DECK.NO_PICTURE, ...names].map((name) => h('option', { value: name })));
+    for (const side of ['trainerA', 'trainerB']) this.trainers[side].showDeckPicture();
+  }
+
+  async loadDecks() {
+    try {
+      const answer = await (await fetch('/api/decks/popular')).json();
+      window.OTO_DECK_POPULAR.replace(answer.decks, answer.source);
+      this.drawDeckNames();
+    } catch (error) {
+      /* the list in the page stays */
+    }
+  }
+
   // The egg on a Pokémon: the cards it can evolve into and the card it can go back to, in two tabs
   openEvolve(side, slot, tab) { modals.openPicker(this, { kind: 'evolve', side, slot, tab }); }
   openTool(side, slot) { modals.openPicker(this, { kind: 'tool', side, slot }); }
 
+  // Everything any producer has done, in a popup that follows what happens while it is open
+  openActivity() { modals.openActivity(this); }
   openKO(side, slot) { modals.openKO(this, side, slot); }
   openMoveDamage() { modals.openMoveDamage(this); }
   openDamage(mode, side, slot) { modals.openDamage(this, mode, side, slot); }

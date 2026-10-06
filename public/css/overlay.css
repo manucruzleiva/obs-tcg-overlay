@@ -372,6 +372,20 @@ html, body {
 .token.used { opacity: 0.5; }
 .token.marker.used .token-label { text-decoration: line-through; }
 .token.used .dot { background: transparent; border: 2px solid var(--fg-muted); box-shadow: none; }
+/* what is used each turn has the color of what it is: the Stadium green, the Supporter orange */
+.token[data-kind="stadium"] { border-color: var(--stadium); }
+.token[data-kind="stadium"] .dot { background: var(--stadium); box-shadow: 0 0 12px var(--stadium); }
+.token[data-kind="supporter"] { border-color: var(--supporter); }
+.token[data-kind="supporter"] .dot { background: var(--supporter); box-shadow: 0 0 12px var(--supporter); }
+.token[data-kind="stadium"].used .dot, .token[data-kind="supporter"].used .dot { background: transparent; border: 2px solid var(--fg-muted); box-shadow: none; }
+.token[data-kind].used { border-color: var(--border); }
+/* the GX attack and the VSTAR Power: their pictures (assets/markers), grayed out once they are used. Without a picture they are a pill with their name. */
+.token.marker:not(.no-icon) { padding: 0; gap: 0; background: none; border: 0; }
+.token.marker:not(.no-icon) .dot, .token.marker:not(.no-icon) .token-label { display: none; }
+.marker-icon { display: block; height: 44px; width: auto; transition: filter 0.3s ease, opacity 0.3s ease; }
+.token.marker.no-icon .marker-icon { display: none; }
+.token.marker.used .marker-icon { filter: grayscale(1); opacity: 0.55; }
+.token.marker.used:not(.no-icon) { opacity: 1; }
 
 .locks { display: flex; flex-wrap: wrap; gap: 8px; }
 .lock {
@@ -519,7 +533,7 @@ html, body {
   padding: 6px 12px 6px 10px;
   border-radius: 8px;
   background: var(--bg-card);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--ability);
   font: 700 17px/1.1 var(--font-labels, var(--font-display));
   letter-spacing: 0.02em;
   transition: opacity 0.3s ease, border-color 0.3s ease;
@@ -530,7 +544,7 @@ html, body {
   width: 10px;
   height: 10px;
   transform: rotate(45deg);
-  background: var(--accent);
+  background: var(--ability);
 }
 .ability.used { border-color: var(--border); color: var(--fg-muted); }
 .ability.used .ability-name { text-decoration: line-through; }
@@ -552,12 +566,11 @@ html, body {
   align-items: baseline;
   gap: 8px;
   padding: 3px 10px;
-  border-left: 3px solid var(--warning);
+  border-left: 3px solid var(--tool);
   border-radius: 6px;
   background: var(--bg-card);
   font: 700 15px/1.2 var(--font-labels, var(--font-display));
 }
-.tool-hp { color: var(--success); font-weight: 800; }
 /* the Pokémon Tools as pictures of their cards: the part of the card that shows (--ct-*, as fractions of the card), the picture unless a design says
    otherwise. A tool with no picture is a chip with its name. */
 :root { --ct-x: 0.082; --ct-y: 0.145; --ct-w: 0.836; --ct-h: 0.37; }
@@ -573,7 +586,7 @@ html, body {
   overflow: hidden;
   border-radius: 8px;
   background: var(--bg-card);
-  box-shadow: 0 0 0 2px var(--warning), 0 6px 14px var(--shadow);
+  box-shadow: 0 0 0 2px var(--tool), 0 6px 14px var(--shadow);
 }
 .tool-card-img {
   position: absolute;
@@ -585,16 +598,6 @@ html, body {
   left: calc(-100% * var(--ct-x) / var(--ct-w));
   top: calc(-100% * var(--ct-y) / var(--ct-h));
 }
-.tool-card-hp {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.72);
-  color: var(--success);
-  font: 800 13px/1.2 var(--font-numbers, var(--font-display));
-}
 .tool-card.plain {
   display: inline-flex;
   align-items: baseline;
@@ -604,13 +607,11 @@ html, body {
   padding: 3px 10px;
   border-radius: 6px;
   box-shadow: none;
-  border-left: 3px solid var(--warning);
+  border-left: 3px solid var(--tool);
   font: 700 15px/1.2 var(--font-labels, var(--font-display));
 }
-.tool-card.plain .tool-card-hp { position: static; padding: 0; background: none; font-size: inherit; }
 .mon.mini .tool-cards { gap: 4px; }
 .mon.mini .tool-card { --tool-width: 64px; border-radius: 6px; }
-.mon.mini .tool-card-hp { right: 2px; bottom: 2px; padding: 0 4px; font-size: 10px; }
 .mon.mini .tool-card.plain { padding: 1px 7px; font-size: 12px; }
 .trainer-b .mon.mini .tool-cards { justify-content: flex-end; }
 #stage.bench-row .mon.mini .tool-cards, #stage.bench-row .trainer-b .mon.mini .tool-cards { justify-content: center; }
@@ -910,7 +911,7 @@ html, body {
   padding: 5px 16px;
   border-radius: 999px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--stadium);
   font: 700 16px/1.2 var(--font-names, var(--font-display));
   letter-spacing: 0.1em;
   text-transform: uppercase;

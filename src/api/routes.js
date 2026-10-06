@@ -12,6 +12,7 @@ const { ThemeError, folderName } = require('../services/themes');
 const { getLanAddresses, isShared } = require('../services/network');
 const { SoundError, MAX_SOUND_BYTES } = require('../services/sounds');
 const { CatalogError } = require('../services/catalog');
+const { LimitlessError } = require('../services/limitless');
 const { PackageError, ZipError, MAX_PACKAGE_BYTES } = require('../services/package');
 
 const CARD_ID = /^[\w.-]{1,40}$/;
@@ -32,7 +33,7 @@ function searchRequest(query) {
 }
 
 module.exports = (services) => {
-  const { gameState, pokemonTCG, cardUsage, cache, db, session, auth, themes, sounds, catalog, packages, io } = services;
+  const { gameState, pokemonTCG, cardUsage, cardHealth, limitless, cache, db, session, auth, themes, sounds, catalog, packages, io } = services;
 
   const publicRouter = express.Router();
   const protectedRouter = express.Router();
@@ -45,6 +46,7 @@ module.exports = (services) => {
       if (error instanceof ThemeError) return res.status(error.status).json({ error: error.message });
       if (error instanceof SoundError || error instanceof PackageError || error instanceof ZipError) return res.status(400).json({ error: error.message });
       if (error instanceof CatalogError) return res.status(error.status).json({ error: error.message, ...error.extra });
+      if (error instanceof LimitlessError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
     }
   };
@@ -218,6 +220,39 @@ module.exports = (services) => {
     res.json({ ok: true });
   }));
 
+  // The decks that are played the most (Limitless TCG): the list the pages suggest from, read again when a producer asks
+  publicRouter.get('/decks/popular', (req, res) => {
+    res.json(limitless.status());
+  });
+  protectedRouter.post('/decks/popular/refresh', handle(async (req, res) => {
+    const status = await limitless.refresh();
+    io.emit('decks:changed');
+    res.json(status);
+  }));
+  protectedRouter.delete('/decks/popular', handle((req, res) => {
+    const status = limitless.clear();
+    io.emit('decks:changed');
+    res.json(status);
+  }));
+
+  // The health check of the card data (before /cards/:id, which would take "health" for a card)
+  protectedRouter.get('/cards/health', (req, res) => {
+    res.json(cardHealth.status());
+  });
+  protectedRouter.post('/cards/health/scan', handle((req, res) => {
+    cardHealth.scan();
+    res.json(cardHealth.status());
+  }));
+  protectedRouter.post('/cards/health/repair', handle((req, res) => {
+    try {
+      res.status(202).json({ job: cardHealth.repair() });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message });
+    }
+  }));
+  protectedRouter.post('/cards/health/cancel', (req, res) => {
+    res.json({ stopped: cardHealth.cancel() });
+  });
   protectedRouter.get('/cards/:id', handle(async (req, res) => {
     if (!CARD_ID.test(req.params.id)) return res.status(400).json({ error: 'Invalid card id' });
     // which card service the card came from, and in which language, when the page knows

@@ -293,6 +293,26 @@ class DatabaseService {
     stmt.free();
   }
 
+  // Every single card in the lookup cache that has not expired: [{ id, provider, data }] (a row that cannot be read is left out)
+  cachedCardRows() {
+    const rows = [];
+    const stmt = this.db.prepare('SELECT card_id, provider, data_json FROM card_cache WHERE expires_at > ?');
+    stmt.bind([Date.now()]);
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      try { rows.push({ id: row.card_id, provider: row.provider, data: JSON.parse(row.data_json) }); } catch { /* it is no card */ }
+    }
+    stmt.free();
+    return rows;
+  }
+
+  // Forget one single card of the lookup cache
+  deleteCachedCard(cardId) {
+    const stmt = this.db.prepare('DELETE FROM card_cache WHERE card_id = ?');
+    stmt.run([cardId]);
+    stmt.free();
+  }
+
   // The cards that are saved in the lookup cache (single cards and searches), newest first, as the API gave them
   cachedCards(limit = 40) {
     const cards = [];

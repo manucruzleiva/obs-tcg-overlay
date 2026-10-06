@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="120" height="64" role="img" aria-label="GX">
+  <defs>
+    <linearGradient id="gx-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe066"/>
+      <stop offset="1" stop-color="#ff8a00"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="114" height="58" rx="14" fill="url(#gx-fill)" stroke="#6b2b00" stroke-width="4"/>
+  <rect x="7" y="7" width="106" height="24" rx="10" fill="#ffffff" opacity="0.22"/>
+  <text x="60" y="46" text-anchor="middle" font-family="'Arial Black','Segoe UI Black',Impact,sans-serif" font-size="38" font-weight="900" font-style="italic" fill="#ffffff" stroke="#6b2b00" stroke-width="5" stroke-linejoin="round" paint-order="stroke">GX</text>
+</svg>

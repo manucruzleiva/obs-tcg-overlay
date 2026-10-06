@@ -10,6 +10,7 @@ const { localImageUrl } = require('./images');
 const { attacksOf, retreatOf } = require('./attacks');
 const { TcgdexClient, LANGUAGE_CODES } = require('./tcgdex');
 const { ScrydexClient } = require('./scrydex');
+const { lacksDetails, isPokemon } = require('./card-health');
 
 // A card lookup must never hang the control panel when the network is slow or down
 const REQUEST_TIMEOUT_MS = 8000;
@@ -17,6 +18,17 @@ const REQUEST_TIMEOUT_MS = 8000;
 const FALLBACK_TIMEOUT_MS = 5000;
 // How long a service that failed is asked last
 const FAILURE_MEMORY_MS = 2 * 60 * 1000;
+
+// A card kept from an earlier lookup is good to use when it says what the card can do: one kept by an older version has no attacks on it
+const usable = (card) => Boolean(card) && (!isPokemon(card) || (Array.isArray(card.attacks) && Number.isInteger(card.retreat)));
+
+// What a library card is given from the card service that was asked for it (the service's attacks and abilities, unless it sent none and the library has some)
+const detailsOf = (online, local) => ({
+  attacks: Array.isArray(online.attacks) && online.attacks.length ? online.attacks : (Array.isArray(local.attacks) ? local.attacks : []),
+  retreat: Number.isInteger(online.retreat) ? online.retreat : (Number.isInteger(local.retreat) ? local.retreat : 0),
+  abilities: Array.isArray(online.abilities) && online.abilities.length ? online.abilities : (Array.isArray(local.abilities) ? local.abilities : []),
+  evolvesFrom: online.evolvesFrom || local.evolvesFrom || ''
+});
 
 const RARITY_ORDER = [
   'Common', 'Uncommon', 'Rare', 'Rare Holo',
@@ -222,18 +234,21 @@ class PokemonTCGService {
 
   // One card by id: from the library on this computer when it is there, otherwise from a card service. `hint` says which
   // service the card came from ({ source: 'tcgdex', language: 'es' }): the ids of the two do not always agree.
-  async getCard(cardId, hint = {}) {
+  // A card of the library whose attacks, abilities and retreat cost were never looked up (the services send a short card when they list cards) is
+  // asked of the card service, as is one the library does not have. `fresh` skips what was kept from earlier lookups (the health check mends the data).
+  async getCard(cardId, hint = {}, { fresh = false } = {}) {
     const local = this.catalog && this.catalog.get(cardId);
-    if (local && local.attacks !== undefined) return local;
+    // (a record saved by an older version has no `attacks` at all, whatever the card is)
+    if (local && !fresh && local.attacks !== undefined && !lacksDetails(local)) return local;
     // A library saved before attacks and retreat costs were kept has none: ask the card service for them
     const order = ['tcgdex', 'scrydex', 'pokemontcg'].includes(hint.source) ? [hint.source] : this.order();
     let online = null;
     let failure = null;
     for (const name of order) {
       try {
-        online = name === 'tcgdex' ? await this.fetchTcgdexCard(cardId, hint.language)
-          : name === 'scrydex' ? await this.fetchScrydexCard(cardId)
-            : this.localize(await this.fetchCard(cardId));
+        online = name === 'tcgdex' ? await this.fetchTcgdexCard(cardId, hint.language, { fresh })
+          : name === 'scrydex' ? await this.fetchScrydexCard(cardId, { fresh })
+            : this.localize(await this.fetchCard(cardId, { fresh }));
         if (online) {
           this.worked(name);
           break;
@@ -244,17 +259,18 @@ class PokemonTCGService {
         if (!/\b404\b/.test(error.message)) this.failed(name);
       }
     }
-    if (online) return local ? { ...local, attacks: online.attacks, retreat: online.retreat } : online;
-    if (local) return { ...local, attacks: [], retreat: 0 }; // no way to ask: the card is still usable, by hand
+    if (online) return local ? { ...local, ...detailsOf(online, local) } : online;
+    // no way to ask: the card is still usable, by hand (with what the library knew of it)
+    if (local) return { ...local, attacks: Array.isArray(local.attacks) ? local.attacks : [], retreat: Number.isInteger(local.retreat) ? local.retreat : 0 };
     if (failure) throw failure;
     return null;
   }
 
   // A card of Scrydex, with caching
-  async fetchScrydexCard(cardId) {
+  async fetchScrydexCard(cardId, { fresh = false } = {}) {
     const key = `scrydex:${cardId}`;
-    const cached = await this.cache.getCard(key);
-    if (cached) return this.localize(cached);
+    const cached = fresh ? null : await this.cache.getCard(key);
+    if (usable(cached)) return this.localize(cached);
     const card = await this.scrydex.getCard(cardId, { attempts: 2 });
     if (!card) return null;
     await this.cache.setCard(key, 'scrydex', card);
@@ -262,21 +278,21 @@ class PokemonTCGService {
   }
 
   // A card of TCGdex in the language it was found in, with caching
-  async fetchTcgdexCard(cardId, language) {
+  async fetchTcgdexCard(cardId, language, { fresh = false } = {}) {
     const client = this.tcgdex.withLanguage(language || this.language);
     const key = `tcgdex:${client.language}:${cardId}`;
-    const cached = await this.cache.getCard(key);
-    if (cached) return this.localize(cached);
+    const cached = fresh ? null : await this.cache.getCard(key);
+    if (usable(cached)) return this.localize(cached);
     const card = await client.getCard(cardId, { attempts: 2 });
     if (!card) return null;
     await this.cache.setCard(key, 'tcgdex', card);
     return this.localize(card);
   }
 
-  async fetchCard(cardId) {
-    // Check cache
-    const cached = await this.cache.getCard(cardId);
-    if (cached) return cached;
+  async fetchCard(cardId, { fresh = false } = {}) {
+    // Check cache (a card kept by an older version, with no attacks on it, is asked for again)
+    const cached = fresh ? null : await this.cache.getCard(cardId);
+    if (usable(cached)) return cached;
 
     const provider = this.providers[this.currentProvider];
     const url = `${provider.baseUrl}/cards/${cardId}`;

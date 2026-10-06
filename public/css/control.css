@@ -196,7 +196,7 @@ kbd {
 .block.compact { padding: 10px 12px; }
 .block.compact .block-title { margin-bottom: 8px; }
 /* two boxes side by side (they stack when there is not room) */
-.panel-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
+.panel-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; align-items: stretch; }
 .panel-row > .block { margin-top: 0; }
 .panel-row + .block { margin-top: 12px; }
 .block-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font: 700 12px/1.2 var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-secondary); }
@@ -309,9 +309,16 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .token-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-tertiary); font-weight: 600; font-size: 12px; transition: opacity var(--transition); }
 .token-btn[hidden] { display: none; }
 .token-btn.once-game { border-style: dashed; }
-.turn-block .token-row { gap: 6px; }
-.turn-block .toggle-row { margin-top: 8px; gap: 6px 14px; }
-.turn-block .switch { font-size: 13px; }
+/* the turn tracker: the tokens and the two locks share lines, small, so the box is as short as the one of the prize cards (also with the GX and the VSTAR on) */
+.turn-block .token-row { align-items: center; gap: 5px 6px; }
+.turn-block .token-btn { padding: 1px 8px; gap: 5px; font-size: 11.5px; }
+.turn-block .token-btn .dot { width: 8px; height: 8px; }
+.turn-block .token-btn .count.word { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.turn-block .token-btn { position: relative; }
+.turn-block .switch { gap: 6px; font-size: 12px; }
+.turn-block .switch .track { width: 28px; height: 16px; }
+.turn-block .switch .track::after { top: 2px; left: 2px; width: 12px; height: 12px; }
+.turn-block .switch input:checked + .track::after { transform: translateX(12px); }
 .token-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); }
 .token-btn .count { font-weight: 500; font-size: 12px; color: var(--fg-muted); }
 .token-btn.used { opacity: 0.6; }
@@ -360,7 +367,12 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .mon-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .mon-name { font: 700 17px/1.15 var(--font-display); }
 .mon-card.compact .mon-name { font-size: 14px; }
-.hp-line { display: flex; align-items: center; gap: 10px; }
+.hp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+/* the retreat cost and the maximum HP are buttons that say what they are and how much: a click adds, a right click takes away */
+.stat-btn { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--fg-muted); font-size: 12px; font-weight: 600; user-select: none; }
+.stat-btn .stat-value { color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.stat-btn:hover { border-color: var(--fg-muted); background: rgba(255, 255, 255, 0.06); }
+.stat-btn:active { transform: scale(0.96); }
 .hp-line.warn .hp-value { color: var(--warning); }
 .hp-line.low .hp-value { color: var(--danger); }
 .hp-value { padding: 2px 8px; border-radius: 6px; border: 1px solid transparent; background: transparent; font: 700 14px var(--font-display); font-variant-numeric: tabular-nums; }
@@ -374,23 +386,39 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .energy-chip.special { position: relative; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.75); background: #1b2238; }
 .energy-chip.special img { position: absolute; max-width: none; width: 140.3%; left: -20.1%; top: -26.6%; pointer-events: none; }
 .energy-chip:hover { transform: scale(1.15); }
-.ability-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; font-size: 13px; font-weight: 600; }
-.ability-chip .diamond { width: 8px; height: 8px; transform: rotate(45deg); background: var(--accent); }
+.ability-chip { display: inline-flex; align-items: center; gap: 7px; padding: 2px 9px 2px 8px; border-radius: 8px; border: 1px solid var(--ability); background: transparent; font-size: 12.5px; font-weight: 600; }
+.ability-chip .diamond { width: 8px; height: 8px; transform: rotate(45deg); background: var(--ability); }
 .ability-chip.used { border-color: var(--border); color: var(--fg-muted); text-decoration: line-through; }
 .ability-chip.used .diamond { background: transparent; border: 2px solid var(--fg-muted); }
 /* special conditions: a dim chip when off, the color of the condition when on */
 .conditions { gap: 4px; }
 .condition-icon { display: inline-block; flex: none; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; vertical-align: -3px; background: var(--c) var(--icon) center / cover no-repeat; }
 .condition-chip[data-condition="trapped"] .condition-icon { background-color: #fff; background-size: 78%; }
+/* a condition that is off is just its icon (the name is in the tooltip); the one that is on says its name, in its color */
+.condition-chip:not(.on) .condition-label { display: none; }
+.condition-chip:not(.on) { padding-right: 0; }
+.condition-chip:not(.on) .condition-icon { margin-right: 4px; }
 .condition-chip { padding: 2px 9px 2px 4px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
 .condition-chip:hover { border-color: var(--c); color: var(--fg-primary); }
 .condition-chip.on { border-color: var(--c); background: var(--c); color: var(--ink, #fff); }
 .used-tag { padding: 0 6px; border-radius: 4px; background: var(--danger); color: #1a0505; font-size: 10px; letter-spacing: 0.1em; text-decoration: none; display: inline-block; }
-.retreat-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); }
-.retreat-line .max-label { margin-left: 8px; }
-.tool-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); color: var(--fg-secondary); font-size: 12px; font-weight: 600; }
-.tool-chip:hover { border-color: var(--danger); color: var(--fg-primary); }
-.tool-chip .tool-hp { color: var(--success); font-weight: 700; }
+.tool-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--tool); background: rgba(255, 255, 255, 0.04); color: var(--tool); font-size: 12px; font-weight: 600; }
+.tool-chip:hover { background: rgba(255, 255, 255, 0.1); color: var(--fg-primary); }
+/* the buttons that are about an ability or a Pokémon Tool have the color of it */
+.mini-btn[data-kind="ability"] { color: var(--ability); }
+.mini-btn[data-kind="tool"] { color: var(--tool); }
+/* what is used each turn has the color of what it is: a Stadium green, a Supporter orange */
+.token-btn[data-kind="stadium"] .dot { background: var(--stadium); box-shadow: 0 0 10px var(--stadium); }
+.token-btn[data-kind="supporter"] .dot { background: var(--supporter); box-shadow: 0 0 10px var(--supporter); }
+.token-btn[data-kind="stadium"], .token-btn[data-kind="supporter"] { border-color: rgba(255, 255, 255, 0.14); }
+.token-btn[data-kind="stadium"] { border-color: var(--stadium); }
+.token-btn[data-kind="supporter"] { border-color: var(--supporter); }
+.token-btn.used[data-kind] { border-color: var(--border); }
+.token-btn[data-kind].used .dot { background: transparent; border: 2px solid var(--fg-muted); box-shadow: none; }
+.turn-block .block-title .hint { color: var(--supporter); }
+.stadium-block { border-top-color: var(--stadium); }
+.stadium-block .block-title { color: var(--stadium); }
+.stadium-block .btn { border-color: var(--stadium); }
 .item-mode { margin-bottom: 10px; }
 /* more overlays: the screens of one controller */
 .screen-list { display: flex; flex-direction: column; gap: 10px; }
@@ -417,10 +445,6 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .mod-field { margin-top: 4px; }
 .mod-input { width: 84px; }
 .item-mode .quick-row { display: flex; gap: 6px; margin-top: 8px; }
-.tool-bonus { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.tool-bonus label { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-secondary); }
-.tool-bonus .amount-input { width: 90px; }
-.retreat-number { min-width: 1.4em; text-align: center; font-weight: 700; color: var(--fg-primary); }
 .mon-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .mini-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); font-size: 12px; font-weight: 600; color: var(--fg-secondary); }
 .mini-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--fg-primary); }
@@ -494,12 +518,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .feature-item img { width: 40px; height: 56px; border-radius: 4px; object-fit: cover; }
 .feature-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
 
-.feed { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.feed { list-style: none; margin: 0; padding: 0; max-height: min(60vh, 520px); overflow: auto; display: flex; flex-direction: column; gap: 4px; }
 .feed-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 13px; }
 .feed-item .who { font-weight: 700; }
 .feed-item .when { color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
 .feed-item.kind-undo, .feed-item.kind-redo { background: rgba(251, 191, 36, 0.1); }
 .feed-item.kind-draft { background: rgba(124, 140, 255, 0.12); }
+.feed-item.kind-auto { background: rgba(52, 211, 153, 0.1); box-shadow: inset 3px 0 0 var(--success, #34d399); }
+.feed-item.kind-auto .who { color: var(--success, #34d399); }
+.auto-badge { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; background: rgba(52, 211, 153, 0.2); color: var(--success, #34d399); font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
 
 /* -------------------------------------------------------------------------------- modals */
 
@@ -770,3 +797,11 @@ body.dragging::after { content: 'Drop a .oto file to install it'; position: fixe
 /* the title of the prize cards box stays on one line: the name, the keys, and the button that sets the cards */
 .prizes.compact .block-title { flex-wrap: nowrap; white-space: nowrap; }
 .prizes.compact .block-title .set-prizes { flex: none; padding: 3px 9px; }
+
+/* Settings > Cards > Card data check */
+.health-box { display: flex; flex-direction: column; gap: 10px; }
+.health-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.health-list li { padding: 6px 10px; border-radius: var(--radius-sm); border-left: 3px solid var(--border); background: var(--bg-tertiary); }
+.health-list li.good { border-left-color: var(--success); }
+.health-list li.bad { border-left-color: var(--warning); }
+.health-list small { color: var(--fg-muted); }

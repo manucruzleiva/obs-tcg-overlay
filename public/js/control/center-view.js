@@ -1,8 +1,8 @@
 /**
- * The middle column: the match (score, round, turn), the hype buttons, the Stadium, the feature cards
- * and the activity feed.
+ * The middle column: the match (score, round, turn), the hype buttons, the Stadium and the feature cards.
+ * (The activity feed is a popup: see openActivity in modals.js.)
  */
-import { h, icon, replace, ago, personColor } from './dom.js';
+import { h, icon, replace } from './dom.js';
 
 const FEATURE_TYPE = 'application/x-oto-feature'; // what an entry of the feature list carries when it is dragged
 const SIGN_TYPE = 'application/x-oto-sign'; // and a sign dragged from the row of signs
@@ -107,13 +107,7 @@ export class CenterView {
       signs,
       this.featureList);
 
-    // ---- activity
-    this.feed = h('ol', { class: 'feed', 'aria-label': 'Recent changes' });
-    const activity = h('section', { class: 'block activity-block' },
-      h('div', { class: 'block-title' }, 'Activity', h('span', { class: 'hint' }, 'Everything any producer does')),
-      this.feed);
-
-    return h('section', { class: 'center-panel' }, score, turn, hypeBlock, stadium, features, activity);
+    return h('section', { class: 'center-panel' }, score, turn, hypeBlock, stadium, features);
   }
 
   // The feature cards and the signs can be put in any order by dragging them in the list; a sign dragged from the row of signs goes where it is
@@ -214,14 +208,5 @@ export class CenterView {
           h('img', { src: card.image, alt: '', loading: 'lazy', draggable: 'false' }),
           h('div', { class: 'feature-text' }, h('strong', {}, card.name)),
           h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove ${card.name}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14))))));
-  }
-
-  updateActivity(entries, you) {
-    replace(this.feed, entries.length === 0
-      ? h('li', { class: 'empty' }, 'Nothing has happened yet.')
-      : entries.slice().reverse().slice(0, 40).map((entry) => h('li', { class: `feed-item kind-${entry.kind}` },
-        h('span', { class: 'who', style: { color: personColor(entry.by.clientId) } }, entry.by.name, you && entry.by.clientId === you.clientId ? ' (you)' : ''),
-        h('span', { class: 'what' }, entry.label),
-        h('time', { class: 'when', dateTime: new Date(entry.ts).toISOString() }, ago(entry.ts)))));
   }
 }

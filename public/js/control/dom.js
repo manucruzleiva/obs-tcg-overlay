@@ -126,6 +126,8 @@ const PATHS = {
   devolve: 'M12 4v15M6 13l6 6 6-6',
   // an egg with a crack: something that is about to become something else
   egg: 'M12 3c-3.6 0-7 6.2-7 11a7 7 0 0 0 14 0c0-4.8-3.4-11-7-11ZM5.4 13.6l2.5 2 2.1-2.4 2.1 2.4 2.1-2.4 2.4 2',
+  // a list: three lines, each with its bullet
+  list: 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01',
   tool: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6 2.4-2.4Z',
   move: 'M5 12h14M13 6l6 6-6 6'
 };

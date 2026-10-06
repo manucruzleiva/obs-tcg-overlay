@@ -106,7 +106,7 @@ describe('the assets folder', () => {
 
   it('is packaged into the app and used for the app icon, but the README pictures are not', () => {
     const files = pkg.build.files;
-    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy/**/*', 'assets/status/**/*', 'assets/fonts/**/*', 'assets/cardbacks/**/*']) assert.ok(files.includes(entry), entry);
+    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy/**/*', 'assets/status/**/*', 'assets/fonts/**/*', 'assets/cardbacks/**/*', 'assets/markers/**/*']) assert.ok(files.includes(entry), entry);
     assert.ok(!files.some((entry) => entry.includes('screenshots')), 'screenshots stay out of the installer');
     assert.ok(!files.includes('logo.ico') && !files.includes('logo.gif'), 'no entry for the old place');
     assert.equal(pkg.build.win.icon, 'assets/logo.ico');
@@ -263,5 +263,68 @@ describe('serving the assets', () => {
     }
     // the sign-in page is only reachable when a password is set, so read its file
     assert.match(fs.readFileSync(path.join(ROOT, 'public', 'login', 'index.html'), 'utf8'), /<link rel="icon" type="image\/x-icon" href="\/logo\.ico">/);
+  });
+});
+
+describe('the pictures of the GX attack and the VSTAR Power', () => {
+  let server;
+  let empty;
+  let own;
+
+  before(async () => {
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    server = await startServer({ label: 'assets-markers' });
+    // a folder with no markers at all, and one with a picture of the maintainer's own for the GX
+    empty = fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'markers-empty-'));
+    own = fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'markers-own-'));
+    fs.mkdirSync(path.join(own, 'markers'));
+    fs.copyFileSync(path.join(ASSETS, 'status', 'asleep.png'), path.join(own, 'markers', 'gx.png'));
+    fs.copyFileSync(path.join(ASSETS, 'markers', 'vstar.svg'), path.join(own, 'markers', 'vstar.svg'));
+  });
+  after(async () => {
+    if (server) await server.stop();
+    for (const folder of [empty, own]) fs.rmSync(folder, { recursive: true, force: true });
+  });
+
+  it('come with OTO as drawings, which are SVG pictures with no script in them', () => {
+    for (const name of ['gx', 'vstar']) {
+      const text = fs.readFileSync(path.join(ASSETS, 'markers', `${name}.svg`), 'utf8');
+      assert.match(text, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+      assert.doesNotMatch(text, /<script|onload|onclick|href=/i, name);
+    }
+  });
+
+  it('are served by name, as the kind of picture they are', async () => {
+    for (const name of ['gx', 'vstar']) {
+      const response = await fetch(`${server.base}/assets/markers/${name}`);
+      assert.equal(response.status, 200, name);
+      assert.equal(response.headers.get('content-type'), 'image/svg+xml', name);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(path.join(ASSETS, 'markers', `${name}.svg`)));
+    }
+  });
+
+  it('are a 404 for any other name or kind of name', async () => {
+    for (const route of ['/assets/markers/other', '/assets/markers/gx.svg', '/assets/markers/gx.png', '/assets/markers/', '/assets/markers', '/assets/markers/../logo.gif', '/assets/markers/%2e%2e/logo.gif', '/assets/markers/GX']) {
+      assert.equal((await fetch(`${server.base}${route}`)).status, 404, route);
+    }
+  });
+
+  it('are taken from a picture of the maintainer\'s own when there is one, and answer "nothing here" when there is none', async () => {
+    const withOwn = await startServer({ label: 'assets-markers-own', env: { OTO_ASSETS_DIR: own } });
+    const without = await startServer({ label: 'assets-markers-none', env: { OTO_ASSETS_DIR: empty } });
+    try {
+      const gx = await fetch(`${withOwn.base}/assets/markers/gx`);
+      assert.equal(gx.status, 200);
+      assert.equal(gx.headers.get('content-type'), 'image/png', 'a PNG beside the drawing is the one that shows');
+      assert.deepEqual(Buffer.from(await gx.arrayBuffer()), fs.readFileSync(path.join(own, 'markers', 'gx.png')));
+      assert.equal((await fetch(`${withOwn.base}/assets/markers/vstar`)).headers.get('content-type'), 'image/svg+xml');
+      for (const name of ['gx', 'vstar']) {
+        const none = await fetch(`${without.base}/assets/markers/${name}`);
+        assert.equal(none.status, 204, name);
+        assert.equal((await none.arrayBuffer()).byteLength, 0);
+      }
+    } finally {
+      await Promise.all([withOwn.stop(), without.stop()]);
+    }
   });
 });

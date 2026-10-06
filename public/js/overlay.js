@@ -164,11 +164,22 @@
     mon.statuses.classList.toggle('on-art', tile.status !== 'below');
   }
 
-  function createToken(optionKey, label) {
+  // `kind` says what the token is for (its color: a Stadium is green, a Supporter orange); `icon` is a picture that takes its place (the GX attack and
+  // the VSTAR Power), which is the pill with its name again when the picture is not there
+  function createToken(optionKey, label, { kind = '', icon = '' } = {}) {
     const root = opt(el('div', 'token'), optionKey);
+    if (kind) root.dataset.kind = kind;
     const dot = el('span', 'dot');
     const text = el('span', 'token-label', label);
     const count = el('span', 'token-count');
+    if (icon) {
+      const picture = el('img', 'marker-icon');
+      picture.alt = label;
+      picture.addEventListener('error', () => root.classList.add('no-icon'));
+      picture.addEventListener('load', () => { if (picture.naturalWidth === 0) root.classList.add('no-icon'); });
+      picture.src = icon;
+      root.appendChild(picture);
+    }
     root.appendChild(dot);
     root.appendChild(text);
     root.appendChild(count);
@@ -229,19 +240,19 @@
     container.hidden = list.length === 0;
   }
 
-  // The Pokémon Tools on a Pokémon as the pictures of their cards (the part of the card that the crop says), with the HP each adds when it adds
-  // some. A tool with no picture (put there by hand) is shown by its name. Only drawn again when something about them changed, so the pictures
+  // The Pokémon Tools on a Pokémon as the pictures of their cards (the part of the card that the crop says). A tool with no picture (put there by
+  // hand) is shown by its name. Only drawn again when something about them changed, so the pictures
   // do not flash on every update.
   function renderToolCards(container, tools) {
     const list = Array.isArray(tools) ? tools : [];
-    const signature = JSON.stringify(list.map((tool) => [tool.image, tool.name, tool.hp]));
+    const signature = JSON.stringify(list.map((tool) => [tool.image, tool.name]));
     container.hidden = list.length === 0;
     if (container.dataset.tools === signature) return;
     container.dataset.tools = signature;
     container.textContent = '';
     list.forEach((tool) => {
       const card = el('span', tool.image ? 'tool-card' : 'tool-card plain');
-      card.title = tool.hp ? `${tool.name} (+${tool.hp} HP)` : tool.name;
+      card.title = tool.name;
       if (tool.image) {
         const img = el('img', 'tool-card-img');
         img.decoding = 'async';
@@ -251,20 +262,18 @@
       } else {
         card.appendChild(el('span', 'tool-card-name', tool.name));
       }
-      if (tool.hp) card.appendChild(el('span', 'tool-card-hp', `+${tool.hp}`));
       container.appendChild(card);
     });
   }
 
-  // The Pokémon Tools on a Pokémon by name (not on by default; a design can ask for it): the name of each, and the HP it adds when it adds some
+  // The Pokémon Tools on a Pokémon by name (not on by default; a design can ask for it)
   function renderTools(container, tools) {
     const list = Array.isArray(tools) ? tools : [];
     container.textContent = '';
     list.forEach((tool) => {
       const chip = el('span', 'tool');
-      chip.title = tool.hp ? `${tool.name} (+${tool.hp} HP)` : tool.name;
+      chip.title = tool.name;
       chip.appendChild(el('span', 'tool-name', tool.name));
-      if (tool.hp) chip.appendChild(el('span', 'tool-hp', `+${tool.hp}`));
       container.appendChild(chip);
     });
     container.hidden = list.length === 0;
@@ -380,6 +389,7 @@
       this.socket.on('state:update', (state) => this.update(state));
       this.socket.on('announce', (announcement) => this.announce(announcement));
       this.socket.on('theme:changed', () => this.loadTheme());
+      this.socket.on('decks:changed', () => this.loadDecks());
       this.loadTheme();
 
       // Sound effects play here so OBS can capture them (the control panel's preview stays silent)
@@ -435,6 +445,17 @@
     }
 
     // Learn which cues have an uploaded sound and fetch them
+    // The list of the decks that are played the most was read again (Settings, Cards): the pictures of the decks that are named by it follow
+    async loadDecks() {
+      try {
+        const answer = await (await fetch('/api/decks/popular')).json();
+        window.OTO_DECK_POPULAR.replace(answer.decks, answer.source);
+        if (this.state) this.update(this.state);
+      } catch (error) {
+        /* the list in the page stays */
+      }
+    }
+
     async loadSounds() {
       try {
         const response = await fetch('/api/sounds', { cache: 'no-store' });
@@ -547,11 +568,11 @@
 
       const tokens = el('div', 'tokens');
       const energy = createToken('energyCounter', 'ENERGY');
-      const stadiumUse = createToken('stadiumCounter', 'STADIUM');
-      const supporter = createToken('supporterCounter', 'SUPPORTER');
+      const stadiumUse = createToken('stadiumCounter', 'STADIUM', { kind: 'stadium' });
+      const supporter = createToken('supporterCounter', 'SUPPORTER', { kind: 'supporter' });
       // the GX attack and the VSTAR Power: once per game, and not shown unless the producer asks for them
-      const gx = createToken('gxMarker', 'GX');
-      const vstar = createToken('vstarMarker', 'VSTAR');
+      const gx = createToken('gxMarker', 'GX', { icon: '/assets/markers/gx' });
+      const vstar = createToken('vstarMarker', 'VSTAR', { icon: '/assets/markers/vstar' });
       [gx, vstar].forEach((token) => token.root.classList.add('marker'));
       [energy, stadiumUse, supporter, gx, vstar].forEach((token) => tokens.appendChild(token.root));
 

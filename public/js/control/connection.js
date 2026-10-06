@@ -127,7 +127,7 @@ export class Connection {
       this.emit('rejected', rejected);
     });
 
-    for (const name of ['announce', 'sfx', 'theme:changed', 'sounds:changed', 'catalog:progress']) {
+    for (const name of ['announce', 'sfx', 'theme:changed', 'sounds:changed', 'catalog:progress', 'health:progress', 'decks:changed']) {
       socket.on(name, (data) => this.emit(name, data));
     }
   }

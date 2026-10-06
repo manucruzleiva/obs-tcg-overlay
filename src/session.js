@@ -237,7 +237,19 @@ class Session {
     if (spec.silent) return;
 
     this.finish({ before, targets: targets || [], label: spec.label(this.gs), clientId, announced, cues: spec.cues(), kind: 'action' });
+    // what follows by itself (a game won because of the last prize card) is a step of its own, by the system, that can be undone on its own
+    this.finishAutomatic(spec.automatic(this.gs));
     this.acknowledge(socket, meta.seq);
+  }
+
+  // Record what the game did by itself (see actions.automaticChanges, which has changed the game already): its own activity entry, written as done by
+  // the system, and its own step to undo
+  finishAutomatic(automatic) {
+    if (!automatic) return;
+    this.finish({
+      before: automatic.before, targets: automatic.targets, label: automatic.label, undoLabel: automatic.undoLabel,
+      clientId: actions.SYSTEM.clientId, by: actions.SYSTEM, announced: automatic.announced, cues: automatic.cues, kind: 'auto'
+    });
   }
 
   // Tell the sender its action went through (the new state itself arrives as a state:update first)
@@ -269,28 +281,29 @@ class Session {
 
   // A Pokémon picked while the card service was slow has no attacks or retreat cost yet: they are looked for in the background and filled
   // in when they come, if that Pokémon is still there and nobody has set them by hand. It is no step of the history.
+  // (it says whether it found them and put them there)
   async fillDetailsLater(payload) {
     const match = /^(trainerA|trainerB)-(?:active|bench-\d+)$/.exec(String(payload.target));
-    if (!match) return;
+    if (!match) return false;
     const side = match[1];
     const supplied = payload.cardData && typeof payload.cardData === 'object' ? payload.cardData : {};
     let details = null;
     try {
       details = await this.gs.pokemonTCG.getCard(payload.cardId, { source: supplied.source, language: supplied.language });
     } catch (error) {
-      return; // the card service is not answering: the attacks and the retreat cost stay to be set by hand
+      return false; // the card service is not answering: the attacks and the retreat cost stay to be set by hand
     }
-    if (!details) return;
+    if (!details) return false;
     const attacks = attacksOf(details.attacks) || [];
     const retreat = retreatOf({ retreat: details.retreat });
     const evolvesFrom = typeof details.evolvesFrom === 'string' ? details.evolvesFrom : '';
-    if (attacks.length === 0 && !retreat && !evolvesFrom) return;
+    if (attacks.length === 0 && !retreat && !evolvesFrom) return false;
 
     const slot = [-1, 0, 1, 2, 3, 4, 5, 6, 7].find((candidate) => {
       const pokemon = this.gs.pokemonAt(side, candidate);
       return pokemon && pokemon.cardId === payload.cardId && pokemon.attacks.length === 0 && pokemon.retreat === 0;
     });
-    if (slot === undefined) return;
+    if (slot === undefined) return false;
 
     const before = this.gs.snapshot();
     const name = this.gs.pokemonAt(side, slot).name;
@@ -299,6 +312,7 @@ class Session {
       before, targets: [slot === -1 ? `${side}.active` : `${side}.bench.${slot}`], by: { clientId: 'card-service', name: 'Card service' },
       label: `${name}: attacks and retreat cost from the card`, kind: 'details', recordUndo: false, keepRedo: true
     });
+    return true;
   }
 
   // The one place a change becomes official: new revision, undo entry, activity, broadcast
@@ -452,6 +466,7 @@ class Session {
     const before = draft.fork.snapshot();
     try {
       spec.run(draft.fork);
+      spec.automatic(draft.fork); // (the preview shows what the game does by itself too)
     } catch (error) {
       draft.fork.restore(before);
       throw error;
@@ -470,7 +485,9 @@ class Session {
       entry.conflict = conflict ? { by: conflict.by.name, label: conflict.label } : null;
       if (conflict) continue;
       try {
-        actions.resolve(entry.event, entry.payload).run(fork);
+        const spec = actions.resolve(entry.event, entry.payload);
+        spec.run(fork);
+        spec.automatic(fork);
       } catch (error) {
         entry.conflict = { by: '', label: 'no longer applies' };
       }
@@ -531,6 +548,8 @@ class Session {
     }
 
     const before = this.gs.snapshot();
+    const watched = actions.watch(this.gs); // (what the game does by itself is looked at once, after the whole draft)
+    let leaves = false;
     const applied = [];
     const kept = []; // what was applied, as it can be played again (redoing the send opens the draft with these)
     const skipped = [];
@@ -550,6 +569,7 @@ class Session {
         applied.push(spec.label(this.gs));
         kept.push({ event: entry.event, payload: entry.payload, label: entry.label, targets: entry.targets, by: entry.by });
         targets.push(...(entry.targets || []));
+        if (actions.leavesTheTable(entry.payload.action) && entry.event !== 'action:reset') leaves = true;
       } catch (error) {
         skipped.push({ label: entry.label, reason: error.message });
       }
@@ -564,6 +584,8 @@ class Session {
         label: `Sent ${applied.length} change${applied.length === 1 ? '' : 's'}: ${preview}`,
         undoLabel: `${applied.length} sent change${applied.length === 1 ? '' : 's'}`
       });
+      // and what follows from them by itself, as a step of its own
+      this.finishAutomatic(actions.automaticChanges(this.gs, watched, leaves));
     }
 
     const by = this.presence.who(clientId);

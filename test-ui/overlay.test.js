@@ -831,6 +831,38 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('the colors of the kinds of card', () => {
+    // an ability is red, a Pokémon Tool purple, a Stadium green and a Supporter orange: from the variables a design can change
+    const colorOf = (name) => page.evaluate((variable) => { const probe = document.createElement('span'); probe.style.color = `var(${variable})`; document.body.appendChild(probe); const value = getComputedStyle(probe).color; probe.remove(); return value; }, name);
+
+    it('have a color each, as the variables of the page say', async () => {
+      const colors = { ability: await colorOf('--ability'), tool: await colorOf('--tool'), stadium: await colorOf('--stadium'), supporter: await colorOf('--supporter') };
+      assert.equal(new Set(Object.values(colors)).size, 4, JSON.stringify(colors));
+
+      await send('action:trainerA', { action: 'setActive', cardId: 'c1', name: 'Pikachu', image: IMG, hp: 60, abilities: ['Static'] });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Charm', image: IMG });
+      await send('action:card', { action: 'setStadium', cardId: 's', name: 'Area Zero', image: IMG }).catch(() => {});
+      await send('action:card', { action: 'select', target: 'stadium', cardId: 's', cardData: { id: 's', name: 'Area Zero', hp: '', images: { small: IMG, large: IMG }, abilities: [], attacks: [], retreat: 0 } });
+      await page.waitForSelector('.trainer-a .ability');
+      await page.waitForSelector('.trainer-a .tool-card');
+      await page.waitForSelector('.stadium-name');
+      assert.equal(await page.$eval('.trainer-a .ability', (node) => getComputedStyle(node).borderTopColor), colors.ability, 'an ability');
+      assert.equal(await page.$eval('.trainer-a .ability', (node) => getComputedStyle(node, '::before').backgroundColor), colors.ability, 'and its diamond');
+      assert.ok((await page.$eval('.trainer-a .tool-card', (node) => getComputedStyle(node).boxShadow)).includes(colors.tool), 'a tool');
+      assert.equal(await page.$eval('.stadium-name', (node) => getComputedStyle(node).borderTopColor), colors.stadium, 'the Stadium');
+      assert.equal(await page.$eval('.token[data-kind="stadium"]', (node) => getComputedStyle(node).borderTopColor), colors.stadium, 'its play counter');
+      assert.equal(await page.$eval('.token[data-kind="supporter"]', (node) => getComputedStyle(node).borderTopColor), colors.supporter, 'and the Supporter counter');
+    });
+
+    it('follow a design that changes them', async () => {
+      await send('action:trainerA', { action: 'setActive', cardId: 'c1', name: 'Pikachu', image: IMG, hp: 60, abilities: ['Static'] });
+      await page.waitForSelector('.trainer-a .ability');
+      await page.evaluate(() => window.oto.applyTheme({ name: 'colors', colors: { '--ability': '#00ff00' }, images: {}, sounds: [] }));
+      await page.waitForFunction(() => getComputedStyle(document.querySelector('.trainer-a .ability')).borderTopColor === 'rgb(0, 255, 0)');
+      await page.evaluate(() => window.oto.applyTheme(null));
+    });
+  });
+
   describe('Pokémon Tools', () => {
     const cards = (side) => page.$$eval(`.trainer-${side} .tool-cards:not([hidden]) .tool-card`, (nodes) => nodes.map((node) => ({
       text: node.textContent, plain: node.classList.contains('plain'), image: node.querySelector('img') ? node.querySelector('img').getAttribute('src') : null, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height
@@ -838,25 +870,24 @@ describe('overlay', { skip }, () => {
     const names = (side) => page.$$eval(`.trainer-${side} .tools:not([hidden]) .tool`, (nodes) => nodes.map((node) => node.textContent));
     const visible = (selector) => page.$$eval(selector, (nodes) => nodes.filter((node) => node.offsetParent !== null).length);
 
-    it('are shown as the pictures of their cards, with the HP they add, and not by name unless that is asked for', async () => {
+    it('are shown as the pictures of their cards, and not by name unless that is asked for', async () => {
       assert.equal(await visible('.tool-cards'), 0, 'nothing is shown until there is a tool');
-      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 50 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG });
       await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'b0', name: 'Eevee', image: IMG, hp: 60 });
       await send('action:trainerA', { action: 'attachTool', slot: 0, cardId: 't2', name: 'Float Stone', image: IMG });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tool-cards:not([hidden]) .tool-card').length === 2);
       const [active, bench] = await cards('a');
-      assert.deepEqual([active.image, active.plain, active.text], [IMG, false, '+50'], 'the picture of the card, and the HP it adds');
-      assert.deepEqual([bench.image, bench.plain, bench.text], [IMG, false, ''], 'a tool that adds nothing says nothing');
+      assert.deepEqual([active.image, active.plain, active.text], [IMG, false, ''], 'the picture of the card, and nothing written on it');
+      assert.deepEqual([bench.image, bench.plain, bench.text], [IMG, false, '']);
       assert.ok(Math.abs(active.width - 104) < 1 && Math.abs(bench.width - 64) < 1, `the Active Pokémon's is bigger: ${active.width} and ${bench.width}`);
       assert.ok(Math.abs(active.height - 104 * 1.393333 * 0.37 / 0.836) < 1, `the shape of the picture window of the card: ${active.height}`);
-      assert.equal(await page.locator('.trainer-a .active .hp-text').textContent(), '150/150', 'the Pokémon has the HP the tool adds');
+      assert.equal(await page.locator('.trainer-a .active .hp-text').textContent(), '100/100', 'a tool leaves the HP of the Pokémon alone');
       assert.equal(await visible('.tools'), 0, 'the names are not shown unless a design or a producer asks for them');
 
       // the names, as text, for the ones who want them
       await send('action:settings', { action: 'update', display: { toolNames: true } });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tools:not([hidden]) .tool').length === 2);
-      assert.deepEqual(await names('a'), ['Bravery Charm+50', 'Float Stone']);
-      assert.equal(await page.$eval('.trainer-a .active .tool-hp', (node) => node.textContent), '+50');
+      assert.deepEqual(await names('a'), ['Bravery Charm', 'Float Stone']);
       await send('action:settings', { action: 'update', display: { toolCards: false } });
       await page.waitForFunction(() => ![...document.querySelectorAll('.tool-cards')].some((node) => node.offsetParent !== null));
       assert.equal(await visible('.tools'), 2, 'the names stay');
@@ -869,26 +900,26 @@ describe('overlay', { skip }, () => {
     });
 
     it('are not drawn again when something else changes, so their pictures do not flash', async () => {
-      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 50 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG });
       await page.waitForSelector('.trainer-a .active .tool-card img');
       await page.evaluate(() => { document.querySelector('.trainer-a .active .tool-card').dataset.same = 'yes'; });
       await send('action:trainerA', { action: 'activeDamage', amount: 10 });
       await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'fire', count: 1 });
-      await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '140/150');
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '90/100');
       assert.equal(await page.$eval('.trainer-a .active .tool-card', (node) => node.dataset.same), 'yes', 'the same picture is still there');
-      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't3', name: 'Another', image: IMG, hp: 0 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't3', name: 'Another', image: IMG });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .tool-card').length === 2);
     });
 
     it('is a chip with the name when the tool has no picture (put there by hand)', async () => {
-      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: '', name: 'Lucky Helmet', image: '', hp: 0 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: '', name: 'Lucky Helmet', image: '' });
       await page.waitForSelector('.trainer-a .active .tool-card.plain');
       const [plain] = await cards('a');
       assert.deepEqual([plain.plain, plain.image, plain.text], [true, null, 'Lucky Helmet']);
     });
 
     it('show the part of the card that the design says (the picture of a Trainer card unless it asks for the whole card)', async () => {
-      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 0 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG });
       await page.waitForSelector('.trainer-a .active .tool-card img');
       const height = () => page.$eval('.trainer-a .active .tool-card', (node) => node.getBoundingClientRect().height);
       assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1);
@@ -1292,14 +1323,48 @@ describe('overlay', { skip }, () => {
       await page.waitForSelector('.trainer-b .token.marker.used');
       assert.equal(await page.locator('.trainer-b .token.marker.used .token-label').textContent(), 'VSTAR');
 
-      // the used one is crossed out, the ready one is not
-      const lines = await page.$$eval('.token.marker .token-label', (nodes) => nodes.map((node) => getComputedStyle(node).textDecorationLine));
-      assert.equal(lines.filter((line) => line === 'line-through').length, 2);
+      // the used one is grayed out, the ready one is in color
+      const filters = await page.$$eval('.token.marker .marker-icon', (nodes) => nodes.map((node) => getComputedStyle(node).filter));
+      assert.equal(filters.filter((filter) => filter.includes('grayscale')).length, 2);
+      assert.equal(filters.filter((filter) => filter === 'none').length, 2, 'the two that are still ready');
 
       // a game is won: both trainers have both again
       await send('action:match', { action: 'trainerAMatchWin' });
       await page.waitForFunction(() => document.querySelectorAll('.token.marker.used').length === 0);
       assert.deepEqual(page.problems, []);
+    });
+
+    it('are the pictures of the GX attack and the VSTAR Power, which show their name only when a picture is missing', async () => {
+      await send('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+      await page.waitForSelector('.trainer-a .token.marker .marker-icon');
+      assert.deepEqual(await page.$$eval('.trainer-a .token.marker .marker-icon', (nodes) => nodes.map((node) => node.getAttribute('src'))), ['/assets/markers/gx', '/assets/markers/vstar']);
+      await page.waitForFunction(() => [...document.querySelectorAll('.trainer-a .token.marker .marker-icon')].every((node) => node.complete && node.naturalWidth > 0));
+      const box = await page.locator('.trainer-a .token.marker .marker-icon').first().boundingBox();
+      assert.ok(box.height > 30 && box.height < 70, `a picture, not a pill: ${box.height}px`);
+      assert.equal(await page.locator('.trainer-a .token.marker .token-label').first().isVisible(), false, 'the name is not written over it');
+      assert.equal(await page.locator('.trainer-a .token.marker').first().evaluate((node) => node.classList.contains('no-icon')), false);
+
+      // used: grayed out and fainter; ready again: in color
+      await send('action:trainerA', { action: 'gxPlus' });
+      await page.waitForSelector('.trainer-a .token.marker.used .marker-icon');
+      await page.waitForFunction(() => getComputedStyle(document.querySelector('.trainer-a .token.marker.used .marker-icon')).filter === 'grayscale(1)'); // (it fades)
+      const used = await page.$eval('.trainer-a .token.marker.used .marker-icon', (node) => ({ filter: getComputedStyle(node).filter, opacity: getComputedStyle(node).opacity }));
+      assert.match(used.filter, /grayscale\(1\)/);
+      assert.ok(Number(used.opacity) < 0.9);
+      await send('action:settings', { action: 'update', display: { gxMarker: false, vstarMarker: false } });
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is a pill with its name when there is no picture of it', async () => {
+      const bare = await page.context().newPage();
+      await bare.route('**/assets/markers/*', (route) => route.fulfill({ status: 204, body: '' }));
+      await bare.goto(`${server.base}/overlay`);
+      await send('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+      await bare.waitForSelector('.trainer-a .token.marker.no-icon');
+      assert.equal(await bare.locator('.trainer-a .token.marker .token-label').first().isVisible(), true, 'the name shows');
+      assert.equal(await bare.locator('.trainer-a .token.marker .marker-icon').first().isVisible(), false);
+      await bare.close();
+      await send('action:settings', { action: 'update', display: { gxMarker: false, vstarMarker: false } });
     });
 
     it('come back at the start of a new game, and the energy, stadium and supporter tokens are untouched by it', async () => {

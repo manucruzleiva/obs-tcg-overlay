@@ -56,8 +56,8 @@ Other things that make a match easier:
 
 - **Preview** shows the overlay inside the control panel. **Shift + click on Preview opens the overlay in a browser tab** instead.
 - **Autosave:** if OTO closes unexpectedly, the match is back when you open it again.
-- **Activity feed and history:** every change is listed with the name of whoever made it, and undo and redo say what they did.
-- **Deck or GLC type:** under each trainer's name, write the deck (`Charizard ex`, `Lightning GLC`, `Mega Lucario`). Suggestions start with the most played decks of the moment (a snapshot of [Limitless TCG](https://limitlesstcg.com/decks)), then energy types and every Pokémon. The overlay shows the deck next to the record, with a picture: the Pokémon the name mentions or the icon of its energy type. Use the **Picture** box to pick another one (`Gardevoir` for a deck called `Control`) or `none`. The line under the boxes says what will show.
+- **Activity** (the button next to Draft mode and Preview) opens a popup with everything any producer has done, with their names, newest first. It follows what happens while it is open. Undo and redo say what they did.
+- **Deck or GLC type:** under each trainer's name, write the deck (`Charizard ex`, `Lightning GLC`, `Mega Lucario`). Suggestions start with the most played decks of the moment (from [Limitless TCG](https://limitlesstcg.com/decks); Settings, Cards, **Popular decks**, **Update** reads the list again), then energy types and every Pokémon. The overlay shows the deck next to the record, with a picture: the Pokémon the name mentions or the icon of its energy type. Use the **Picture** box to pick another one (`Gardevoir` for a deck called `Control`) or `none`. The line under the boxes says what will show.
 - **Nationality:** type a code (`USA`, `JP`) or a country name (`Chile`). With *Nationality as a flag emoji* on, the overlay shows the flag.
 
 ---
@@ -66,14 +66,15 @@ Other things that make a match easier:
 
 ### Active and bench
 
-Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, abilities, attacks and the retreat cost come from the card. Each Pokémon card in the control panel is compact and has small buttons (hover for the names): **Switch in** (or **Deploy another** for the Active Pokémon), the **egg** (evolve or go back a stage), **Tool**, **Energy**, **Damage**, **Heal**, **Abilities**, **Knock out**, **Remove**.
+Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, abilities, attacks and the retreat cost come from the card. Each Pokémon card in the control panel is compact: the HP, the **Retreat** cost and the **Max HP** share a line, and small buttons (hover for the names) do the rest: **Switch in** (or **Deploy another** for the Active Pokémon), the **egg** (evolve or go back a stage), **Tool**, **Energy**, **Damage**, **Heal**, **Abilities**, **Knock out**, **Remove**.
 
 - **Fossils and Dolls.** An Item card that is played as a Pokémon (a Fossil, a Pokémon Doll, the Snorlax Doll) is found in the same picker: choose **Fossil or Doll (an Item)** at the top, or type `fossil` or `doll`. It is placed as a Basic Pokémon with 60 HP.
 - **The egg: evolve and go back.** The egg on a Pokémon opens a dialog with two tabs. **Evolution** lists the cards that evolve from this Pokémon; type a name and it looks among every card, so you can pick any card. **Devolution** starts from the card the Pokémon evolved from (the one OTO saw it evolve from, or else the one its card says it evolves from); type a name to pick any other card. Either way the new card keeps the energy, the tools and the damage taken, and, as the rules say, its special conditions are cured. It works on the Active Pokémon and on the bench.
-- **Tools.** **Tool** attaches a Pokémon Tool to any Pokémon, Active or benched, and the overlay shows the picture of its card on that Pokémon. If the tool says "+50 HP", write 50 in *Adds to the maximum HP*: that Pokémon has the extra HP while the tool is on it, and loses it when you click the tool chip to take it off.
-- **Maximum HP.** The `−` and `+` beside the maximum HP raise or lower it by 10 (the damage it has taken stays), and clicking the HP number sets both values by hand.
-- **Energy.** Click an energy chip to remove it; **right-click** one to attach another of the same kind. Special Energy cards go on with *Add a Special Energy card*.
-- **Special conditions** (Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped) are chips on the Active Pokémon and show as icons on the overlay. A condition ends when the Pokémon leaves the Active spot.
+- **Tools.** **Tool** attaches a Pokémon Tool to any Pokémon, Active or benched, and the overlay shows the picture of its card on that Pokémon. Click its chip in the control panel to take it off. A tool never changes the HP by itself: if its card says "+50 HP", raise the Pokémon's maximum HP with the stepper next to it (see below).
+- **Retreat cost and maximum HP are buttons** that say what they are and how much. **Click** to add (one colorless Energy of retreat cost, up to six; 10 more maximum HP, with the damage it has taken staying), **right-click** (or **Shift + click**) to take one off. Clicking the HP number sets both HP values by hand.
+- **Energy.** **Click** an energy chip to add another of the same kind; **right-click** one to take it off. The one that is added is the turn's attachment while that is free, and a special attachment after. Special Energy cards go on with *Add a Special Energy card*.
+- **Colors tell the kind of thing:** an ability is always red, a Pokémon Tool purple, a Stadium green and a Supporter orange, in the control panel and on the overlay.
+- **Special conditions** (Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped) are chips on the Active Pokémon (just the icon until it is on, then the name too) and show as icons on the overlay. A condition ends when the Pokémon leaves the Active spot.
 - **Abilities** show as tokens, ready or used. A once-per-turn ability is ready again when its trainer's turn begins; a once-per-game one stays used. The **GX** and **VSTAR** markers appear in the control panel only when the overlay is set to show them.
 - **Drag and drop.** Drag a Pokémon onto an empty slot to move it, or onto another Pokémon to swap places.
 
@@ -86,7 +87,7 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 ### Knock outs and a lost board
 
 - `K` opens a list of Pokémon of both trainers. Tick **one or several** (a double or triple knock out) and give how many prizes each is worth: the overlay announces it (*DOUBLE KO!*), clears the slots and offers the next Active Pokémon.
-- A player who has **no Pokémon left on the table** after a knock out or after one is removed from the board **loses at once**: the other player gets the victory.
+- A player who has **no Pokémon left on the table** after a knock out or after one is removed from the board **loses at once**: the other player gets the victory (see *Victory comes by itself*, below, for how that shows and how to undo it).
 
 ---
 
@@ -95,8 +96,9 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 - **Prize cards** are taken with `↓` for the player whose turn it is (`↑` gives one back). `Shift` is for the other player. The prize cards start **face down** at the beginning of each game; switch **Hide prizes** off to turn them face up.
 - **Set prizes** opens the six prize cards of a player in a small dialog: click a card to choose it with the search, and the little button on its corner takes it off again. The overlay then shows those cards where the prize cards are, and the small pips in the control panel show them too.
 - **Penalties** are set on the player who got one: that many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
-- **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the score and names stay). **New match** starts over with the score at 0.
+- **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. It is a step of its own that **OTO does by itself**: the **Activity** list shows it in green, with an *automatic* label and the name *OTO (automatic)* instead of a producer's (for example *Ash won the game by itself (took the last prize card): score 1–0*), right above the prize card or the knock out that caused it. **Undo** (`Ctrl+Z`) takes back only that game win (the prize card stays taken, so the producer can correct a mistake), and a second undo takes the prize card back; **Redo** does them again in the same order. A draft that is sent is the same: the changes are one step and the game won, if there is one, is the next. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the score and names stay). **New match** starts over with the score at 0.
 - **Winner** (`W`, in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change. **Game start** (`G`) shows the start banner.
+- **The GX attack and the VSTAR Power** (Settings, Overlay; they are off to begin with) show on the overlay as their pictures, in color while they are ready and grayed out once they are used. Click their token in the **Turn tracker** to mark one used.
 - **Pause** (`P`) puts a PAUSED banner in the middle of the overlay and grays out the rest until you resume.
 
 ---
@@ -202,6 +204,8 @@ Searching for cards normally asks an online service, which can be slow, rate-lim
 - Pick one library to **search**. Searching it is instant and works with no internet, and a card it does not have is looked up online.
 - **Card pictures** are saved the first time they are shown, so a card shown once still shows offline. You can also **save the pictures ahead of time** and delete them again.
 - **The picker** starts from your favorite cards, then the ones you use most and the ones saved on this computer. Click the star on a card, or **right-click the card**, to make it a favorite or take it off.
+- **Card data check** (Settings, Cards). A Pokémon that comes to the table with no attacks or no retreat cost comes from a card that was saved without them: a card service sends a short card when it lists many and the full one when one is asked for. **Check now** looks for those cards in your libraries, in the cards remembered for a while and on the table. **Repair** asks the card service for what they lack and keeps it, a few hundred cards each time (it says how many are left; run it again), and fills in the Pokémon on the table.
+- **Popular decks** (Settings, Cards). The list of the most played decks, with the Pokémon on the icon of each, comes with OTO. **Update from Limitless TCG** reads the deck page of [Limitless TCG](https://limitlesstcg.com/decks) again (only when you press it), and every open page, the overlay too, uses the new list at once. **Use the list that comes with OTO** goes back. Only the names and the Pokémon of the icons are kept.
 - **Which service answers.** *Automatic* asks the Pokémon TCG API and, when it does not answer, [TCGdex](https://tcgdex.dev/) (no account, many languages). You can pick one on purpose, or use **Scrydex** with your own account (the keys are kept on your computer, always shown masked, and never go into an exported file or a `.oto`). A free key from [pokemontcg.io](https://pokemontcg.io/) raises the request limits.
 
 ---

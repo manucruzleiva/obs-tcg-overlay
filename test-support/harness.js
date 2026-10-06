@@ -225,7 +225,7 @@ class Client {
     for (const event of [
       'state:full', 'state:update', 'action:applied', 'action:rejected', 'announce', 'presence', 'activity',
       'activity:history', 'you', 'draft:state', 'draft:sent', 'draft:closed', 'draft:conflicts', 'theme:changed',
-      'sfx', 'sounds:changed', 'catalog:progress', 'kicked'
+      'sfx', 'sounds:changed', 'catalog:progress', 'health:progress', 'decks:changed', 'kicked'
     ]) {
       this.socket.on(event, (data) => this.record(event, data));
     }

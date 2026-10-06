@@ -354,7 +354,7 @@ describe('server', () => {
       await producer.act('action:match', { action: 'resetMatchScore' });
     });
 
-    it('adds a game to the score of whoever takes the last prize card, in the same step as the toast, and an undo takes both back', async () => {
+    it('adds a game to the score of whoever takes the last prize card, with the toast, as a step of the system that an undo takes back on its own', async () => {
       for (let i = 0; i < 5; i++) await trainer('trainerA', { action: 'prizeMinus' });
       assert.deepEqual([(await score()).trainerAWins, (await score()).trainerBWins], [0, 0], 'five of six is no game won');
 
@@ -366,18 +366,35 @@ describe('server', () => {
       assert.equal(victory.subtitle, 'Trainer A wins the game (1–0)');
       assert.equal(last.state.matchScore.trainerAWins, 1, 'the score goes up with the toast');
       assert.equal(last.state.matchScore.trainerBWins, 0);
-      const feed = await new Promise((resolve) => setTimeout(resolve, 100)).then(() => (producer.events.activity || []).filter((entry) => /won the game/.test(entry.label)));
-      assert.match(feed[feed.length - 1].label, /Trainer A won the game \(1–0\)/);
+      // the activity says what was done by the producer and what the system did by itself, as two entries
+      const [taken, automatic] = await new Promise((resolve) => setTimeout(resolve, 100)).then(() => (producer.events.activity || []).slice(-2));
+      assert.match(taken.label, /prizes −1 \(0 left\)/);
+      assert.deepEqual([taken.by.name, taken.kind], ['Producer 1', 'action'], 'a producer took the card');
+      assert.match(automatic.label, /Trainer A won the game by itself \(took the last prize card\): score 1–0/);
+      assert.deepEqual([automatic.by.name, automatic.kind], ['OTO (automatic)', 'auto'], 'the game won is the system\'s');
 
       // once only: nothing more to take, nothing more to add
       await trainer('trainerA', { action: 'prizeMinus' });
       assert.equal((await score()).trainerAWins, 1);
 
-      // (the extra minus at zero changed nothing, so it is not a step of its own)
+      // (the extra minus at zero changed nothing, so it is not a step of its own) The first undo takes back the game that was won by itself, and
+      // leaves the prize card as it was taken; the second takes the prize card back
+      const state = () => fetch(`${server.base}/api/state`).then((r) => r.json());
       const undone = await producer.act('action:undo', {});
       assert.equal(undone.ok, true);
-      const back = await fetch(`${server.base}/api/state`).then((r) => r.json());
-      assert.deepEqual([back.trainerA.prizes.count, back.matchScore.trainerAWins], [1, 0], 'the last prize card and the game won go back together');
+      assert.match(producer.last('activity').label, /^Undid: Trainer A won the game \(automatic\)/);
+      let back = await state();
+      assert.deepEqual([back.trainerA.prizes.count, back.matchScore.trainerAWins], [0, 0], 'the game is not won, and the prize card is still taken');
+      const again = await producer.act('action:undo', {});
+      assert.equal(again.ok, true);
+      back = await state();
+      assert.deepEqual([back.trainerA.prizes.count, back.matchScore.trainerAWins], [1, 0], 'now the last prize card goes back too');
+
+      // redo brings them back in the same order, and the win again by itself
+      await producer.act('action:redo', {});
+      await producer.act('action:redo', {});
+      back = await state();
+      assert.deepEqual([back.trainerA.prizes.count, back.matchScore.trainerAWins], [0, 1]);
     });
 
     it('says match, not game, when it was the game that decided a best-of-three', async () => {
@@ -718,7 +735,10 @@ describe('server', () => {
     const announcement = await announced;
     assert.equal(announcement.type, 'ko');
     assert.equal(announcement.side, 'trainerA');
-    assert.match(producer.last('activity').label, /Pikachu knocked out/);
+    // (Trainer A has no Pokémon left, so the system wins the game for Trainer B right after: its own entry comes last)
+    const [knocked, automatic] = producer.events.activity.slice(-2);
+    assert.match(knocked.label, /Pikachu knocked out/);
+    assert.match(automatic.label, /Trainer B won the game by itself/);
   });
 
   it('refreshes the per-turn limits and once-per-turn abilities when the turn passes', async () => {

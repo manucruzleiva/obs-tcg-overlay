@@ -37,6 +37,105 @@ async function api(method, url, body) {
 const KB_SMALL = 60;
 const KB_LARGE = 400;
 
+// What the health check says about a card, in plain words
+const TROUBLE = {
+  noAttackData: 'attacks never looked up',
+  noRetreatData: 'retreat cost never looked up',
+  emptyCard: 'no attacks and no abilities',
+  noHp: 'no HP',
+  noPicture: 'no picture'
+};
+
+// Settings > Cards > Card data check (see src/services/card-health.js): finds the cards that are saved without their attacks or their retreat cost, in the
+// libraries, in the remembered cards and on the table, and asks the card service for what they lack.
+export function healthPanel(app) {
+  let state = null; // { report, job }
+  let shownKey = '';
+  let live = null; // the progress bar of a repair that is running
+  const box = h('div', { class: 'health-box' }, h('p', { class: 'library-state' }, 'Loading…'));
+  const failed = (error) => app.toast(error.message, 'error');
+  const running = () => Boolean(state && state.job && !state.job.finished);
+  const shapeOf = (s) => JSON.stringify([s.report && s.report.scannedAt, s.job && [s.job.id, s.job.finished]]);
+
+  const percent = (job) => (job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0);
+  const label = (job) => `${job.message}${job.total > 0 ? ` ${number(job.done)} of ${number(job.total)}${job.failed ? ` (${number(job.failed)} could not be mended)` : ''}` : ''}`;
+
+  const scan = async () => {
+    try { state = await api('POST', '/api/cards/health/scan'); draw(); } catch (error) { failed(error); }
+  };
+  const repair = async () => {
+    try {
+      const answer = await api('POST', '/api/cards/health/repair');
+      state = { ...state, job: answer.job };
+      draw();
+    } catch (error) { failed(error); }
+  };
+  const stop = async () => {
+    try { await api('POST', '/api/cards/health/cancel'); } catch (error) { failed(error); }
+  };
+
+  const problemsText = (problems) => Object.entries(problems).map(([key, count]) => `${number(count)} with ${TROUBLE[key] || key}`).join(', ');
+
+  const rowsOf = (report) => {
+    const rows = [];
+    for (const library of report.libraries) {
+      rows.push(h('li', { class: library.flagged ? 'bad' : 'good', dataset: { store: library.id } },
+        h('strong', {}, `${library.label} library`),
+        h('span', {}, ` ${number(library.cards)} cards, ${number(library.pokemon)} Pokémon: ${library.flagged ? problemsText(library.problems) : 'all have their data'}`),
+        library.samples.length > 0 && h('small', {}, ` · for example ${library.samples.map((sample) => sample.name || sample.id).join(', ')}`)));
+    }
+    rows.push(h('li', { class: report.lookup.flagged ? 'bad' : 'good', dataset: { store: 'lookup' } },
+      h('strong', {}, 'Remembered cards'),
+      h('span', {}, ` ${number(report.lookup.cards)} saved: ${report.lookup.flagged ? problemsText(report.lookup.problems) : 'all have their data'}`)));
+    rows.push(h('li', { class: report.inPlay.length ? 'bad' : 'good', dataset: { store: 'table' } },
+      h('strong', {}, 'On the table'),
+      h('span', {}, report.inPlay.length ? ` ${report.inPlay.map((entry) => entry.name).join(', ')}: no attacks, abilities or retreat cost on file` : ' every Pokémon has what its card says')));
+    return rows;
+  };
+
+  const draw = () => {
+    shownKey = shapeOf(state);
+    live = null;
+    const job = state.job;
+    const report = state.report;
+    const busy = running();
+    let progress = null;
+    if (busy) {
+      const fill = h('div', { style: { width: `${percent(job)}%` } });
+      const text = h('span', { class: 'library-state' }, label(job));
+      const bar = h('div', { class: `progress${job.total > 0 ? '' : ' waiting'}`, role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, fill);
+      live = (next) => { fill.style.width = `${percent(next)}%`; bar.classList.toggle('waiting', next.total === 0); text.textContent = label(next); };
+      progress = h('div', {}, bar, text);
+    }
+    const last = job && job.finished ? job : null;
+    replace(box,
+      h('div', { class: 'button-row' },
+        h('button', { class: 'btn', type: 'button', disabled: busy || undefined, onclick: scan }, report ? 'Check again' : 'Check now'),
+        busy
+          ? h('button', { class: 'btn', type: 'button', onclick: stop }, 'Stop')
+          : h('button', { class: 'btn primary', type: 'button', disabled: !report || report.flagged === 0 || undefined, title: report && report.flagged === 0 ? 'Nothing to mend' : '', onclick: repair }, 'Repair')),
+      progress,
+      report
+        ? h('div', { class: 'health-report' },
+          h('p', { class: 'library-state' }, `Checked ${new Date(report.scannedAt).toLocaleTimeString()}. ${report.flagged === 0 ? 'Everything has its data.' : `${number(report.flagged)} cards lack some of it.`}`),
+          h('ul', { class: 'health-list' }, rowsOf(report)))
+        : h('p', { class: 'library-state' }, 'Not checked yet.'),
+      !busy && last && h('p', { class: last.phase === 'error' ? 'library-error' : 'library-state' }, last.message));
+  };
+
+  const refresh = (next) => {
+    if (state && next.serial !== undefined && next.serial < state.serial) return;
+    state = next;
+    if (shapeOf(state) !== shownKey) { draw(); return; }
+    if (running() && live) live(state.job);
+  };
+
+  const off = app.conn.on('health:progress', refresh);
+  api('GET', '/api/cards/health').then((first) => { state = first; draw(); }).catch(failed);
+
+  return { healthBox: box, cleanup: off };
+}
+
 export function libraryPanels(app) {
   let status = null;
   let shownKey = '';

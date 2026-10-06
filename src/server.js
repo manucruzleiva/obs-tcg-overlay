@@ -23,6 +23,8 @@ const { ThemeStore } = require('./services/themes');
 const { SoundStore } = require('./services/sounds');
 const { ImageCache } = require('./services/images');
 const { CatalogService } = require('./services/catalog');
+const { CardHealth } = require('./services/card-health');
+const { LimitlessDecks } = require('./services/limitless');
 const { PackageService } = require('./services/package');
 const { Session, PRODUCERS } = require('./session');
 const { getLanAddresses, isShared } = require('./services/network');
@@ -212,6 +214,24 @@ async function initialize() {
   pokemonTCG.setCatalog(catalog);
   catalog.on('progress', (status) => io.to(PRODUCERS).emit('catalog:progress', status));
 
+  // The health check of the card data: finds the cards that lack their attacks or their retreat cost, and mends them
+  const cardHealth = new CardHealth({
+    db,
+    catalog,
+    pokemonTCG,
+    readState: () => gameState.state,
+    // a Pokémon on the table that lacks its details: ask for them again and fill them in (as when the card service was slow to answer)
+    healInPlay: async (side, slot) => {
+      const pokemon = gameState.pokemonAt(side, slot);
+      if (!pokemon || !pokemon.cardId) return false;
+      return session.fillDetailsLater({ target: slot === -1 ? `${side}-active` : `${side}-bench-${slot}`, cardId: pokemon.cardId });
+    },
+    // the tests make a repair quick
+    paceMs: process.env.OTO_HEALTH_PACE_MS === undefined ? undefined : Number(process.env.OTO_HEALTH_PACE_MS),
+    log: (level, message, meta) => getLogger()[level](message, meta)
+  });
+  cardHealth.on('progress', (status) => io.to(PRODUCERS).emit('health:progress', status));
+
   getLogger().info('Server initialized', { logDir: process.env.LOG_DIR || path.join(__dirname, '../logs') });
 
   // Anyone may open the overlay and the sign-in page; everything else needs the password (when one is set)
@@ -223,13 +243,21 @@ async function initialize() {
     return res.status(401).json({ error: 'Password required' });
   };
 
+  // The decks that are played the most (Limitless TCG): the list that comes with the app, or the one that was read again, which the pages load
+  const limitless = new LimitlessDecks({ dir: path.join(dataDir, 'decks'), log: (level, message, meta) => getLogger()[level](message, meta) });
+  limitless.load();
+  app.get('/js/deck-popular.js', (req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.type('application/javascript').send(limitless.script());
+  });
+
   // The cards used most, for the card picker to start from; and expired lookups are cleared away now and then
   const cardUsage = new CardUsage({ db, localize: (card) => pokemonTCG.localize(card) });
   cache.cleanup();
   setInterval(() => cache.cleanup(), 60 * 60 * 1000).unref();
 
   const { publicRouter, protectedRouter } = require('./api/routes')({
-    db, cache, pokemonTCG, cardUsage, gameState, session, auth, themes, sounds, catalog, packages, io, instanceId: INSTANCE_ID
+    db, cache, pokemonTCG, cardUsage, cardHealth, limitless, gameState, session, auth, themes, sounds, catalog, packages, io, instanceId: INSTANCE_ID
   });
   app.use('/api', publicRouter);
   app.use('/api', gate, protectedRouter);
@@ -262,6 +290,14 @@ async function initialize() {
   };
   iconFolder('/assets/energy', 'energy', GAME.ENERGY_TYPES.map((type) => type.icon));
   iconFolder('/assets/status', 'status', GAME.STATUS_CONDITIONS.map((condition) => condition.icon));
+  // The pictures of the GX attack and the VSTAR Power markers: the ones that come with OTO are SVG drawings, and a picture of the maintainer's own
+  // (a PNG, a WebP or a JPG with the same name) takes their place. With none the answer is 204, and the overlay shows a pill with the name.
+  const MARKERS = new Set(['gx', 'vstar']);
+  app.get('/assets/markers/:name', (req, res, next) => {
+    if (!MARKERS.has(req.params.name)) return next();
+    const file = ['png', 'webp', 'jpg', 'jpeg', 'svg'].map((type) => path.join(ASSETS_DIR, 'markers', `${req.params.name}.${type}`)).find((found) => fs.existsSync(found));
+    return file ? res.sendFile(file, { dotfiles: 'allow' }) : res.status(204).end();
+  });
   // The prize card backs (English, Japanese, a Poké Ball) are put there by the maintainer, as whatever kind of picture they have (a PNG, a JPG or
   // a WebP): they are asked for by name alone, and the file that is there is sent. With none the answer is 204 like for the icons, and the
   // overlay draws a card back of its own.
@@ -269,7 +305,7 @@ async function initialize() {
   app.get('/assets/cardbacks/:name', (req, res, next) => {
     if (!CARD_BACKS.has(req.params.name)) return next();
     const file = THEME_OPTIONS.PRIZE_PICTURE_TYPES.map((type) => path.join(ASSETS_DIR, 'cardbacks', `${req.params.name}.${type}`)).find((found) => fs.existsSync(found));
-    return file ? res.sendFile(file) : res.status(204).end();
+    return file ? res.sendFile(file, { dotfiles: 'allow' }) : res.status(204).end();
   });
   app.use('/assets/fonts', express.static(path.join(ASSETS_DIR, 'fonts'), { index: false }));
 

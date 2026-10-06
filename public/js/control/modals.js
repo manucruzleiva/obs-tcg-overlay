@@ -2,7 +2,7 @@
  * The dialogs behind the keyboard shortcuts: pick a card, knock out, damage and heal, energy, bench,
  * prize cards, abilities, attack announcement, help, overlay preview and draft conflicts.
  */
-import { h, icon, replace, debounce, energyStyle } from './dom.js';
+import { h, icon, replace, ago, personColor, debounce, energyStyle } from './dom.js';
 import { openModal, closeModal } from './ui.js';
 
 const GAME = window.OTO_GAME;
@@ -97,7 +97,21 @@ export function openPicker(app, purpose) {
     if (which === 'evolve') return mon.name ? { evolvesFrom: mon.name } : {};
     const stages = Array.isArray(mon.stages) ? mon.stages : [];
     if (stages.length > 0) return { stage: stages[stages.length - 1] };
-    return mon.evolvesFrom ? { query: mon.evolvesFrom } : {};
+    // (what the Pokémon was saved with, or else what its card says when it is looked up)
+    const from = mon.evolvesFrom || lookedUp;
+    return from ? { query: from } : {};
+  };
+  // A Pokémon that was put on the table before cards said what they evolve from has not got it: its card says
+  let lookedUp = '';
+  let lookup = null;
+  const lookUpEvolvesFrom = () => {
+    const mon = monNow();
+    if (lookup || mon.evolvesFrom || !mon.cardId) return lookup;
+    lookup = fetch(`/api/cards/${encodeURIComponent(mon.cardId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((card) => { lookedUp = (card && typeof card.evolvesFrom === 'string' ? card.evolvesFrom : '').trim(); })
+      .catch(() => { /* the card could not be looked up: the starting list is shown */ });
+    return lookup;
   };
   const hasDefault = () => {
     const found = defaultsFor(tab);
@@ -146,12 +160,6 @@ export function openPicker(app, purpose) {
     input.placeholder = asItem ? 'Search a Fossil or a Doll…' : 'Search by card name…';
   };
 
-  // A Pokémon Tool can add to the maximum HP of the Pokémon ("+50 HP"): most add nothing
-  const bonusInput = kind === 'tool' ? h('input', { type: 'number', min: 0, max: 500, step: 10, value: '0', class: 'amount-input', 'aria-label': 'Maximum HP the tool adds' }) : null;
-  const bonusRow = bonusInput && h('div', { class: 'tool-bonus' },
-    h('label', {}, h('span', {}, 'Adds to the maximum HP'), bonusInput),
-    h('p', { class: 'hint-line' }, 'Most Pokémon Tools add nothing. For one that says "+50 HP" write 50: the Pokémon has that much more HP while the tool is on it.'));
-
   // A Stadium that is played uses the Stadium play of the turn of whoever plays it: the one who has the turn unless it is said otherwise,
   // and it can be left unused (a correction, or an effect that put it there)
   let playedBy = state.trainerA.isTurn ? 'trainerA' : state.trainerB.isTurn ? 'trainerB' : app.focus;
@@ -195,7 +203,7 @@ export function openPicker(app, purpose) {
       result = { ok: true };
     } else if (kind === 'tool') {
       result = await app.act(`action:${side}`, {
-        action: 'attachTool', slot, cardId: card.id, name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', hp: tens(bonusInput.value)
+        action: 'attachTool', slot, cardId: card.id, name: card.name, image: (card.images && (card.images.small || card.images.large)) || ''
       });
     } else {
       const target = `${side}-${slot === undefined || slot === -1 ? 'active' : `bench-${slot}`}`;
@@ -259,6 +267,11 @@ export function openPicker(app, purpose) {
     }
     // Nothing typed: what the tab starts from (the evolutions, or the card it evolved from), or else the cards used most, then the ones already
     // saved on this computer
+    if (!text && kind === 'evolve' && tab === 'devolve' && !defaultsFor('devolve').stage) {
+      status.textContent = 'Looking for the card it evolved from…';
+      await lookUpEvolvesFrom();
+      if (mine !== token) return;
+    }
     const base = text ? {} : defaultsFor(tab);
     if (base.stage) {
       // (the card it evolved from is on file: no search is needed)
@@ -292,9 +305,10 @@ export function openPicker(app, purpose) {
         // what the list is made of, in the order it is listed
         const parts = [data.favorites > 0 && 'Your favorite cards', data.used > 0 && 'your most used cards', (data.saved === undefined ? data.source !== 'used' : data.saved > 0) && 'cards saved on this computer'].filter(Boolean);
         const what = parts.join(', then ').replace(/^./, (letter) => letter.toUpperCase());
+        const basic = kind === 'evolve' && tab === 'devolve' ? `${monNow().name} does not say what it evolves from (it may be a Basic Pokémon). ` : '';
         status.textContent = listed.length
-          ? `${what} (${data.totalCount > listed.length ? `showing ${listed.length} of ${data.totalCount}` : data.totalCount}). Type a card name to search for others.`
-          : 'Type a card name to search. The cards you use, and the ones you give a star, are listed here next time.';
+          ? `${basic}${what} (${data.totalCount > listed.length ? `showing ${listed.length} of ${data.totalCount}` : data.totalCount}). Type a card name to search for others.`
+          : `${basic}Type a card name to search. The cards you use, and the ones you give a star, are listed here next time.`;
       } else {
         const where = data.source === 'library' ? ` in your ${data.library} library` : data.source === 'tcgdex' ? ' on TCGdex' : data.source === 'scrydex' ? ' on Scrydex' : '';
         // TCGdex does not say how many cards there are in all: a full page means there may be more
@@ -364,7 +378,7 @@ export function openPicker(app, purpose) {
   openModal({
     title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy' || kind === 'prize', // over the energy editor or the prize cards that asked for it
     onClose: followStars,
-    body: [fromBench, playRow, modeRow, tabRow, bonusRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
+    body: [fromBench, playRow, modeRow, tabRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
   });
   drawMode();
   drawTabs();
@@ -1031,6 +1045,35 @@ export function openAttack(app) {
       return;
     }
     if (event.key === 'Enter' && event.target.tagName !== 'BUTTON' && event.target.tagName !== 'SUMMARY') { event.preventDefault(); go(); }
+  });
+}
+
+// ------------------------------------------------------------------------------------ activity
+
+// Everything any producer has done, newest first. It follows what happens while it is open, and "2 min ago" stays honest.
+export function openActivity(app) {
+  const list = h('ol', { class: 'feed', 'aria-label': 'Recent changes' });
+  const draw = () => {
+    const entries = app.conn.activity;
+    const you = app.conn.you;
+    replace(list, entries.length === 0
+      ? h('li', { class: 'empty' }, 'Nothing has happened yet.')
+      : entries.slice().reverse().map((entry) => {
+        // what the game did by itself (a game won because of the last prize card) says so, and it is undone like anything else
+        const automatic = entry.kind === 'auto';
+        return h('li', { class: `feed-item kind-${entry.kind}`, title: automatic ? 'Done by OTO by itself, not by a producer. Undo takes it back.' : null },
+          h('span', { class: 'who', style: automatic ? null : { color: personColor(entry.by.clientId) } }, entry.by.name, you && entry.by.clientId === you.clientId ? ' (you)' : ''),
+          h('span', { class: 'what' }, automatic ? h('span', { class: 'auto-badge' }, 'automatic') : null, entry.label),
+          h('time', { class: 'when', dateTime: new Date(entry.ts).toISOString() }, ago(entry.ts)));
+      }));
+  };
+  draw();
+  const off = app.conn.on('activity', draw);
+  const timer = setInterval(draw, 15000);
+  openModal({
+    title: 'Activity', subtitle: 'Everything any producer does', size: 'md', name: 'activity', body: list,
+    footer: h('button', { class: 'btn primary', type: 'button', onclick: closeModal }, 'Close'),
+    onClose: () => { off(); clearInterval(timer); }
   });
 }
 

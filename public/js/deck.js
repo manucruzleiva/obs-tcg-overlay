@@ -40,7 +40,7 @@
     if (typeof text !== 'string' || !text.trim()) return null;
     // a deck that is known by its name ("Basic Box") has the Pokémon of its icon, whatever words are in the name
     const popular = POPULAR.find(text);
-    const id = popular ? popular.pokemon[0] : POKEDEX.idOf(text);
+    const id = (popular && popular.pokemon[0]) || POKEDEX.idOf(text);
     if (id) return { kind: 'pokemon', id, name: POKEDEX.nameOf(id), src: spriteUrl(id) };
     const type = energyOf(text);
     return type ? { kind: 'energy', key: type.key, name: `${type.label} energy`, src: type.icon } : null;

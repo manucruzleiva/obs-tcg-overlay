@@ -852,7 +852,7 @@ describe('design editor', { skip }, () => {
 
       it('has a sample tool on the canvas, shown as a picture of its card', async () => {
         assert.equal(await overlayFrame().evaluate(() => document.querySelectorAll('.trainer-a .active .tool-card img').length), 1);
-        assert.equal(await overlayFrame().evaluate(() => document.querySelector('.trainer-a .active .tool-card-hp').textContent), '+50');
+        assert.equal(await overlayFrame().evaluate(() => document.querySelectorAll('.trainer-a .active .tool-card-hp').length), 0, 'a tool has no HP of its own');
       });
     });
 

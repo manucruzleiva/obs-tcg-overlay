@@ -28,6 +28,8 @@ describe('control panel', { skip }, () => {
     const tool = { id: 'sv-5', name: 'Bravery Charm', supertype: 'Trainer', subtypes: ['Pokémon Tool'], number: '5', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('charm'), large: ART('charm') } };
     api = await startMockCardApi({
       '/cards/sv-1': { data: { ...pokemon, abilities: [{ name: 'Resolute Heart' }] } },
+      // a Pokémon that says what it evolves from (for the Devolution of one that was put there without knowing)
+      '/cards/sv-6': { data: { ...pokemon, id: 'sv-6', name: 'Raichu', hp: '120', evolvesFrom: 'Pichu', attacks: [{ name: 'Thunder', damage: '90' }], convertedRetreatCost: 1 } },
       '/cards/sv-4': { data: fossil },
       // a Stadium search answers with a Stadium, a Special Energy search with a Special Energy card, an Item search with a Fossil, a Pokémon Tool
       // search with a tool, anything else with the Pokémon
@@ -76,6 +78,17 @@ describe('control panel', { skip }, () => {
     }
     await page.waitForFunction((revision) => window.oto.conn.live.revision >= revision, snapshot.revision);
   }
+
+  // The activity of the producers is in a popup: open it, read it and close it
+  const feedText = async (from = page) => {
+    await from.getByRole('button', { name: 'Activity' }).click();
+    const feed = from.locator('.modal[aria-label="Activity"] .feed');
+    await feed.waitFor();
+    const text = await feed.textContent();
+    await from.keyboard.press('Escape');
+    await from.waitForSelector('.modal[aria-label="Activity"]', { state: 'detached' });
+    return text;
+  };
 
   const modal = () => page.locator('.modal');
   // Dialogs close once the server has answered, a moment after the game changes
@@ -203,7 +216,11 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.trainerA.active.specialEnergies.length, 1);
     await press('Escape'); // the panel behind the dialog is out of reach while it is open
     await dialogClosed();
+    // on the Pokémon a click adds another of the same card, and a right click takes one off
     await page.locator('.trainer-panel.side-a .mon-card .energy-chip.special').click();
+    await expectLive((state) => state.trainerA.active.specialEnergies.length, 2);
+    await page.locator('.trainer-panel.side-a .mon-card .energy-chip.special').first().click({ button: 'right' });
+    await page.locator('.trainer-panel.side-a .mon-card .energy-chip.special').first().click({ button: 'right' });
     await expectLive((state) => state.trainerA.active.specialEnergies.length, 0);
     assert.deepEqual(page.problems, []);
   });
@@ -243,7 +260,7 @@ describe('control panel', { skip }, () => {
 
       await deck('a').press('Enter');
       await expectLive((state) => state.trainerA.deck, 'Charizard ex');
-      assert.match(await page.locator('.feed').textContent(), /Ash deck → Charizard ex/);
+      assert.match(await feedText(), /Ash deck → Charizard ex/);
       assert.deepEqual(page.problems, []);
     });
 
@@ -296,6 +313,46 @@ describe('control panel', { skip }, () => {
   });
 
   // The cards that are the prizes of a trainer are chosen in a dialog with the card selector, and set all at once
+  it('has the activity in a popup, opened with a button next to Draft mode and Preview, instead of in the middle of the page', async () => {
+    assert.equal(await page.locator('.center-panel .feed, .center-panel .activity-block').count(), 0, 'it is not in the workspace');
+    const buttons = await page.locator('.bar-actions > .btn').allTextContents();
+    assert.deepEqual(buttons.map((text) => text.trim().replace(/\s+/g, ' ')), ['Draft mode', 'Activity', 'Preview']);
+
+    await page.getByRole('button', { name: 'Activity' }).click();
+    const popup = page.locator('.modal[aria-label="Activity"]');
+    await popup.waitFor();
+    assert.match(await popup.locator('.modal-sub').textContent(), /Everything any producer does/);
+    // it follows what happens while it is open, with who did it
+    await producer.act('action:trainerA', { action: 'setName', name: 'Ash Ketchum' });
+    await popup.locator('.feed-item', { hasText: 'Ash Ketchum' }).first().waitFor();
+    assert.match(await popup.locator('.feed-item').first().textContent(), /Maya.*Ash/);
+    assert.equal(await popup.locator('.feed-item .when').first().evaluate((node) => node.tagName), 'TIME');
+    await press('Escape');
+    await dialogClosed();
+    // and the popup does not keep listening once it is closed
+    await producer.act('action:trainerA', { action: 'setName', name: 'Ash' });
+    assert.deepEqual(page.problems, []);
+  });
+
+  it('gives each kind of thing its color: an ability red, a Pokémon Tool purple, a Stadium green and a Supporter orange', async () => {
+    await producer.act('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Charm', image: IMG });
+    await producer.act('action:trainerA', { action: 'setAbilityUsed', slot: -1, index: 0, used: false }).catch(() => {});
+    await page.waitForSelector('.trainer-panel.side-a .tool-chip');
+    const colorOf = (variable) => page.evaluate((name) => { const probe = document.createElement('span'); probe.style.color = `var(${name})`; document.body.appendChild(probe); const value = getComputedStyle(probe).color; probe.remove(); return value; }, variable);
+    const colors = { ability: await colorOf('--ability'), tool: await colorOf('--tool'), stadium: await colorOf('--stadium'), supporter: await colorOf('--supporter') };
+    assert.equal(new Set(Object.values(colors)).size, 4);
+    assert.equal(await page.$eval('.trainer-panel.side-a .tool-chip', (node) => getComputedStyle(node).borderTopColor), colors.tool, 'a Pokémon Tool');
+    assert.equal(await page.$eval('.trainer-panel.side-a .mini-btn[data-kind="tool"]', (node) => getComputedStyle(node).color), colors.tool, 'the button that puts one on');
+    assert.equal(await page.$eval('.trainer-panel.side-a .mini-btn[data-kind="ability"]', (node) => getComputedStyle(node).color), colors.ability, 'the button of the abilities');
+    assert.equal(await page.$eval('.stadium-block .block-title', (node) => getComputedStyle(node).color), colors.stadium, 'the Stadium');
+    assert.equal(await page.$eval('.trainer-panel.side-a .token-btn[data-kind="supporter"]', (node) => getComputedStyle(node).borderTopColor), colors.supporter, 'the Supporter play');
+    assert.equal(await page.$eval('.trainer-panel.side-a .token-btn[data-kind="stadium"]', (node) => getComputedStyle(node).borderTopColor), colors.stadium, 'and the Stadium play');
+    // an ability token of the Pokémon has the red
+    await producer.act('action:trainerA', { action: 'setActive', slot: -1, cardId: 'sv-1', name: 'Pikachu', image: IMG, hp: 100, abilities: ['Static'] });
+    await page.waitForSelector('.trainer-panel.side-a .ability-chip');
+    assert.equal(await page.$eval('.trainer-panel.side-a .ability-chip', (node) => getComputedStyle(node).borderTopColor), colors.ability, 'an ability');
+  });
+
   describe('the cards on the prizes', () => {
     const panel = (side = 'a') => page.locator(`.trainer-panel.side-${side}`);
     const setButton = (side = 'a') => panel(side).getByRole('button', { name: 'Set prizes', exact: true });
@@ -411,7 +468,7 @@ describe('control panel', { skip }, () => {
       await expectLive(cardsOf(), [PIKACHU, null, PIKACHU, null, null, null]);
       await dialogClosed();
       assert.deepEqual((await live()).trainerB.prizes.cards, [null, null, null, null, null, null], 'the other trainer has none');
-      assert.match(await page.locator('.feed').textContent(), /Ash prize cards set \(2\)/);
+      assert.match(await feedText(), /Ash prize cards set \(2\)/);
       assert.deepEqual(page.problems, []);
     });
 
@@ -545,7 +602,7 @@ describe('control panel', { skip }, () => {
     it('moves a Pokémon of the bench to an empty slot', async () => {
       await slot(0).dragTo(slot(2), { sourcePosition: { x: 12, y: 12 } });
       await expectLive((state) => names(state), ['Pikachu', '', '', 'Eevee']);
-      assert.match(await page.locator('.feed').textContent(), /Eevee/);
+      assert.match(await feedText(), /Eevee/);
     });
 
     it('changes places with the Pokémon it is dropped on, the Active one too', async () => {
@@ -569,17 +626,20 @@ describe('control panel', { skip }, () => {
     });
   });
 
-  it('attaches another energy of the same type with a right click on an energy, as the turn\'s attachment while it is free', async () => {
+  it('attaches another energy of the same type with a click on an energy, as the turn\'s attachment while it is free, and takes one off with a right click', async () => {
     await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 1, countsAsTurn: false });
     const chip = () => page.locator('.trainer-panel.side-a .mon-card[data-slot="-1"] .energy-chip[data-energy="lightning"]').first();
     await chip().waitFor();
-    assert.match(await chip().getAttribute('title'), /right-click to add another/);
-    await chip().click({ button: 'right' });
-    await expectLive((state) => [state.trainerA.active.energies, state.trainerA.resources.energyPerTurn.used], [['lightning', 'lightning'], 1]);
-    await chip().click({ button: 'right' });
-    await expectLive((state) => [state.trainerA.active.energies.length, state.trainerA.resources.energyPerTurn.used], [3, 1], 'the next one is a special attachment');
+    assert.match(await chip().getAttribute('title'), /click to add another, right-click to take it off/);
     await chip().click();
-    await expectLive((state) => state.trainerA.active.energies.length, 2, 'a click still takes one off');
+    await expectLive((state) => [state.trainerA.active.energies, state.trainerA.resources.energyPerTurn.used], [['lightning', 'lightning'], 1]);
+    await chip().click();
+    await expectLive((state) => [state.trainerA.active.energies.length, state.trainerA.resources.energyPerTurn.used], [3, 1], 'the next one is a special attachment');
+    await chip().click({ button: 'right' });
+    await expectLive((state) => state.trainerA.active.energies.length, 2, 'a right click takes one off');
+    await chip().click({ button: 'right' });
+    await chip().click({ button: 'right' });
+    await expectLive((state) => state.trainerA.active.energies.length, 0);
     assert.deepEqual(page.problems, []);
   });
 
@@ -734,8 +794,8 @@ describe('control panel', { skip }, () => {
 
   it('shows who else is producing and what they do', async () => {
     await producer.act('action:trainerB', { action: 'prizeMinus' });
-    await page.waitForFunction(() => document.querySelector('.feed').textContent.includes('(5 left)'));
-    assert.match(await page.locator('.feed').textContent(), /Maya.*Gary prizes −1 \(5 left\)/);
+    await page.waitForFunction(() => window.oto.conn.activity.some((entry) => entry.label.includes('(5 left)')));
+    assert.match(await feedText(), /Maya.*Gary prizes −1 \(5 left\)/);
     assert.match(await page.locator('.people').textContent(), /Maya/);
   });
 
@@ -824,7 +884,7 @@ describe('control panel', { skip }, () => {
     await second.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '5');
     await second.keyboard.press('i');
     await page.waitForFunction(() => [...document.querySelectorAll('.trainer-panel.side-a .switch input')].some((box) => box.checked));
-    assert.match(await second.locator('.feed').textContent(), /prizes −1/);
+    assert.match(await feedText(second), /prizes −1/);
   });
 
   it('follows the turn with the shortcut focus, and lets 1 and 2 choose', async () => {
@@ -919,7 +979,7 @@ describe('control panel', { skip }, () => {
 
     await expectLive((state) => state.trainerB.prizes.count, 4);
     await expectLive((state) => state.trainerA.active.name, '');
-    await page.waitForFunction(() => document.querySelector('.feed').textContent.includes('Pikachu knocked out (Gary takes 2 prizes)'));
+    await page.waitForFunction(() => window.oto.conn.activity.some((entry) => entry.label.includes('Pikachu knocked out (Gary takes 2 prizes)')));
     // the Active Pokémon is gone, so the dialog for the next one opens by itself
     await page.waitForSelector('.modal[aria-label="Deploy the Active Pokémon · Ash"]');
     await page.locator('.from-bench .choice', { hasText: 'Eevee' }).click();
@@ -989,47 +1049,85 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    // The list of a tab is there once the status line no longer says it is looking (the list of the other tab is still shown until then)
+    const settled = () => page.waitForFunction(() => { const line = document.querySelector('.modal .picker-status'); return Boolean(line) && !/^(Looking|Searching)/.test(line.textContent); });
+
+    it('looks up what a Pokémon evolves from when it was put on the table without knowing, and starts Devolution from that card', async () => {
+      await producer.act('action:trainerA', { action: 'setActive', cardId: 'sv-6', name: 'Raichu', image: IMG, hp: 120 });
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.evolvesFrom], ['Raichu', '']);
+      api.requests.length = 0;
+      await page.locator(`${active()} .mini-btn[title="Evolve or go back a stage"]`).click();
+      await page.waitForSelector('.modal[aria-label^="Evolution"]');
+      await modal().locator('.evolve-tabs [data-tab="devolve"]').click();
+      await settled();
+      assert.ok(api.requests.some((url) => url.startsWith('/cards/sv-6')), 'its card was asked for what it evolves from');
+      assert.ok(api.requests.some((url) => decodeURIComponent(url).includes('Pichu')), 'and the card before it is looked for');
+      assert.match(await modal().locator('.picker-status').textContent(), /Pichu, which Raichu evolves from/);
+      assert.doesNotMatch(await modal().locator('.picker-status').textContent(), /does not say what it evolves from/);
+    });
+
+    it('says so when the card does not say what it evolves from, and shows the starting list', async () => {
+      await page.locator(`${active()} .mini-btn[title="Evolve or go back a stage"]`).click();
+      await page.waitForSelector('.modal[aria-label^="Evolution"]');
+      await modal().locator('.evolve-tabs [data-tab="devolve"]').click();
+      await settled();
+      assert.match(await modal().locator('.picker-status').textContent(), /Pikachu does not say what it evolves from \(it may be a Basic Pokémon\)/);
+    });
+
     it('starts Devolution from the card that the card says it evolves from when nothing is on file, and lets any card be picked by typing', async () => {
-      await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv-9', cardData: { id: 'sv-9', name: 'Raichu', hp: '120', images: { small: IMG }, abilities: [], attacks: [], retreat: 1, evolvesFrom: 'Pichu' } });
-      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.evolvesFrom, state.trainerA.active.stages], ['Raichu', 'Pichu', []]);
+      await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv-9', cardData: { id: 'sv-9', name: 'Electrode', hp: '120', images: { small: IMG }, abilities: [], attacks: [], retreat: 1, evolvesFrom: 'Voltorb' } });
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.evolvesFrom, state.trainerA.active.stages], ['Electrode', 'Voltorb', []]);
       await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 2 });
       api.requests.length = 0;
       await page.locator(`${active()} .mini-btn[title="Evolve or go back a stage"]`).click();
       await page.waitForSelector('.modal[aria-label^="Evolution"]');
       await modal().locator('.evolve-tabs [data-tab="devolve"]').click();
+      await settled();
       await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).waitFor();
       assert.equal(await modal().locator('.stage-card').count(), 0, 'nothing is on file');
-      assert.ok(api.requests.some((url) => decodeURIComponent(url).includes('Pichu')), 'it looks for the card it evolves from');
-      assert.match(await modal().locator('.picker-status').textContent(), /Pichu, which Raichu evolves from/);
+      assert.ok(api.requests.some((url) => decodeURIComponent(url).includes('Voltorb')), 'it looks for the card it evolves from');
+      assert.match(await modal().locator('.picker-status').textContent(), /Voltorb, which Electrode evolves from/);
       // the card is chosen by hand: the Pokémon goes back to it, keeping what is on it, and remembers nothing
       await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).click();
       await dialogClosed();
       await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.energies, state.trainerA.active.stages], ['Pikachu ex', ['lightning', 'lightning'], []]);
     });
 
-    it('puts a Pokémon Tool on a Pokémon of the bench too, with the HP it adds, and takes it off with a click', async () => {
+    it('puts a Pokémon Tool on a Pokémon of the bench too, with no HP of its own to set, and takes it off with a click', async () => {
       const bench = '.trainer-panel.side-a .mon-card.compact';
       await page.locator(`${bench} .mini-btn[title="Tool"]`).first().click();
       await page.waitForSelector('.modal[aria-label^="Pokémon Tool"]');
-      assert.match(await modal().locator('.hint-line').first().textContent(), /Most Pokémon Tools add nothing/);
-      await modal().locator('.tool-bonus input').fill('50');
+      assert.equal(await modal().locator('.tool-bonus').count(), 0, 'the maximum HP is changed on the Pokémon, not on the tool');
+      assert.doesNotMatch(await modal().textContent(), /maximum HP/i);
       await modal().locator('.search-input').fill('charm');
       await modal().locator('.card-pick', { hasText: 'Bravery Charm' }).click();
       await dialogClosed();
-      await expectLive((state) => [state.trainerA.bench[0].tools.map((tool) => [tool.name, tool.hp]), state.trainerA.bench[0].hp.max], [[['Bravery Charm', 50]], 110]);
+      await expectLive((state) => [state.trainerA.bench[0].tools.map((tool) => tool.name), state.trainerA.bench[0].hp.max], [['Bravery Charm'], 60]);
       const chip = page.locator(`${bench} .tool-chip`);
-      assert.match(await chip.textContent(), /Bravery Charm\s*\+50 HP/);
+      assert.equal((await chip.textContent()).trim(), 'Bravery Charm');
       await chip.click();
       await expectLive((state) => [state.trainerA.bench[0].tools.length, state.trainerA.bench[0].hp.max], [0, 60]);
     });
 
-    it('raises and lowers the maximum HP by tens', async () => {
-      const more = page.locator(`${active()} button[aria-label="Maximum HP 10 more"]`);
-      await more.click();
+    it('raises the maximum HP by tens with a click on its button, and lowers it with a right click (or Shift + click)', async () => {
+      const button = page.locator(`${active()} .maxhp-btn`);
+      assert.equal(await button.evaluate((node) => node.tagName), 'BUTTON');
+      assert.match(await button.textContent(), /Max HP\s*100/);
+      assert.equal(await page.locator(`${active()} .hp-line .maxhp-btn`).count(), 1, 'it is on the line of the HP');
+      await button.click();
       await expectLive((state) => state.trainerA.active.hp, { max: 110, current: 110 });
-      await page.locator(`${active()} button[aria-label="Maximum HP 10 less"]`).click();
+      await button.click();
+      await expectLive((state) => state.trainerA.active.hp, { max: 120, current: 120 });
+      await button.click({ button: 'right' });
+      await expectLive((state) => state.trainerA.active.hp, { max: 110, current: 110 });
+      await button.click({ modifiers: ['Shift'] });
       await expectLive((state) => state.trainerA.active.hp, { max: 100, current: 100 });
-      assert.equal(await page.locator(`${active()} .max-hp-number`).textContent(), '100');
+      assert.match(await button.textContent(), /Max HP\s*100/);
+      // the damage it has taken stays
+      await producer.act('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await expectLive((state) => state.trainerA.active.hp, { max: 100, current: 70 });
+      await button.click();
+      await expectLive((state) => state.trainerA.active.hp, { max: 110, current: 80 });
     });
 
     it('knocks out several Pokémon at once, of both trainers, each with its prize cards, and offers the next Active Pokémon', async () => {
@@ -1055,10 +1153,11 @@ describe('control panel', { skip }, () => {
       await modal().locator('.modal-foot .danger').click();
       assert.equal((await announced).title, 'TRIPLE KO!');
       await expectLive((state) => [state.trainerA.active.name, state.trainerA.bench[0].name, state.trainerB.active.name, state.trainerA.prizes.count, state.trainerB.prizes.count], ['', '', '', 5, 4]);
-      assert.match(await page.locator('.feed').textContent(), /Pikachu and Eevee and Charizard knocked out/);
       // (Ash has no Pokémon left: Gary won the game at once. The next Active Pokémon is still offered)
       await page.waitForSelector('.modal[aria-label^="Deploy the Active Pokémon"]');
       await press('Escape');
+      await dialogClosed();
+      assert.match(await feedText(), /Pikachu and Eevee and Charizard knocked out/);
     });
 
     it('moves damage from one Pokémon to another with M: any Pokémon of either trainer, in tens, never more than it has taken', async () => {
@@ -1084,7 +1183,7 @@ describe('control panel', { skip }, () => {
       await modal().locator('.modal-foot .primary').click();
       await dialogClosed();
       await expectLive((state) => [state.trainerA.active.hp.current, state.trainerB.active.hp.current], [90, 120]);
-      assert.match(await page.locator('.feed').textContent(), /Moved 30 damage from Pikachu \(Ash\) to Charizard \(Gary\)/);
+      assert.match(await feedText(), /Moved 30 damage from Pikachu \(Ash\) to Charizard \(Gary\)/);
 
       // and back, from the other trainer to a Pokémon on the bench
       await press('m');
@@ -1255,6 +1354,41 @@ describe('control panel', { skip }, () => {
     assert.equal(victory.side, 'trainerA');
     assert.match(victory.subtitle, /Ash wins/);
     await expectLive((state) => state.trainerA.prizes.count, 0);
+  });
+
+  it('shows in the activity what the game did by itself, apart from what a producer did, and the producer can undo it', async () => {
+    await producer.act('action:trainerA', { action: 'prizeSet', count: 1 });
+    await expectLive((state) => state.trainerA.prizes.count, 1);
+    await press('ArrowDown'); // Ash takes the last prize card: the game is won by itself
+    await expectLive((state) => state.matchScore.trainerAWins, 1);
+    assert.equal((await live()).trainerA.prizes.count, 0);
+
+    await page.getByRole('button', { name: 'Activity' }).click();
+    const feed = page.locator('.modal[aria-label="Activity"] .feed');
+    await feed.waitFor();
+    // (the activity keeps what earlier games did: the newest is the first)
+    const automatic = feed.locator('.feed-item').first();
+    assert.equal(await automatic.evaluate((node) => node.classList.contains('kind-auto')), true, 'the newest entry is the one of the system');
+    assert.match(await automatic.locator('.who').textContent(), /OTO \(automatic\)/);
+    assert.equal(await automatic.locator('.auto-badge').textContent(), 'automatic');
+    assert.match(await automatic.locator('.what').textContent(), /Ash won the game by itself \(took the last prize card\): score 1–0/);
+    assert.match(await feed.locator('.feed-item').nth(1).textContent(), /Ash prizes −1 \(0 left\)/, 'the producer\'s own step is right below it');
+    assert.equal(await feed.locator('.feed-item').nth(1).locator('.auto-badge').count(), 0);
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.modal[aria-label="Activity"]', { state: 'detached' });
+
+    // the first undo takes back the game that was won, the prize card stays taken; the second one gives the card back
+    await press('Control+z');
+    await expectLive((state) => state.matchScore.trainerAWins, 0);
+    assert.equal((await live()).trainerA.prizes.count, 0);
+    await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((toast) => /^Undid: Ash won the game \(automatic\)/.test(toast.textContent)));
+    await press('Control+z');
+    await expectLive((state) => state.trainerA.prizes.count, 1);
+    // and redo does it again: the card goes, and the game is won again by itself
+    await press('Control+y');
+    await press('Control+y');
+    await expectLive((state) => state.matchScore.trainerAWins, 1);
+    assert.deepEqual(page.problems, []);
   });
 
   describe('the attack dialog', () => {
@@ -1504,66 +1638,78 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.trainerA.active.abilities.map((ability) => ability.used), [false, false]);
   });
 
-  it('shows the retreat cost of every Pokémon and changes it with a stepper', async () => {
+  it('shows the retreat cost of every Pokémon as a button: a click adds a colorless Energy, a right click takes one off', async () => {
     const active = '.trainer-panel.side-a .mon-card:not(.compact)';
     const bench = '.trainer-panel.side-a .mon-card.compact';
-    const number = (where) => page.locator(`${where} .retreat-number[aria-label="Retreat cost"]`).textContent();
-    assert.equal(await page.locator('.trainer-panel.side-a .retreat-line').count(), 2, 'one for the Active Pokémon, one for the bench');
+    const button = (where) => page.locator(`${where} .retreat-btn`);
+    const number = (where) => button(where).locator('.stat-value').textContent();
+    assert.equal(await page.locator('.trainer-panel.side-a .retreat-btn').count(), 2, 'one for the Active Pokémon, one for the bench');
+    assert.match(await button(active).textContent(), /Retreat\s*0/);
+    assert.match(await button(active).getAttribute('title'), /click to add one colorless Energy, right-click/);
+    assert.equal(await page.locator(`${active} .hp-line .retreat-btn`).count(), 1, 'on the line of the HP');
     assert.equal(await number(active), '0');
-    assert.equal(await page.locator(`${active} button[aria-label="Retreat cost one less"]`).isDisabled(), true, 'it cannot go below nothing');
+    await button(active).click({ button: 'right' });
+    await wait(150);
+    assert.equal((await live()).trainerA.active.retreat, 0, 'it cannot go below nothing');
 
-    await page.locator(`${active} button[aria-label="Retreat cost one more"]`).click();
+    await button(active).click();
     await expectLive((state) => state.trainerA.active.retreat, 1);
-    await page.waitForFunction((where) => document.querySelector(`${where} .retreat-number`).textContent === '1', active);
-    await page.locator(`${active} button[aria-label="Retreat cost one more"]`).click();
+    await page.waitForFunction((where) => document.querySelector(`${where} .retreat-btn .stat-value`).textContent === '1', active);
+    await button(active).click();
     await expectLive((state) => state.trainerA.active.retreat, 2);
-    await page.locator(`${active} button[aria-label="Retreat cost one less"]`).click();
+    await button(active).click({ button: 'right' });
+    await expectLive((state) => state.trainerA.active.retreat, 1);
+    await button(active).click({ modifiers: ['Shift'] });
+    await expectLive((state) => state.trainerA.active.retreat, 0);
+    await button(active).click();
     await expectLive((state) => state.trainerA.active.retreat, 1);
 
     // the bench has its own, and the other trainer's is not touched
-    await page.locator(`${bench} button[aria-label="Retreat cost one more"]`).click();
+    await button(bench).click();
     await expectLive((state) => [state.trainerA.active.retreat, state.trainerA.bench[0].retreat, state.trainerB.active.retreat], [1, 1, 0]);
 
     // six is the most the overlay draws
     for (let cost = 2; cost <= 6; cost++) {
-      await page.locator(`${bench} button[aria-label="Retreat cost one more"]`).click();
+      await button(bench).click();
       await expectLive((state) => state.trainerA.bench[0].retreat, cost);
     }
-    assert.equal(await page.locator(`${bench} button[aria-label="Retreat cost one more"]`).isDisabled(), true);
+    await button(bench).click();
+    await wait(150);
+    assert.equal((await live()).trainerA.bench[0].retreat, 6, 'it stops at six');
 
     // someone else changes it: the number follows
     await producer.act('action:trainerA', { action: 'setRetreat', slot: -1, cost: 3 });
-    await page.waitForFunction((where) => document.querySelector(`${where} .retreat-number`).textContent === '3', active);
+    await page.waitForFunction((where) => document.querySelector(`${where} .retreat-btn .stat-value`).textContent === '3', active);
     assert.deepEqual(page.problems, []);
   });
 
   it('marks the GX attack and the VSTAR Power used with their own tokens (only while the overlay shows them), and a new game gives them back', async () => {
     const token = (side, name) => page.locator(`.trainer-panel.side-${side} .token-btn`, { hasText: name });
     // the overlay does not show them at first, so the control panel does not offer them
-    assert.equal(await token('a', 'GX attack').isHidden(), true);
-    assert.equal(await token('a', 'VSTAR Power').isHidden(), true);
+    assert.equal(await token('a', 'GX').isHidden(), true);
+    assert.equal(await token('a', 'VSTAR').isHidden(), true);
     await producer.act('action:settings', { action: 'update', display: { gxMarker: true } });
     await page.waitForFunction(() => !document.querySelector('.trainer-panel.side-a .token-btn.once-game').hidden);
-    assert.equal(await token('a', 'VSTAR Power').isHidden(), true, 'only the one that is switched on');
+    assert.equal(await token('a', 'VSTAR').isHidden(), true, 'only the one that is switched on');
     await producer.act('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
     await page.waitForFunction(() => [...document.querySelectorAll('.trainer-panel.side-a .token-btn.once-game')].every((node) => !node.hidden));
-    assert.match(await token('a', 'GX attack').getAttribute('title'), /Once per game/);
-    assert.match(await token('a', 'GX attack').textContent(), /ready/);
-    assert.match(await token('a', 'VSTAR Power').textContent(), /ready/);
+    assert.match(await token('a', 'GX').getAttribute('title'), /GX attack, once per game/);
+    assert.match(await token('a', 'GX').textContent(), /ready/);
+    assert.match(await token('a', 'VSTAR').textContent(), /ready/);
 
-    await token('a', 'GX attack').click();
+    await token('a', 'GX').click();
     await expectLive((state) => [state.trainerA.resources.gxPerGame.used, state.trainerA.resources.vstarPerGame.used], [1, 0]);
-    await page.waitForSelector('.trainer-panel.side-a .token-btn.used:has-text("GX attack")');
-    assert.match(await token('a', 'GX attack').textContent(), /used/);
-    assert.match(await token('b', 'GX attack').textContent(), /ready/, 'the other trainer has theirs');
+    await page.waitForSelector('.trainer-panel.side-a .token-btn.used:has-text("GX")');
+    assert.match(await token('a', 'GX').textContent(), /used/);
+    assert.match(await token('b', 'GX').textContent(), /ready/, 'the other trainer has theirs');
 
-    await token('b', 'VSTAR Power').click();
+    await token('b', 'VSTAR').click();
     await expectLive((state) => state.trainerB.resources.vstarPerGame.used, 1);
 
     // clicking a used one gives it back
-    await token('a', 'GX attack').click();
+    await token('a', 'GX').click();
     await expectLive((state) => state.trainerA.resources.gxPerGame.used, 0);
-    await token('a', 'GX attack').click();
+    await token('a', 'GX').click();
     await expectLive((state) => state.trainerA.resources.gxPerGame.used, 1);
 
     // the next game gives them all back
@@ -1572,7 +1718,7 @@ describe('control panel', { skip }, () => {
     await page.waitForFunction(() => document.querySelectorAll('.token-btn.used').length === 0);
 
     // so does a new match
-    await token('a', 'GX attack').click();
+    await token('a', 'GX').click();
     await expectLive((state) => state.trainerA.resources.gxPerGame.used, 1);
     await page.getByRole('button', { name: 'New match' }).click();
     await expectLive((state) => state.trainerA.resources.gxPerGame.used, 0);
@@ -1592,7 +1738,7 @@ describe('control panel', { skip }, () => {
     assert.equal(kept.matchScore.trainerAWins, 1, 'the score stays');
     assert.deepEqual([kept.trainerA.name, kept.trainerB.name], ['Ash', 'Gary'], 'and the names');
     assert.equal(kept.trainerA.active.name, 'Pikachu', 'and what is on the table');
-    assert.match(await page.locator('.feed').textContent(), /Next game \(score 1–0\)/);
+    assert.match(await feedText(), /Next game \(score 1–0\)/);
 
     // a new match is the whole thing again, the score too
     await page.getByRole('button', { name: 'New match' }).click();
@@ -1608,7 +1754,7 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.paused, true);
     await page.waitForFunction(() => /Resume game/.test(document.querySelector('.hype-block .btn.hype.amber').textContent));
     assert.equal(await button.getAttribute('aria-pressed'), 'true');
-    assert.match(await page.locator('.feed').textContent(), /Game paused/);
+    assert.match(await feedText(), /Game paused/);
 
     const resumed = producer.expect('announce', (announcement) => announcement.type === 'resume', 6000);
     await press('p');
@@ -1627,6 +1773,8 @@ describe('control panel', { skip }, () => {
   it('puts special conditions and Trapped on the Active Pokémon with the chips under it', async () => {
     const chip = (side, key) => page.locator(`.trainer-panel.side-${side} .condition-chip[data-condition="${key}"]`);
     assert.deepEqual(await page.locator('.trainer-panel.side-a .condition-chip').allTextContents(), ['Asleep', 'Burned', 'Confused', 'Paralyzed', 'Poisoned', 'Trapped']);
+    assert.equal(await page.locator('.trainer-panel.side-a .condition-chip:not(.on) .condition-label').first().isVisible(), false, 'a condition that is off is just its icon');
+    assert.equal(await page.locator('.trainer-panel.side-a .condition-chip').first().getAttribute('aria-label'), 'Asleep');
     assert.equal(await page.locator('.trainer-panel.side-a .mon-card.compact .condition-chip').count(), 0, 'the bench has none: only the Active Pokémon is asleep, burned or poisoned');
     assert.match(await chip('a', 'trapped').getAttribute('title'), /can't retreat/i);
     assert.equal(await chip('a', 'poisoned').getAttribute('aria-pressed'), 'false');
@@ -1960,7 +2108,7 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.trainerA.prizes.count, 4);
     await page.waitForSelector('.toast-success');
     assert.match((await toasts()).join(' '), /Sent 2 changes to the overlay/);
-    assert.match(await page.locator('.feed').textContent(), /Sent 2 changes/);
+    assert.match(await feedText(), /Sent 2 changes/);
 
     // draft mode does not turn off: the banner stays, empty, and the next change waits in it
     await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
@@ -2133,7 +2281,7 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((toast) => /The draft is open again with its 2 changes/.test(toast.textContent)));
       assert.equal((await live()).trainerA.prizes.count, 6, 'not on the overlay: it is a draft again');
       assert.equal((await prizeNumber('a').textContent()).trim(), '4', 'the page shows the draft');
-      assert.match(await page.locator('.feed').textContent(), /Redid: 2 sent changes, opened again as a draft/);
+      assert.match(await feedText(), /Redid: 2 sent changes, opened again as a draft/);
 
       await press('ArrowDown'); // changed before it goes
       await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('3 changes'));

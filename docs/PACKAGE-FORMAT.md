@@ -70,7 +70,7 @@ Every part is optional, but a package must hold a design, control settings, or b
 | `orientation` | The screen: `portrait` for a tall 1080 × 1920 mobile screen. Left out, the usual wide 1920 × 1080 one (so `layout` and `spaces` use the pixels of the stage that is chosen). Anything else is ignored |
 | `spaces` | Up to six places the overlay keeps clear for a camera feed or the like: `[ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]`. `shape` is `rect` (the usual), `rounded` or `circle`; `x` and `y` are pixels of the stage (up to ±3840), `w` and `h` are 40 to 3840; `name` (up to 24 letters) is only for the editor. `id` (1 to 6, each once) says which picture is the frame of the space: the slot `spaceFrame<id>`; one that is missing is given the lowest number that is free. A space that does not fit these is dropped |
 
-The color and shape variables you can set are listed in the **Look** tab of Settings, and in [`public/js/theme-options.js`](../public/js/theme-options.js). Examples: `--accent`, `--trainer-a`, `--trainer-b`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`.
+The color and shape variables you can set are listed in the **Look** tab of Settings, and in [`public/js/theme-options.js`](../public/js/theme-options.js). Examples: `--accent`, `--trainer-a`, `--trainer-b`, `--ability`, `--tool`, `--stadium`, `--supporter`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`.
 
 ## Pictures, font and sounds are found by name
 

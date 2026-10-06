@@ -10,7 +10,7 @@ A **design** gives the overlay its own identity: a store, a league, an event, a 
 
 | Part | What you control |
 |------|------------------|
-| **Colors** | Panels, text, highlight, trainer colors, status colors, borders, shadows, corner roundness, animation speed |
+| **Colors** | Panels, text, highlight, trainer colors, the color of each kind of card (abilities, Pokémon Tools, the Stadium, Supporters), status colors, borders, shadows, corner roundness, animation speed |
 | **Pictures** | Logo, background, trainer avatars, prize card back, card back, a strip of energy icons, a strip of status icons, and a frame for each reserved space |
 | **Fonts** | A main font, plus a font for names, numbers, labels, announcement titles, subtitles and small text |
 | **Layout** | The position and size of every piece of the overlay, on a wide or a tall screen |
@@ -47,6 +47,8 @@ Two ways to see how the default look is made, so you can change it instead of st
 ---
 
 ## Colors and pictures
+
+**Kinds of card.** Four colors say what kind of thing something is, in the same way everywhere on the overlay: `--ability` (red), `--tool` (purple), `--stadium` (green) and `--supporter` (orange). An ability token and its diamond, the frame of a Pokémon Tool, the Stadium's name and play counter, and the Supporter counter take them. They are in the **Kinds of card** group in the Look tab.
 
 The color variables are CSS custom properties, listed in the Look tab (and in [`public/js/theme-options.js`](../public/js/theme-options.js)): `--accent`, `--trainer-a`, `--trainer-b`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`, `--transition` and more. Any CSS color works (`#ff2d95`, `rgba(18, 8, 38, 0.86)`); lengths such as `--radius` take `14px`.
 
@@ -117,7 +119,9 @@ The overlay draws an outline of the shape, or **your own picture** over it: a fr
 
 **Card crop.** The overlay does not have to show a whole card. Choose which part of the picture shows for the **Active Pokémon**, the **bench**, the **Stadium**, **a card set on a prize card** and the **Pokémon Tools** (the tabs of the crop editor, `active`, `bench`, `stadium`, `prize` and `tool` in `design.json`): just the art (the usual), the name and the art, the whole card, or any rectangle you draw on the card. Special Energy cards on a Pokémon show as a circle cut out of the card, which you can move and resize too.
 
-**Tile.** On top of the picture of a Pokémon sit the HP bar, the attached energy, the retreat cost (Active Pokémon only) and the status icons. For the Active Pokémon and for the bench, choose where each goes: on the picture at the top or bottom, in a corner, or below it. **Pokémon Tools** are shown as small pictures of their cards under the Pokémon (the Trainer card's picture window unless the **Tools** crop says otherwise), with the HP they add in a corner. A tool put there by hand with no picture is a small chip with its name. The producers' switches choose how tools are drawn (Settings, Overlay): the pictures are on, and the names as text are off, so a design that prefers text can ship that setting in its `.oto` control settings (`display.toolNames: true`, `display.toolCards: false`).
+**The GX attack and the VSTAR Power** are pictures too (`assets/markers/gx` and `vstar`): drawings that come with OTO, which a producer can replace by putting a PNG, a WebP or a JPG of their own with the same name in that folder. They show in color while they are ready and grayed out once they are used.
+
+**Tile.** On top of the picture of a Pokémon sit the HP bar, the attached energy, the retreat cost (Active Pokémon only) and the status icons. For the Active Pokémon and for the bench, choose where each goes: on the picture at the top or bottom, in a corner, or below it. **Pokémon Tools** are shown as small pictures of their cards under the Pokémon (the Trainer card's picture window unless the **Tools** crop says otherwise). A tool put there by hand with no picture is a small chip with its name. The producers' switches choose how tools are drawn (Settings, Overlay): the pictures are on, and the names as text are off, so a design that prefers text can ship that setting in its `.oto` control settings (`display.toolNames: true`, `display.toolCards: false`).
 
 ---
 

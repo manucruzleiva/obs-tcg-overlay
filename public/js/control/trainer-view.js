@@ -119,25 +119,25 @@ export class TrainerView {
           h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Penalty: one more', onclick: () => act('prizePenaltyPlus') }, icon('plus', 14)))));
 
     // once-per-turn tokens (and the once-per-game ones) and locks
-    const token = (label, kind) => h('button', { class: 'token-btn', type: 'button', onclick: () => this.stepToken(kind) },
+    const token = (label, kind) => h('button', { class: 'token-btn', type: 'button', dataset: { kind }, onclick: () => this.stepToken(kind) },
       h('span', { class: 'dot' }), label, h('span', { class: 'count' }));
     this.tokens = {
       energy: token('Energy', 'energy'),
       stadium: token('Stadium', 'stadium'),
       supporter: token('Supporter', 'supporter'),
-      gx: token('GX attack', 'gx'),
-      vstar: token('VSTAR Power', 'vstar')
+      gx: token('GX', 'gx'),
+      vstar: token('VSTAR', 'vstar')
     };
     // the turn tracker: what is used each turn, then what is used once a game (GX and VSTAR: only when the overlay shows them; they come back
     // by themselves when the game ends), then the locks
     this.tokens.gx.classList.add('once-game');
     this.tokens.vstar.classList.add('once-game');
-    this.tokens.gx.title = 'Once per game: it comes back when the game ends';
-    this.tokens.vstar.title = 'Once per game: it comes back when the game ends';
+    this.tokens.gx.title = 'GX attack, once per game: it comes back when the game ends';
+    this.tokens.vstar.title = 'VSTAR Power, once per game: it comes back when the game ends';
+    // (the tokens and the two locks share lines, so the box is as short as the one of the prize cards even with the GX and the VSTAR on)
     const turnBlock = h('section', { class: 'block turn-block compact' },
       h('div', { class: 'block-title' }, 'Turn tracker', h('span', { class: 'hint' }, 'Shift+S supporter')),
-      h('div', { class: 'token-row' }, this.tokens.energy, this.tokens.stadium, this.tokens.supporter, this.tokens.gx, this.tokens.vstar),
-      h('div', { class: 'toggle-row' },
+      h('div', { class: 'token-row' }, this.tokens.energy, this.tokens.stadium, this.tokens.supporter, this.tokens.gx, this.tokens.vstar,
         this.toggle('Item lock (I)', (on) => act('toggleItemLock', { enabled: on }), (t) => { this.itemToggle = t; }),
         this.toggle('Evolution lock (V)', (on) => act('toggleEvoLock', { enabled: on }), (t) => { this.evoToggle = t; })));
 
@@ -292,7 +292,10 @@ export class TrainerView {
       if (!counter) continue;
       const used = counter.used >= counter.available;
       this.tokens[kind].classList.toggle('used', used);
-      this.tokens[kind].querySelector('.count').textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : used ? 'used' : 'ready';
+      // (a count is shown; "ready" and "used" are what the dot already says, so they are only there for a screen reader)
+      const count = this.tokens[kind].querySelector('.count');
+      count.textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : used ? 'used' : 'ready';
+      count.classList.toggle('word', counter.available <= 1);
     }
 
     // Pokémon. The part holding an HP box being typed in is left alone, so a change by someone else
@@ -400,41 +403,46 @@ export class TrainerView {
       : h('button', { class: 'hp-value', type: 'button', title: 'Click to set HP', onclick: () => this.editHp(slot) },
         hp.max ? `${hp.current}/${hp.max} HP` : 'Set HP');
 
-    // A right click adds another of the same energy. It is the turn's attachment if that is still free, and a special attachment (an
-    // ability or an effect) if it was used already, so it never fails and never uses it up twice.
+    // A click adds another of the same energy, a right click takes one off. The one that is added is the turn's attachment if that is still free,
+    // and a special attachment (an ability or an effect) if it was used already, so it never fails and never uses it up twice.
     const turn = app.state && app.state[side].resources.energyPerTurn;
     const countsAsTurn = !turn || turn.used < turn.available;
     const energies = (pokemon.energies || []).map((type, index) => h('button', {
-      class: 'energy-chip', type: 'button', title: `${(ENERGY[type] || ENERGY.colorless).label} energy (click to remove, right-click to add another)`,
+      class: 'energy-chip', type: 'button', title: `${(ENERGY[type] || ENERGY.colorless).label} energy (click to add another, right-click to take it off)`,
       style: energyStyle(ENERGY[type] || ENERGY.colorless), dataset: { energy: type },
-      'aria-label': `Remove ${type} energy`, onclick: () => act('removeEnergy', { index }),
-      oncontextmenu: (event) => { event.preventDefault(); act('attachEnergy', { energyType: type, count: 1, countsAsTurn }); }
+      'aria-label': `Add ${type} energy`, onclick: () => act('attachEnergy', { energyType: type, count: 1, countsAsTurn }),
+      oncontextmenu: (event) => { event.preventDefault(); act('removeEnergy', { index }); }
     }));
 
     // Special Energy cards: a circle cut out of each card
     const specials = (pokemon.specialEnergies || []).map((card, index) => h('button', {
-      class: 'energy-chip special', type: 'button', title: `${card.name} (click to remove, right-click to add another)`,
-      'aria-label': `Remove ${card.name}`, onclick: () => act('removeSpecialEnergy', { index }),
-      oncontextmenu: (event) => { event.preventDefault(); act('attachSpecialEnergy', { cardId: card.cardId, name: card.name, image: card.image, countsAsTurn }); }
+      class: 'energy-chip special', type: 'button', title: `${card.name} (click to add another, right-click to take it off)`,
+      'aria-label': `Add ${card.name}`, onclick: () => act('attachSpecialEnergy', { cardId: card.cardId, name: card.name, image: card.image, countsAsTurn }),
+      oncontextmenu: (event) => { event.preventDefault(); act('removeSpecialEnergy', { index }); }
     }, card.image && h('img', { src: card.image, alt: '', loading: 'lazy', draggable: 'false' })));
 
-    // How many Energy it costs to retreat (the card says, and an effect can change it), and its maximum HP (an effect can raise it, in tens)
+    // How many Energy it costs to retreat (the card says, and an effect can change it), and its maximum HP (an effect can raise it, in tens). Each is
+    // a button that says what it is and how much: a click adds one (a colorless Energy of retreat cost, 10 HP), a right click (or Shift + click) takes one off.
     const cost = Number.isInteger(pokemon.retreat) ? pokemon.retreat : 0;
-    const retreat = h('div', { class: 'retreat-line' },
-      h('span', { class: 'retreat-label' }, 'Retreat'),
-      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Retreat cost one less', disabled: cost <= 0 || undefined, onclick: () => act('setRetreat', { cost: cost - 1 }) }, icon('minus', 12)),
-      h('output', { class: 'retreat-number', 'aria-label': 'Retreat cost' }, String(cost)),
-      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Retreat cost one more', disabled: cost >= 6 || undefined, onclick: () => act('setRetreat', { cost: cost + 1 }) }, icon('plus', 12)),
-      h('span', { class: 'retreat-label max-label' }, 'Max HP'),
-      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Maximum HP 10 less', title: 'Maximum HP 10 less', disabled: hp.max <= 10 || undefined, onclick: () => act('setMaxHP', { max: hp.max - 10, keepDamage: true }) }, icon('minus', 12)),
-      h('output', { class: 'retreat-number max-hp-number', 'aria-label': 'Maximum HP' }, String(hp.max)),
-      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Maximum HP 10 more', title: 'Maximum HP 10 more (the Pokémon has 10 more HP, with the damage it has taken)', disabled: hp.max <= 0 || hp.max >= 9990 || undefined, onclick: () => act('setMaxHP', { max: hp.max + 10, keepDamage: true }) }, icon('plus', 12)));
+    const stat = (kind, label, value, { more, less, canMore, canLess, title, aria }) => h('button', {
+      class: `stat-btn ${kind}-btn`, type: 'button', title, 'aria-label': aria, dataset: { stat: kind },
+      onclick: (event) => { if (event.shiftKey) { if (canLess) less(); } else if (canMore) more(); },
+      oncontextmenu: (event) => { event.preventDefault(); if (canLess) less(); }
+    }, h('span', { class: 'stat-label' }, label), h('b', { class: 'stat-value' }, String(value)));
+    const retreat = stat('retreat', 'Retreat', cost, {
+      aria: 'Retreat cost', title: 'Retreat cost: click to add one colorless Energy, right-click (or Shift + click) to take one off',
+      canMore: cost < 6, canLess: cost > 0, more: () => act('setRetreat', { cost: cost + 1 }), less: () => act('setRetreat', { cost: cost - 1 })
+    });
+    const maxHp = stat('maxhp', 'Max HP', hp.max, {
+      aria: 'Maximum HP', title: 'Maximum HP: click to add 10 (the damage it has taken stays), right-click (or Shift + click) to take 10 off',
+      canMore: hp.max > 0 && hp.max < 9990, canLess: hp.max > 10, more: () => act('setMaxHP', { max: hp.max + 10, keepDamage: true }), less: () => act('setMaxHP', { max: hp.max - 10, keepDamage: true })
+    });
 
-    // Pokémon Tools: click one to take it off (what it added to the maximum HP goes with it)
+    // Pokémon Tools: click one to take it off
     const tools = (pokemon.tools || []).map((tool, index) => h('button', {
-      class: 'tool-chip', type: 'button', title: `${tool.name}${tool.hp ? ` (+${tool.hp} HP)` : ''}: click to take it off`, 'aria-label': `Take off ${tool.name}`,
+      class: 'tool-chip', type: 'button', title: `${tool.name}: click to take it off`, 'aria-label': `Take off ${tool.name}`,
       onclick: () => act('removeTool', { index })
-    }, icon('tool', 12), tool.name, tool.hp ? h('span', { class: 'tool-hp' }, `+${tool.hp} HP`) : null));
+    }, icon('tool', 12), tool.name));
 
     const abilities = (pokemon.abilities || []).map((ability, index) => h('button', {
       class: `ability-chip${ability.used ? ' used' : ''}`, type: 'button',
@@ -448,18 +456,18 @@ export class TrainerView {
       GAME.STATUS_CONDITIONS.map((condition) => {
         const on = (pokemon.status || []).includes(condition.key);
         return h('button', {
-          class: `condition-chip${on ? ' on' : ''}`, type: 'button', 'aria-pressed': String(on), dataset: { condition: condition.key },
+          class: `condition-chip${on ? ' on' : ''}`, type: 'button', 'aria-pressed': String(on), 'aria-label': condition.label, dataset: { condition: condition.key },
           style: { '--c': condition.color, '--ink': condition.ink },
           title: `${condition.label}${condition.hint ? ` (${condition.hint.toLowerCase()})` : ''}: click to ${on ? 'remove it' : 'put it on'}`,
           onclick: () => act('toggleStatus', { condition: condition.key, enabled: !on })
-        }, h('span', { class: 'condition-icon', style: { '--icon': `url(${condition.icon})` } }), condition.label);
+        }, h('span', { class: 'condition-icon', style: { '--icon': `url(${condition.icon})` } }), h('span', { class: 'condition-label' }, condition.label));
       }));
 
     const buttons = compact
       ? [
         this.mini('Switch in', 'swap', () => act('swapWithActive')),
         this.mini('Evolve or go back a stage', 'egg', () => app.openEvolve(side, slot)),
-        this.mini('Tool', 'tool', () => app.openTool(side, slot)),
+        this.mini('Tool', 'tool', () => app.openTool(side, slot), 'tool'),
         this.mini('Energy', 'bolt', () => app.openEnergy(side, slot)),
         this.mini('Damage', 'drop', () => app.openDamage('damage', side, slot)),
         this.mini('Knock out', 'skull', () => app.openKO(side, slot)),
@@ -468,11 +476,11 @@ export class TrainerView {
       : [
         this.mini('Deploy another (A)', 'swap', () => app.openPicker({ kind: 'active', side })),
         this.mini('Evolve or go back a stage', 'egg', () => app.openEvolve(side, -1)),
-        this.mini('Tool', 'tool', () => app.openTool(side, -1)),
+        this.mini('Tool', 'tool', () => app.openTool(side, -1), 'tool'),
         this.mini('Energy (E)', 'bolt', () => app.openEnergy(side, -1)),
         this.mini('Damage (D)', 'drop', () => app.openDamage('damage', side, -1)),
         this.mini('Heal (H)', 'plus', () => app.openDamage('heal', side, -1)),
-        this.mini('Abilities (X)', 'star', () => app.openAbilities(side)),
+        this.mini('Abilities (X)', 'star', () => app.openAbilities(side), 'ability'),
         this.mini('Knock out (K)', 'skull', () => app.openKO(side, -1)),
         this.mini('Remove', 'trash', () => act('clearSlot'))
       ];
@@ -482,17 +490,15 @@ export class TrainerView {
       art,
       h('div', { class: 'mon-info' },
         h('div', { class: 'mon-name' }, pokemon.name),
-        h('div', { class: `hp-line${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, hpValue),
+        h('div', { class: `hp-line${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, hpValue, retreat, maxHp),
         (energies.length > 0 || specials.length > 0) && h('div', { class: 'chips energies' }, [...energies, ...specials]),
-        retreat,
-        tools.length > 0 && h('div', { class: 'chips tools' }, tools),
-        abilities.length > 0 && h('div', { class: 'chips abilities' }, abilities),
+        (tools.length > 0 || abilities.length > 0) && h('div', { class: 'chips extras' }, [...tools, ...abilities]),
         conditions,
         h('div', { class: 'mon-actions' }, buttons)));
   }
 
-  mini(label, iconName, onclick) {
-    return h('button', { class: 'mini-btn', type: 'button', title: label, 'aria-label': label, onclick }, icon(iconName, 14), h('span', {}, label));
+  mini(label, iconName, onclick, kind) {
+    return h('button', { class: 'mini-btn', type: 'button', title: label, 'aria-label': label, dataset: kind ? { kind } : {}, onclick }, icon(iconName, 14), h('span', {}, label));
   }
 
   // Inline editor for current and maximum HP

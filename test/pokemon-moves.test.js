@@ -50,32 +50,32 @@ describe('Pokémon on the table', () => {
     it('remembers each stage, keeps the energy, the tools and the damage, and goes back one stage at a time', async () => {
       await place('trainerA', -1, 'Pichu', 40);
       await act('trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 2 });
-      await act('trainerA', { action: 'attachTool', slot: -1, cardId: 'tool-1', name: 'Brave Charm', image: IMG, hp: 50 });
+      await act('trainerA', { action: 'attachTool', slot: -1, cardId: 'tool-1', name: 'Brave Charm', image: IMG });
       await act('trainerA', { action: 'activeDamage', amount: 30 });
       await act('trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
-      assert.deepEqual((await state()).trainerA.active.hp, { max: 90, current: 60 });
+      assert.deepEqual((await state()).trainerA.active.hp, { max: 40, current: 10 });
 
       let result = await evolve('trainerA-active', 'Pikachu', 60);
       let active = result.state.trainerA.active;
-      assert.deepEqual([active.name, active.hp, active.energies, active.tools.length, active.status], ['Pikachu', { max: 110, current: 80 }, ['lightning', 'lightning'], 1, []], 'the tool\'s 50 HP stays; 30 damage; no condition after evolving');
+      assert.deepEqual([active.name, active.hp, active.energies, active.tools.length, active.status], ['Pikachu', { max: 60, current: 30 }, ['lightning', 'lightning'], 1, []], 'the tool stays; the 30 damage too; no condition after evolving');
       assert.deepEqual(active.stages.map((stage) => stage.name), ['Pichu']);
 
       result = await evolve('trainerA-active', 'Raichu', 100);
       active = result.state.trainerA.active;
-      assert.deepEqual([active.name, active.hp], ['Raichu', { max: 150, current: 120 }]);
+      assert.deepEqual([active.name, active.hp], ['Raichu', { max: 100, current: 70 }]);
       assert.deepEqual(active.stages.map((stage) => stage.name), ['Pichu', 'Pikachu']);
       assert.equal(active.attacks[0].name, 'Raichu attack');
 
       result = await act('trainerA', { action: 'devolve', slot: -1 });
       assert.equal(result.ok, true);
       active = result.state.trainerA.active;
-      assert.deepEqual([active.name, active.hp, active.energies.length, active.tools.length], ['Pikachu', { max: 110, current: 80 }, 2, 1]);
+      assert.deepEqual([active.name, active.hp, active.energies.length, active.tools.length], ['Pikachu', { max: 60, current: 30 }, 2, 1]);
       assert.equal(active.attacks[0].name, 'Pikachu attack', 'the attacks of that card');
       assert.deepEqual(active.stages.map((stage) => stage.name), ['Pichu']);
       assert.match((await me.events.activity.at(-1)).label, /Raichu went back to Pikachu/);
 
       result = await act('trainerA', { action: 'devolve', slot: -1 });
-      assert.deepEqual([result.state.trainerA.active.name, result.state.trainerA.active.hp, result.state.trainerA.active.stages], ['Pichu', { max: 90, current: 60 }, []]);
+      assert.deepEqual([result.state.trainerA.active.name, result.state.trainerA.active.hp, result.state.trainerA.active.stages], ['Pichu', { max: 40, current: 10 }, []]);
 
       const nothing = await act('trainerA', { action: 'devolve', slot: -1 });
       assert.equal(nothing.ok, false);
@@ -113,36 +113,40 @@ describe('Pokémon on the table', () => {
   });
 
   describe('Pokémon Tools', () => {
-    it('go on a Pokémon of the bench too, add to its maximum HP, and take it away again when they go', async () => {
+    it('go on a Pokémon of the bench too and come off again, and leave its HP alone: the maximum HP is changed on the Pokémon', async () => {
       await place('trainerB', 2, 'Absol', 100);
       await act('trainerB', { action: 'benchDamage', slot: 2, amount: 40 });
-      let result = await act('trainerB', { action: 'attachTool', slot: 2, cardId: 'bc', name: 'Bravery Charm', image: IMG, hp: 50 });
+      let result = await act('trainerB', { action: 'attachTool', slot: 2, cardId: 'bc', name: 'Bravery Charm', image: IMG });
       assert.equal(result.ok, true);
       let absol = result.state.trainerB.bench[2];
-      assert.deepEqual([absol.tools, absol.hp], [[{ cardId: 'bc', name: 'Bravery Charm', image: IMG, hp: 50 }], { max: 150, current: 110 }]);
-      assert.match((await me.events.activity.at(-1)).label, /Bravery Charm attached to Absol \(\+50 HP\)/);
+      assert.deepEqual([absol.tools, absol.hp], [[{ cardId: 'bc', name: 'Bravery Charm', image: IMG }], { max: 100, current: 60 }]);
+      assert.match((await me.events.activity.at(-1)).label, /Bravery Charm attached to Absol$/);
 
-      result = await act('trainerB', { action: 'attachTool', slot: 2, cardId: 'ft', name: 'Float Stone', image: IMG });
+      // (a sender that still says the tool adds HP, as an earlier version did, is not believed: nothing is added)
+      result = await act('trainerB', { action: 'attachTool', slot: 2, cardId: 'ft', name: 'Float Stone', image: IMG, hp: 50 });
       absol = result.state.trainerB.bench[2];
-      assert.deepEqual([absol.tools.length, absol.hp.max], [2, 150], 'a tool that adds nothing leaves the HP alone');
+      assert.deepEqual([absol.tools.length, absol.tools[1], absol.hp], [2, { cardId: 'ft', name: 'Float Stone', image: IMG }, { max: 100, current: 60 }]);
 
       result = await act('trainerB', { action: 'removeTool', slot: 2, index: 0 });
       absol = result.state.trainerB.bench[2];
       assert.deepEqual([absol.tools.map((tool) => tool.name), absol.hp], [['Float Stone'], { max: 100, current: 60 }], 'the damage counters stay: 40 damage on 100 HP');
+
+      // the maximum HP is raised on the Pokémon, with the damage kept
+      result = await act('trainerB', { action: 'setMaxHP', slot: 2, max: 150, keepDamage: true });
+      assert.deepEqual(result.state.trainerB.bench[2].hp, { max: 150, current: 110 });
 
       const missing = await act('trainerB', { action: 'removeTool', slot: 2, index: 5 });
       assert.equal(missing.ok, false);
       assert.match(missing.rejected.message, /no such tool/);
     });
 
-    it('are at most three, and are refused for an empty slot, a bonus that is not in tens or a card with no name', async () => {
+    it('are at most three, and are refused for an empty slot or a card with no name', async () => {
       await place('trainerA', -1, 'Pikachu', 60);
       for (const name of ['One', 'Two', 'Three']) assert.equal((await act('trainerA', { action: 'attachTool', slot: -1, cardId: name, name, image: IMG })).ok, true);
       const full = await act('trainerA', { action: 'attachTool', slot: -1, cardId: 'x', name: 'Four', image: IMG });
       assert.equal(full.ok, false);
       assert.match(full.rejected.message, /already has as many Pokémon Tools as it can hold/);
       assert.equal((await act('trainerB', { action: 'attachTool', slot: -1, cardId: 'x', name: 'Tool', image: IMG })).ok, false, 'no Pokémon there');
-      assert.match((await act('trainerA', { action: 'attachTool', slot: -1, cardId: 'x', name: 'Odd', image: IMG, hp: 15 })).rejected.message, /comes in tens/);
       assert.equal((await act('trainerA', { action: 'attachTool', slot: -1, cardId: 'x', name: '', image: IMG })).ok, false);
       assert.equal((await state()).trainerA.active.tools.length, 3);
     });
@@ -309,7 +313,33 @@ describe('Pokémon on the table', () => {
       const victory = await won;
       assert.equal(victory.side, 'trainerB');
       assert.match(victory.subtitle, /wins the (game|match)/);
-      assert.match(me.events.activity.at(-1).label, /won the game \(Trainer A has no Pokémon left\)/);
+      // the knock out is the producer's; the game won is the system's own step, written so in the activity
+      const [knockOut, automatic] = me.events.activity.slice(-2);
+      assert.match(knockOut.label, /Pikachu knocked out/);
+      assert.doesNotMatch(knockOut.label, /won the game/);
+      assert.deepEqual([knockOut.by.name, knockOut.kind], ['Maya', 'action']);
+      assert.match(automatic.label, /Trainer B won the game by itself \(Trainer A has no Pokémon left\): score 0–1/);
+      assert.deepEqual([automatic.by.name, automatic.by.clientId, automatic.kind], ['OTO (automatic)', 'system', 'auto']);
+    });
+
+    it('can be undone on its own: the game won goes back, the knock out stays, and a second undo brings the Pokémon back', async () => {
+      await place('trainerA', -1, 'Pikachu', 100);
+      await place('trainerB', -1, 'Charizard', 200);
+      await act('trainerA', { action: 'knockOut', slot: -1, prizes: 1 });
+      assert.deepEqual(await winsOf(), [0, 1]);
+
+      let result = await me.act('action:undo', {});
+      assert.equal(result.ok, true);
+      assert.match(me.events.activity.at(-1).label, /^Undid: Trainer B won the game \(automatic\)/);
+      assert.deepEqual(await winsOf(), [0, 0], 'the game is not won any more');
+      assert.equal((await state()).trainerA.active.name, '', 'the Pokémon is still knocked out');
+      assert.equal((await state()).trainerB.prizes.count, 5, 'and the prize card is still taken');
+
+      // the second undo takes back the knock out, and the Pokémon is on the table again, without a game won
+            result = await me.act('action:undo', {});
+      assert.equal(result.ok, true);
+      assert.match(me.events.activity.at(-1).label, /^Undid: .*knocked out/);
+      assert.equal((await state()).trainerA.active.name, 'Pikachu');
     });
 
     it('does the same when the last one is taken off the table, whether it is the Active Pokémon or one of the bench', async () => {

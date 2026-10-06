@@ -47,7 +47,7 @@ Scratch work (test databases, one-off scripts, screenshots, test builds) goes in
 ```
 
 - The server owns **one game state** with a `revision`. Clients send `action:*` events carrying the revision they last saw; the server applies the action, records it (undo, activity, conflict detection) and broadcasts the new state. Every change goes through `Session.finish()`.
-- **Actions** are declared in [src/actions.js](../src/actions.js): each says which part of the state it touches (`targets`), how to validate and run itself, how it is described in the activity feed (`label`) and which announcements it fires (`cues`). `resolve()` returns that; `run()` wraps it with the win logic (the prizes victory, and the instant victory of a player who has no Pokémon left after a knock out or a removal).
+- **Actions** are declared in [src/actions.js](../src/actions.js): each says which part of the state it touches (`targets`), how to validate and run itself, how it is described in the activity feed (`label`) and which announcements it fires (`cues`). `resolve()` returns that, with `run()`, and `automatic()` for what the game then does by itself: the prizes victory, and the instant victory of a player who has no Pokémon left after a knock out or a removal (`automaticChanges()`). Those are **steps of their own**: `Session` records each as an entry of the activity written by `actions.SYSTEM` (`OTO (automatic)`, kind `auto`) and as its own step of the history, so an undo takes back the game won and leaves the change that caused it. A sent draft applies all its changes as one step and then looks once for what follows.
 - **Conflicts.** If another producer changed an overlapping part since the sender's revision, the action is refused (`action:rejected`, reason `conflict`) rather than applied twice. Absolute actions ("set the name to X") are last-writer-wins.
 - **Drafts.** Draft mode is a mode of the table: one shared draft in which every producer's actions queue (each entry carries who made it) and replay atomically on send. After a send the draft starts empty and the mode stays on. Redoing a draft send reopens the draft with the sent changes.
 - **The host** is a socket from a loopback address that also has a loopback `Host` header. Only the host may rename others, kick (and forgive) producers, and, from the Electron tray, set the password.
@@ -77,6 +77,8 @@ Scratch work (test databases, one-off scripts, screenshots, test builds) goes in
 │       ├── sounds.js        # the producer's own sounds
 │       ├── package.js, zip.js  # .oto packages and the ZIP reader/writer
 │       ├── catalog.js, images.js, pokemon-tcg.js, tcgdex.js, scrydex.js, cache.js, card-usage.js, attacks.js  # card library, pictures, card services
+│       ├── card-health.js   # the health check of the card data: finds cards saved without attacks or retreat cost, and mends them
+│       ├── limitless.js     # the most played decks (names and icons) read from Limitless TCG, kept in the data folder
 │       └── network.js, port-check.js  # LAN addresses for the share link, the port check
 ├── public/
 │   ├── control/, js/control/ # control panel (ES modules): app, views, modals, settings, design editor
@@ -114,6 +116,9 @@ Environment variables:
 | `POKEMONTCG_API_URL` | `https://api.pokemontcg.io/v2` | Another card API server (the tests use a local mock) |
 | `OTO_IMAGE_BASE` | `https://images.pokemontcg.io` | Where card pictures are fetched from |
 | `OTO_SCRYDEX_IMAGE_BASE` | `https://images.scrydex.com` | Where the card pictures of the newest sets are fetched from |
+| `OTO_LIMITLESS_URL` | `https://limitlesstcg.com/decks` | The page the list of popular decks is read from (`?show=100` is added) |
+| `OTO_DECKICON_BASE` | `https://r2.limitlesstcg.net/pokemon/gen9` | Where the sprites of the Pokémon on a deck's icon are fetched from (`<base>/<name>.png`, kept as `/img/deckicon/<name>.png`) |
+| `OTO_HEALTH_PACE_MS` | `150` | The wait between two requests of a repair of the card data (the tests make it 0) |
 | `OTO_SPRITE_BASE` | the PokeAPI sprites repository (official artwork) | Where the pictures of Pokémon beside a deck are fetched from (`<base>/<Pokédex number>.png`) |
 
 ---
@@ -154,6 +159,8 @@ Behind the password:
 | `POST /api/auth/password` | Set or remove the password |
 | `GET /api/cards/search?q=&supertype=&subtype=&rarity=&set=&evolvesFrom=&page=` | Search cards (the library first, then online) |
 | `GET /api/cards/:id`, `GET /api/evolution/search` | Card details, evolution search |
+| `GET /api/cards/health`, `POST /api/cards/health/scan`, `/repair`, `/cancel` | The health check of the card data: the last report and repair, a new check, a repair (it asks the card service for the cards that lack their attacks or retreat cost, in the background, and says so with `health:progress`), stop it |
+| `POST /api/decks/popular/refresh`, `DELETE /api/decks/popular` | Read the page of the most played decks again, or go back to the list that comes with the app (every page is told with `decks:changed`) |
 | `GET /api/cards/popular`, `POST/DELETE /api/cards/used`, `POST /api/cards/known` | The cards the picker starts from: favorites, the most used, and the ones saved on this computer |
 | `GET /api/favorites`, `POST /api/favorites/:id` | List or toggle favorites |
 | `GET /api/matches` | Finished matches |
@@ -170,7 +177,7 @@ Behind the password:
 
 ## Socket.io
 
-- **Server to client:** `state:full` (on connect), `state:update` (after every change), `announce`, `sfx`, `presence`, `you`, `kicked`, `activity`, `activity:history`, `action:applied`, `action:rejected`, `draft:state`, `draft:sent`, `draft:cleared`, `draft:closed`, `draft:conflicts`, `theme:changed`, `sounds:changed`, `catalog:progress`.
+- **Server to client:** `state:full` (on connect), `state:update` (after every change), `announce`, `sfx`, `presence`, `you`, `kicked`, `activity`, `activity:history`, `action:applied`, `action:rejected`, `draft:state`, `draft:sent`, `draft:cleared`, `draft:closed`, `draft:conflicts`, `theme:changed`, `sounds:changed`, `catalog:progress`, `health:progress`, `decks:changed`.
 - **Client to server:** `action:trainerA`, `action:trainerB`, `action:match`, `action:toast`, `action:card`, `action:settings`, `action:reset`, `action:undo`, `action:redo`, `draft:start`, `draft:send`, `draft:discard` (leave draft mode), `draft:clear`, `presence:rename`, `presence:kick`, `presence:forgive`.
 
 Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The handlers live in [src/actions.js](../src/actions.js). A selection (not the whole list):

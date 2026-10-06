@@ -34,6 +34,12 @@
   --trainer-a: #38bdf8;
   --trainer-b: #fb7185;
 
+  /* What kind of thing it is: an ability is always red, a Pokémon Tool purple, a Stadium green and a Supporter orange, in the control panel and on the overlay */
+  --ability: #f0524f;
+  --tool: #a78bfa;
+  --stadium: #4ade80;
+  --supporter: #fb923c;
+
   /* Status */
   --success: #34d399;
   --warning: #fbbf24;

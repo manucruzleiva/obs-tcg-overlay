@@ -5,7 +5,7 @@
 import { h, icon, replace, debounce } from './dom.js';
 import { openModal, closeModal, confirmDialog, promptDialog, pickFile } from './ui.js';
 import { openDesignEditor } from './design-editor.js';
-import { libraryPanels } from './library.js';
+import { libraryPanels, healthPanel } from './library.js';
 import { openImportDialog, openExportDialog } from './packages.js';
 
 const DISPLAY = window.OTO_DISPLAY;
@@ -595,11 +595,57 @@ function credentialRow(app, credential, service) {
   return row;
 }
 
+// The decks that are played the most (Limitless TCG): the names the deck boxes suggest, and the Pokémon whose picture goes with a deck
+function popularDecksSection(app) {
+  const box = h('div', { class: 'decks-box' }, h('p', { class: 'library-state' }, 'Loading…'));
+  const day = (time) => new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  let working = false;
+
+  const draw = (status) => {
+    replace(box,
+      h('p', { class: 'library-state', dataset: { builtIn: String(status.builtIn) } }, status.builtIn
+        ? `${status.count} decks: the list that comes with OTO (${day(status.fetchedAt)}).`
+        : `${status.count} decks from ${status.source.name}, read on ${day(status.fetchedAt)}.`),
+      h('p', { class: 'library-state' }, `The most played: ${status.decks.slice(0, 5).map((deck) => deck.name).join(', ')}.`),
+      h('div', { class: 'button-row' },
+        h('button', { class: 'btn', type: 'button', disabled: working || undefined, onclick: refresh }, working ? 'Reading…' : 'Update from Limitless TCG'),
+        !status.builtIn && h('button', { class: 'btn', type: 'button', disabled: working || undefined, onclick: back }, 'Use the list that comes with OTO')));
+  };
+  const load = async () => {
+    try { draw(await (await fetch('/api/decks/popular')).json()); } catch (error) { app.toast(error.message, 'error'); }
+  };
+  async function refresh() {
+    working = true;
+    await load();
+    try {
+      const response = await fetch('/api/decks/popular/refresh', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `Something went wrong (${response.status})`);
+      working = false;
+      draw(data);
+      app.toast(`The list of decks is up to date: ${data.count} decks`, 'success');
+    } catch (error) {
+      working = false;
+      await load();
+      app.toast(error.message, 'error');
+    }
+  }
+  async function back() {
+    try {
+      const response = await fetch('/api/decks/popular', { method: 'DELETE' });
+      draw(await response.json());
+    } catch (error) { app.toast(error.message, 'error'); }
+  }
+  load();
+  return box;
+}
+
 function cardsTab(app) {
   const settings = app.state.settings;
   const body = h('div', { class: 'settings-stack' });
   const library = libraryPanels(app);
-  body.cleanup = library.cleanup; // stop listening for download progress when this tab goes away
+  const health = healthPanel(app);
+  body.cleanup = () => { library.cleanup(); health.cleanup(); }; // stop listening for download progress when this tab goes away
 
   // Where cards are searched for, and in which language (see PokemonTCGService)
   const update = (patch) => app.act('action:settings', { action: 'update', ...patch });
@@ -637,6 +683,12 @@ function cardsTab(app) {
       h('div', { class: 'inline-form' }, h('label', { class: 'field' }, h('span', {}, 'Build the libraries from'), librarySelect)),
       note('Standard can be built from any of the services. Gym Leader Challenge and Expanded need to know which cards are legal in Expanded, which only the Pokémon TCG API tells, so they always come from it.'),
       library.libraryBox),
+    section('Popular decks',
+      note('The deck boxes suggest the names of the decks that are played the most, and a deck whose name does not say which Pokémon it is ("Basic Box") gets the picture of the Pokémon on its icon. The list comes from the deck page of Limitless TCG: Update reads it again (it is not read by itself), and every open page takes the new list at once. Only the names and the Pokémon of the icons are kept.'),
+      popularDecksSection(app)),
+    section('Card data check',
+      note('A Pokémon that comes to the table with no attacks or no retreat cost comes from a card that was saved without them (a service sends a short card when it lists many, and the full one when you ask for one). Check looks for those cards in your libraries, in the cards remembered for a while and on the table; Repair asks the card service for what they lack and keeps it, a few hundred cards each time.'),
+      health.healthBox),
     section('Card pictures',
       note('A card\'s picture is saved on this computer the first time it is shown, so it still shows without internet. You can also save them all ahead of time.'),
       library.picturesBox),
