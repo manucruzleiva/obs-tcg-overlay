@@ -257,12 +257,21 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .record label { flex-direction: row; align-items: center; gap: 4px; }
 .record input { width: 48px; padding-left: 4px; padding-right: 4px; text-align: center; }
 
-.prize-row { display: flex; align-items: center; gap: 8px; }
+.prize-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .prize-row .prize-number { min-width: 22px; text-align: center; }
-.prizes.compact .pips { margin: 8px 0 0; }
-.prize-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.prize-extra .switch { font-size: 13px; }
-.prize-extra .penalty-row { margin-top: 0; gap: 8px; }
+/* the box of the prize cards: the title has the button that sets the cards, the count has its pips beside it, and the switch has the penalty beside it */
+.prizes.compact .block-title { margin-bottom: 6px; }
+.prizes.compact .block-title .hint { margin-left: 0; }
+.prizes.compact .block-title .set-prizes { margin-left: auto; }
+.prizes.compact .prize-number { min-width: 30px; font-size: 30px; }
+.prizes.compact .pips { gap: 4px; margin-left: 4px; }
+.prizes.compact .pip { width: 18px; height: 25px; }
+.prize-extra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; }
+.prize-extra .switch { gap: 8px; font-size: 12.5px; }
+.prize-extra .penalty-row { margin-top: 0; gap: 6px; }
+.prize-extra .penalty-label { margin-right: 0; font-size: 12.5px; }
+.prize-extra .penalty-row .round-btn.small { width: 22px; height: 22px; }
+.prize-extra .penalty-number { min-width: 16px; }
 .prize-number { min-width: 44px; text-align: center; font: 800 38px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .pips { display: flex; gap: 5px; }
 .pip { position: relative; overflow: hidden; width: 22px; height: 30px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: transparent; transition: background var(--transition), transform var(--transition); }
@@ -757,3 +766,7 @@ body.dragging::after { content: 'Drop a .oto file to install it'; position: fixe
 /* the tabs of the crop selector (the Active Pokémon, the bench, the Stadium, the prize cards, the Tools, Special Energy): all of them show, on two rows when they do not fit on one */
 .crop-panel .segmented { display: flex; flex-wrap: wrap; }
 .crop-panel .segmented .seg { flex: 1 1 auto; padding: 7px 10px; white-space: nowrap; }
+
+/* the title of the prize cards box stays on one line: the name, the keys, and the button that sets the cards */
+.prizes.compact .block-title { flex-wrap: nowrap; white-space: nowrap; }
+.prizes.compact .block-title .set-prizes { flex: none; padding: 3px 9px; }

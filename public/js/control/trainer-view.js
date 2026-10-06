@@ -98,15 +98,16 @@ export class TrainerView {
       return pip;
     });
     // the arrows are for the player whose turn it is, and Shift + the arrows for the other one: which keys are this trainer's follows the turn
-    this.prizeHint = h('span', { class: 'hint', title: 'The arrows are for the player whose turn it is, and Shift + the arrows for the other one' }, side === 'trainerA' ? '↑ ↓' : 'Shift + ↑ ↓');
+    this.prizeHint = h('span', { class: 'hint', title: 'The arrows are for the player whose turn it is, and Shift + the arrows for the other one' }, side === 'trainerA' ? '↑ ↓' : '⇧ ↑ ↓');
+    // (three lines: the title with the button that sets the cards, the count with its six pips, and the switch with the penalty)
     const prizes = h('section', { class: 'block prizes compact' },
-      h('div', { class: 'block-title' }, 'Prize cards', this.prizeHint),
+      h('div', { class: 'block-title' }, 'Prize cards', this.prizeHint,
+        h('button', { class: 'btn tiny set-prizes', type: 'button', title: 'Choose the cards that are the prizes: they show on the prize cards of the overlay', onclick: () => app.openPrizes(side) }, 'Set prizes')),
       h('div', { class: 'prize-row' },
         h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'One prize card taken', onclick: () => act('prizeMinus') }, icon('minus', 14)),
         this.prizeCount,
         h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Give back a prize card', onclick: () => act('prizePlus') }, icon('plus', 14)),
-        h('button', { class: 'btn tiny set-prizes', type: 'button', title: 'Choose the cards that are the prizes: they show on the prize cards of the overlay', onclick: () => app.openPrizes(side) }, 'Set prizes')),
-      h('div', { class: 'pips' }, this.prizePips),
+        h('div', { class: 'pips' }, this.prizePips)),
       h('div', { class: 'prize-extra' },
         this.toggle('Hide prizes', (on) => act('togglePrizeHidden', { enabled: on }), (t) => { this.hiddenToggle = t; }),
         // a penalty of this player is a number of prize cards the OTHER player counts as taken: that many of theirs are red on the overlay,
@@ -253,7 +254,7 @@ export class TrainerView {
     setValue(this.deckInput, trainer.deck || '');
     setValue(this.pictureInput, trainer.deckIcon || '');
     this.showDeckPicture();
-    this.prizeHint.textContent = app.prizeSide(false) === this.side ? '↑ ↓' : 'Shift + ↑ ↓';
+    this.prizeHint.textContent = app.prizeSide(false) === this.side ? '↑ ↓' : '⇧ ↑ ↓';
     for (const key of ['wins', 'losses', 'ties']) setValue(this.record[key], String(trainer.record[key]));
 
     // prizes

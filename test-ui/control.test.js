@@ -363,6 +363,29 @@ describe('control panel', { skip }, () => {
       await press('Escape');
     });
 
+    it('keeps the box of the prize cards short: the button in the title, the count with its pips on a line, the switch with the penalty on another', async () => {
+      for (const side of ['a', 'b']) {
+        const box = panel(side).locator('.prizes');
+        const centre = async (selector) => { const r = await box.locator(selector).first().boundingBox(); return r.y + r.height / 2; };
+        const size = await box.boundingBox();
+        assert.ok(size.height < 140, `${side}: not tall: ${size.height}px`);
+        // the button that sets the cards is in the title row
+        assert.ok(Math.abs(await centre('.set-prizes') - await centre('.block-title')) < 6, 'the button is in the title row');
+        // the count and its pips share a line
+        assert.ok(Math.abs(await centre('.prize-number') - await centre('.pips')) < 10, 'the count and the pips are on one line');
+        // the switch and the penalty share a line
+        assert.ok(Math.abs(await centre('.switch') - await centre('.penalty-row')) < 8, 'the switch and the penalty are on one line');
+        assert.equal(await box.locator('.pip').count(), 6);
+      }
+      // it all still works from its new place
+      await panel('a').locator('.pip').nth(2).click();
+      await expectLive((state) => state.trainerA.prizes.count, 3);
+      await panel('a').getByRole('button', { name: 'Penalty: one more' }).click();
+      await expectLive((state) => state.trainerA.prizes.penalty, 1);
+      await panel('a').getByRole('button', { name: 'Penalty: one less' }).click();
+      await expectLive((state) => state.trainerA.prizes.penalty, 0);
+    });
+
     it('chooses the card of a prize card with the card selector, over the dialog, and sets the cards all at once', async () => {
       await setButton('a').click();
       await dialog().waitFor();
