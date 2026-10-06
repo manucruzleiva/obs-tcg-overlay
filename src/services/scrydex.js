@@ -180,7 +180,8 @@ class ScrydexClient {
       regulationMark: field(item, 'regulationMark') || '',
       attacks: attacksOf(item.attacks) || [],
       retreat: retreatOf({ convertedRetreatCost: field(item, 'convertedRetreatCost'), retreatCost: field(item, 'retreatCost') }),
-      abilities: (item.abilities || []).map((ability) => ability && ability.name).filter(Boolean)
+      abilities: (item.abilities || []).map((ability) => ability && ability.name).filter(Boolean),
+      evolvesFrom: String([].concat(field(item, 'evolvesFrom') || [])[0] || '')
     };
   }
 }

@@ -603,6 +603,27 @@ describe('settings', { skip }, () => {
     });
   });
 
+  describe('the Pokémon Tools', () => {
+    it('are shown as pictures of their cards to begin with, by name only when asked, and the presets leave the way of drawing them alone', async () => {
+      await openSettings('Overlay');
+      const pictures = page.locator('.option-group label.switch', { hasText: 'Pokémon Tools as pictures of their cards' });
+      const names = page.locator('.option-group label.switch', { hasText: 'Pokémon Tools by name' });
+      assert.equal(await pictures.locator('input').isChecked(), true);
+      assert.equal(await names.locator('input').isChecked(), false, 'the text is not the usual, but it is there for the designs that want it');
+      assert.equal(await page.locator('.option-group label.switch', { hasText: 'Attached energy' }).count(), 1, 'the attachments are the energy: the tools have their own switches');
+
+      await names.click();
+      await until(async () => (await live()).settings.display.toolNames, true);
+      await page.getByRole('button', { name: 'Show everything' }).click();
+      await until(async () => (await live()).settings.display.toolCards, true);
+      assert.equal((await live()).settings.display.toolNames, true, 'Show everything does not choose how the tools are drawn');
+      await page.getByRole('button', { name: /^Minimal/ }).click();
+      await until(async () => (await live()).settings.display.toolCards, false);
+      assert.equal((await live()).settings.display.toolNames, true, 'and neither does Minimal');
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
   describe('the announcements table', () => {
     const box = (label) => page.getByRole('checkbox', { name: label, exact: true });
     const flags = async () => Object.fromEntries(Object.entries((await live()).settings).filter(([key]) => /^enable[A-Za-z_]*(Toast|Animation)$/.test(key)));

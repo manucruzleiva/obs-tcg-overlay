@@ -78,11 +78,14 @@ export class TrainerView {
     const identity = h('section', { class: 'block identity' },
       h('label', {}, h('span', {}, 'Name'), this.nameInput),
       h('label', {}, h('span', {}, 'Nationality'), h('div', { class: 'nat-field' }, this.natInput, this.natFlag)),
-      h('label', {}, h('span', {}, 'Deck or GLC type'), this.deckInput),
-      h('label', {}, h('span', {}, 'Picture'), h('div', { class: 'nat-field' }, this.pictureInput, this.deckPreview)),
-      this.deckHint,
-      h('div', { class: 'record' }, h('span', {}, 'Record'),
-        h('label', {}, 'W', this.record.wins), h('label', {}, 'L', this.record.losses), h('label', {}, 'T', this.record.ties)));
+      // the deck, its picture and the record share a row, at the same height
+      h('div', { class: 'deck-row' },
+        h('label', { class: 'deck-field' }, h('span', {}, 'Deck or GLC type'), this.deckInput),
+        h('label', { class: 'picture-field' }, h('span', {}, 'Picture'), h('div', { class: 'nat-field' }, this.pictureInput, this.deckPreview)),
+        h('div', { class: 'record', role: 'group', 'aria-label': 'Record' }, h('span', {}, 'Record'),
+          h('div', { class: 'record-inputs' },
+            h('label', {}, 'W', this.record.wins), h('label', {}, 'L', this.record.losses), h('label', {}, 'T', this.record.ties)))),
+      this.deckHint);
 
     // prizes
     this.prizeCount = h('span', { class: 'prize-number', 'aria-live': 'polite' }, '6');
@@ -454,8 +457,7 @@ export class TrainerView {
     const buttons = compact
       ? [
         this.mini('Switch in', 'swap', () => act('swapWithActive')),
-        this.mini('Evolve', 'evolve', () => app.openEvolve(side, slot)),
-        this.mini('Go back a stage', 'devolve', () => app.devolve(side, slot)),
+        this.mini('Evolve or go back a stage', 'egg', () => app.openEvolve(side, slot)),
         this.mini('Tool', 'tool', () => app.openTool(side, slot)),
         this.mini('Energy', 'bolt', () => app.openEnergy(side, slot)),
         this.mini('Damage', 'drop', () => app.openDamage('damage', side, slot)),
@@ -464,8 +466,7 @@ export class TrainerView {
       ]
       : [
         this.mini('Deploy another (A)', 'swap', () => app.openPicker({ kind: 'active', side })),
-        this.mini('Evolve', 'evolve', () => app.openEvolve(side, -1)),
-        this.mini('Go back a stage', 'devolve', () => app.devolve(side, -1)),
+        this.mini('Evolve or go back a stage', 'egg', () => app.openEvolve(side, -1)),
         this.mini('Tool', 'tool', () => app.openTool(side, -1)),
         this.mini('Energy (E)', 'bolt', () => app.openEnergy(side, -1)),
         this.mini('Damage (D)', 'drop', () => app.openDamage('damage', side, -1)),

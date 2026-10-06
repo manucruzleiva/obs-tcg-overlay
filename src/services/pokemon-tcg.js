@@ -377,7 +377,8 @@ class PokemonTCGService {
       regulationMark: item.regulationMark || '',
       attacks: attacksOf(item.attacks) || [],
       retreat: retreatOf(item),
-      abilities: (item.abilities || []).map(a => a.name).filter(Boolean)
+      abilities: (item.abilities || []).map(a => a.name).filter(Boolean),
+      evolvesFrom: item.evolvesFrom || ''
     };
   }
 

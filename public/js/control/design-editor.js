@@ -173,6 +173,15 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
         }
         return cards;
       }
+      if (which === 'tool') {
+        const cards = [{ label: 'A sample Pokémon Tool card', url: cardArt('Bravery Charm', 40, 'Stadium') }];
+        for (const [side, trainer] of trainers) {
+          for (const mon of trainer ? [trainer.active, ...trainer.bench] : []) {
+            for (const tool of (mon && mon.tools) || []) if (tool.image) cards.push({ label: `${trainer.name || side}: ${tool.name}`, url: tool.image });
+          }
+        }
+        return cards;
+      }
       if (which === 'stadium') {
         const cards = [{ label: 'A sample Stadium card', url: cardArt('Area Zero', 200, 'Stadium') }];
         const stadium = live && live.stadium;

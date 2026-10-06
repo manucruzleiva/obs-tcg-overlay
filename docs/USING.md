@@ -39,10 +39,12 @@ Set the trainers' names and nationalities, pick their decks and Pokémon, and ke
 | `E` | Attach energy (it counts as the turn's attachment, or switch that off for a special attachment) |
 | `K` | **Knock out**: pick one Pokémon or several, and how many prizes the opponent takes |
 | `S` | Put a Stadium in play. `Shift` + `S`: a Supporter was played this turn |
-| `X` | Ability tokens: mark an ability used |
+| `X` | Ability tokens: mark an ability used (abilities are not announced, only attacks) |
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack |
 | `T` | Announce a Top Deck |
+| `W` | **Winner** banner for the player whose turn it is (only the banner: the game and the score do not change) |
+| `G` | **Game start** banner |
 | `P` | **Pause** the game, or resume it |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
@@ -64,11 +66,11 @@ Other things that make a match easier:
 
 ### Active and bench
 
-Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, abilities, attacks and the retreat cost come from the card. Each Pokémon card in the control panel is compact and has small buttons (hover for the names): **Switch in** (or **Deploy another** for the Active Pokémon), **Evolve**, **Go back a stage**, **Tool**, **Energy**, **Damage**, **Heal**, **Abilities**, **Knock out**, **Remove**.
+Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, abilities, attacks and the retreat cost come from the card. Each Pokémon card in the control panel is compact and has small buttons (hover for the names): **Switch in** (or **Deploy another** for the Active Pokémon), the **egg** (evolve or go back a stage), **Tool**, **Energy**, **Damage**, **Heal**, **Abilities**, **Knock out**, **Remove**.
 
 - **Fossils and Dolls.** An Item card that is played as a Pokémon (a Fossil, a Pokémon Doll, the Snorlax Doll) is found in the same picker: choose **Fossil or Doll (an Item)** at the top, or type `fossil` or `doll`. It is placed as a Basic Pokémon with 60 HP.
-- **Evolve and go back.** **Evolve** opens a search of the cards that evolve from this Pokémon. The new card keeps the energy, the tools and the damage taken; as the rules say, its special conditions are cured. **Go back a stage** (a de-evolution) puts the earlier card back at once when OTO saw the Pokémon evolve, and otherwise asks you to search for it; it keeps everything the same way. Both work on the Active Pokémon and on the bench.
-- **Tools.** **Tool** attaches a Pokémon Tool to any Pokémon, Active or benched, and the overlay shows it. If the tool says "+50 HP", write 50 in *Adds to the maximum HP*: that Pokémon has the extra HP while the tool is on it, and loses it when you click the tool chip to take it off.
+- **The egg: evolve and go back.** The egg on a Pokémon opens a dialog with two tabs. **Evolution** lists the cards that evolve from this Pokémon; type a name and it looks among every card, so you can pick any card. **Devolution** starts from the card the Pokémon evolved from (the one OTO saw it evolve from, or else the one its card says it evolves from); type a name to pick any other card. Either way the new card keeps the energy, the tools and the damage taken, and, as the rules say, its special conditions are cured. It works on the Active Pokémon and on the bench.
+- **Tools.** **Tool** attaches a Pokémon Tool to any Pokémon, Active or benched, and the overlay shows the picture of its card on that Pokémon. If the tool says "+50 HP", write 50 in *Adds to the maximum HP*: that Pokémon has the extra HP while the tool is on it, and loses it when you click the tool chip to take it off.
 - **Maximum HP.** The `−` and `+` beside the maximum HP raise or lower it by 10 (the damage it has taken stays), and clicking the HP number sets both values by hand.
 - **Energy.** Click an energy chip to remove it; **right-click** one to attach another of the same kind. Special Energy cards go on with *Add a Special Energy card*.
 - **Special conditions** (Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped) are chips on the Active Pokémon and show as icons on the overlay. A condition ends when the Pokémon leaves the Active spot.
@@ -91,10 +93,10 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 ## Prizes, victory and pause
 
 - **Prize cards** are taken with `↓` for the player whose turn it is (`↑` gives one back). `Shift` is for the other player. The prize cards start **face down** at the beginning of each game; switch **Hide prizes** off to turn them face up.
-- **Set prizes** opens the six prize cards of a player: choose the card of each with the search. The overlay then shows those cards where the prize cards are, and the small pips in the control panel show them too.
+- **Set prizes** opens the six prize cards of a player in a small dialog: click a card to choose it with the search, and the little button on its corner takes it off again. The overlay then shows those cards where the prize cards are, and the small pips in the control panel show them too.
 - **Penalties** are set on the player who got one: that many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
 - **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the score and names stay). **New match** starts over with the score at 0.
-- **Winner** (in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change.
+- **Winner** (`W`, in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change. **Game start** (`G`) shows the start banner.
 - **Pause** (`P`) puts a PAUSED banner in the middle of the overlay and grays out the rest until you resume.
 
 ---
@@ -156,7 +158,7 @@ Right-click the tray icon, **Control panel password**, **Set a password…** (or
 
 ### Show and hide
 
-Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy and tools, retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the benched Pokémon** are off until you switch them on.
+Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, Pokémon Tools (as the pictures of their cards, which is how they show; their names as text are a switch that is off), retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the benched Pokémon** are off until you switch them on.
 
 The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out, pause): each can show a **banner**, a **full-screen effect**, or both, and you set how long they stay (1 to 30 seconds). The **All** column and the **All moments** row switch whole rows and columns at once. A new announcement replaces the one still showing; the pause banner stays until you resume.
 

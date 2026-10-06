@@ -15,7 +15,7 @@ A **design** gives the overlay its own identity: a store, a league, an event, a 
 | **Fonts** | A main font, plus a font for names, numbers, labels, announcement titles, subtitles and small text |
 | **Layout** | The position and size of every piece of the overlay, on a wide or a tall screen |
 | **Reserved spaces** | Up to six places kept clear for a camera feed (rectangle, rounded or oval), with your own frame over each |
-| **Cards** | Which part of a card shows for the Active Pokémon, the bench, the Stadium and the prize cards; where the HP bar, energy, retreat cost and status icons go |
+| **Cards** | Which part of a card shows for the Active Pokémon, the bench, the Stadium, the prize cards and the Pokémon Tools; where the HP bar, energy, retreat cost and status icons go |
 | **Prize cards** | The back (English, Japanese, a Poké Ball or your own) and the layout (a row, a column, two rows of three, three rows of two) |
 | **Sounds** | A sound for any moment of a match |
 
@@ -115,9 +115,9 @@ The overlay draws an outline of the shape, or **your own picture** over it: a fr
 
 ## Cards: crop and tile
 
-**Card crop.** The overlay does not have to show a whole card. Choose which part of the picture shows for the **Active Pokémon**, the **bench**, the **Stadium** and **a card set on a prize card**: just the art (the usual), the name and the art, the whole card, or any rectangle you draw on the card. Special Energy cards on a Pokémon show as a circle cut out of the card, which you can move and resize too.
+**Card crop.** The overlay does not have to show a whole card. Choose which part of the picture shows for the **Active Pokémon**, the **bench**, the **Stadium**, **a card set on a prize card** and the **Pokémon Tools** (the tabs of the crop editor, `active`, `bench`, `stadium`, `prize` and `tool` in `design.json`): just the art (the usual), the name and the art, the whole card, or any rectangle you draw on the card. Special Energy cards on a Pokémon show as a circle cut out of the card, which you can move and resize too.
 
-**Tile.** On top of the picture of a Pokémon sit the HP bar, the attached energy, the retreat cost (Active Pokémon only) and the status icons. For the Active Pokémon and for the bench, choose where each goes: on the picture at the top or bottom, in a corner, or below it. Tools are shown as chips under the Pokémon.
+**Tile.** On top of the picture of a Pokémon sit the HP bar, the attached energy, the retreat cost (Active Pokémon only) and the status icons. For the Active Pokémon and for the bench, choose where each goes: on the picture at the top or bottom, in a corner, or below it. **Pokémon Tools** are shown as small pictures of their cards under the Pokémon (the Trainer card's picture window unless the **Tools** crop says otherwise), with the HP they add in a corner. A tool put there by hand with no picture is a small chip with its name. The producers' switches choose how tools are drawn (Settings, Overlay): the pictures are on, and the names as text are off, so a design that prefers text can ship that setting in its `.oto` control settings (`display.toolNames: true`, `display.toolCards: false`).
 
 ---
 

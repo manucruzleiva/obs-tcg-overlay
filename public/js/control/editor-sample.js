@@ -128,7 +128,7 @@ export function sampleState(base) {
   a.locks = { itemLock: true, evoLock: false };
   a.benchSize = 5;
   a.active = mon(-1, 'Pikachu ex', 50, 120, 200, {
-    retreat: 1, status: ['asleep', 'poisoned'], tools: [{ cardId: 'sample-tool', name: 'Bravery Charm', image: '', hp: 50 }],
+    retreat: 1, status: ['asleep', 'poisoned'], tools: [{ cardId: 'sample-tool', name: 'Bravery Charm', image: cardArt('Bravery Charm', 40, 'Stadium'), hp: 50 }],
     energies: ['lightning', 'lightning', 'colorless'],
     specialEnergies: [special('Double Turbo Energy', 210), special('Jet Energy', 190)],
     abilities: [{ name: 'Static', used: false, scope: 'turn' }, { name: 'Volt Switch', used: true, scope: 'turn' }]

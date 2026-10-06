@@ -264,7 +264,8 @@ function cardDetail(item, language) {
     regulationMark: item.regulationMark || '',
     attacks: attacksOf(item.attacks) || [],
     retreat: retreatOf(item),
-    abilities: (item.abilities || []).map((ability) => ability && ability.name).filter(Boolean)
+    abilities: (item.abilities || []).map((ability) => ability && ability.name).filter(Boolean),
+    evolvesFrom: String(item.evolveFrom || '')
   };
 }
 

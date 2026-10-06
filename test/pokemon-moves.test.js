@@ -82,6 +82,24 @@ describe('Pokémon on the table', () => {
       assert.match(nothing.rejected.message, /no earlier card on file for Pichu/);
     });
 
+    it('knows what a card says it evolves from, keeps that for each stage, and shows it again when it goes back', async () => {
+      const put = (name, from, hp, extra = {}) => me.act('action:card', { action: 'select', target: 'trainerA-active', cardId: `${name}-id`, cardData: { id: `${name}-id`, name, hp: String(hp), images: { small: IMG }, abilities: [], attacks: [], retreat: 0, evolvesFrom: from }, ...extra });
+      let result = await put('Pikachu', 'Pichu', 60);
+      assert.equal(result.state.trainerA.active.evolvesFrom, 'Pichu', 'a Pokémon put there directly, as the stage it is: nothing on file, but the card says what it came from');
+      assert.deepEqual(result.state.trainerA.active.stages, []);
+
+      result = await put('Raichu', 'Pikachu', 100, { evolve: true });
+      assert.deepEqual([result.state.trainerA.active.evolvesFrom, result.state.trainerA.active.stages.map((stage) => [stage.name, stage.evolvesFrom])], ['Pikachu', [['Pikachu', 'Pichu']]]);
+
+      result = await act('trainerA', { action: 'devolve', slot: -1 });
+      assert.deepEqual([result.state.trainerA.active.name, result.state.trainerA.active.evolvesFrom], ['Pikachu', 'Pichu'], 'back to the card on file, which knows what it evolves from');
+
+      result = await put('Eevee', '', 60);
+      assert.equal(result.state.trainerA.active.evolvesFrom, '', 'a Basic Pokémon evolves from nothing');
+      result = await act('trainerA', mon(-1, 'Mew', 70));
+      assert.equal(result.state.trainerA.active.evolvesFrom, '', 'and a Pokémon put there by hand knows nothing');
+    });
+
     it('does not remember anything for a Pokémon that is put there fresh, or when the slot is empty', async () => {
       await place('trainerA', 0, 'Eevee', 60);
       await evolve('trainerA-bench-0', 'Jolteon', 90);

@@ -122,7 +122,7 @@ describe('the crop of the Stadium', () => {
 
   it('is refused when it is not on the card, with the names it can be written under', () => {
     refuses(() => sanitizeCrop({ stadium: { x: 0.5, y: 0, w: 0.8, h: 0.5 } }, { strict: true }), /"stadium" needs x, y, w and h|The crop for "stadium" needs/);
-    refuses(() => sanitizeCrop({ hand: WHOLE }, { strict: true }), /use "active", "bench", "stadium", "prize" or "energy"/);
+    refuses(() => sanitizeCrop({ hand: WHOLE }, { strict: true }), /use "active", "bench", "stadium", "prize", "tool" or "energy"/);
     assert.deepEqual(sanitizeCrop({ stadium: { x: 0.5, y: 0, w: 0.8, h: 0.5 } }), {}, 'a file written by hand with one is not refused, only left out');
   });
 
@@ -136,6 +136,40 @@ describe('the crop of the Stadium', () => {
       assert.deepEqual(store.exportDesign('Arena').design.crop.stadium, saved.crop.stadium);
       assert.equal('crop' in store.save('Arena', { crop: { stadium: USUAL } }), false, 'the usual is the same as saying nothing');
       assert.deepEqual(store.addDesign({ name: 'From A Package', crop: { stadium: WHOLE, active: THEME.CROP_DEFAULT } }).crop, { stadium: WHOLE });
+    } finally {
+      fs.rmSync(store.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the crop of the Pokémon Tools', () => {
+  const USUAL = { x: 0.082, y: 0.145, w: 0.836, h: 0.37 };
+
+  it('is the picture window of a Trainer card, the Stadium\'s, unless the design says otherwise', () => {
+    assert.deepEqual(THEME.TOOL_CROP_DEFAULT, USUAL);
+    assert.deepEqual(THEME.TOOL_PRESETS.map((preset) => preset.key), ['full', 'art', 'top']);
+    assert.deepEqual(THEME.TOOL_PRESETS[0].rect, WHOLE);
+    assert.deepEqual(THEME.TOOL_PRESETS[1].rect, USUAL);
+    for (const preset of THEME.TOOL_PRESETS) assert.ok(cleanRect(preset.rect), `${preset.key} is on the card`);
+  });
+
+  it('is kept when it is something else and not listed when it is the usual', () => {
+    assert.deepEqual(sanitizeCrop({ tool: USUAL }), {}, 'the picture of the Tool is not listed');
+    assert.deepEqual(sanitizeCrop({ tool: WHOLE }), { tool: WHOLE }, 'the whole card is asked for by name');
+    assert.deepEqual(sanitizeCrop({ tool: THEME.CROP_DEFAULT }), { tool: THEME.CROP_DEFAULT }, 'a Pokémon\'s window is something else for a Trainer card');
+    refuses(() => sanitizeCrop({ tool: { x: 0.5, y: 0, w: 0.8, h: 0.5 } }, { strict: true }), /The crop for "tool" needs/);
+  });
+
+  it('is saved with a design, handed to the overlay and carried in a package', () => {
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    const store = new ThemeStore(fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'tool-crop-')), { getSetting: () => null, setSetting() {} });
+    store.init();
+    try {
+      const saved = store.save('Gear', { crop: { tool: WHOLE } });
+      assert.deepEqual(saved.crop.tool, WHOLE);
+      assert.deepEqual(store.resolved('Gear').crop.tool, WHOLE);
+      assert.deepEqual(store.exportDesign('Gear').design.crop.tool, WHOLE);
+      assert.equal('crop' in store.save('Gear', { crop: { tool: USUAL } }), false, 'the usual is the same as saying nothing');
     } finally {
       fs.rmSync(store.dir, { recursive: true, force: true });
     }
@@ -371,7 +405,7 @@ describe('the crop of the prize cards', () => {
 
 describe('the circle for Special Energy', () => {
   it('is a third crop, a circle centered on the art of a Special Energy card, as wide as the art is tall, unless the design says otherwise', () => {
-    assert.deepEqual(THEME.CROP_KEYS, ['active', 'bench', 'stadium', 'prize', 'energy']);
+    assert.deepEqual(THEME.CROP_KEYS, ['active', 'bench', 'stadium', 'prize', 'tool', 'energy']);
     const { x, y, w, h } = THEME.ENERGY_CIRCLE;
     const art = THEME.ENERGY_ART;
     assert.ok(Math.abs(w * 300 - h * 418) < 1, 'a circle: as many pixels across as down');

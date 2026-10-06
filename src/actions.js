@@ -789,6 +789,7 @@ function cleanCard(data) {
     abilities: abilityNames(data.abilities),
     attacks: attacksOf(data.attacks),
     retreat: retreatOf({ retreat: data.retreat }),
+    evolvesFrom: text(data.evolvesFrom ?? '', 'evolves from', 80),
     images
   };
 }
@@ -1033,7 +1034,7 @@ async function prepare(gs, event, payload) {
   // The card service did not answer in time: the Pokémon is put there now, and the attacks and the retreat cost are looked for in the
   // background and filled in when they come (see Session.fillDetailsLater)
   if (!details) return payload.target === 'stadium' ? payload : { ...payload, detailsLater: true };
-  return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities, attacks: details.attacks, retreat: details.retreat } : details };
+  return { ...payload, cardData: supplied ? { ...supplied, abilities: details.abilities, attacks: details.attacks, retreat: details.retreat, evolvesFrom: details.evolvesFrom } : details };
 }
 
 module.exports = { resolve, prepare, ActionError, SIDE_LABEL };

@@ -108,14 +108,15 @@
     const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
     const attacks = opt(el('div', 'attacks'), 'benchAttacks'); // (the benched Pokémon only)
-    const tools = opt(el('div', 'tools'), 'attachments'); // the Pokémon Tools, with the other attachments
+    const toolCards = opt(el('div', 'tool-cards'), 'toolCards'); // the Pokémon Tools as pictures of their cards
+    const tools = opt(el('div', 'tools'), 'toolNames'); // and, when asked for, by name
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
-    [name, hp, energies, retreat, abilities, tools, attacks, statuses].forEach((node) => details.appendChild(node));
+    [name, hp, energies, retreat, abilities, toolCards, tools, attacks, statuses].forEach((node) => details.appendChild(node));
 
     root.appendChild(art);
     root.appendChild(details);
     root.hidden = true;
-    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, tools, attacks, statuses };
+    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, toolCards, tools, attacks, statuses };
   }
 
   // Where the parts of a tile go: the usual places, with what a design says (a design is checked by the server, this only
@@ -153,6 +154,7 @@
     mon.details.appendChild(mon.name);
     below.forEach((node) => mon.details.appendChild(node));
     mon.details.appendChild(mon.abilities);
+    mon.details.appendChild(mon.toolCards);
     mon.details.appendChild(mon.tools);
     mon.details.appendChild(mon.attacks);
     below.length = 0;
@@ -227,7 +229,34 @@
     container.hidden = list.length === 0;
   }
 
-  // The Pokémon Tools on a Pokémon: the name of each, and the HP it adds when it adds some
+  // The Pokémon Tools on a Pokémon as the pictures of their cards (the part of the card that the crop says), with the HP each adds when it adds
+  // some. A tool with no picture (put there by hand) is shown by its name. Only drawn again when something about them changed, so the pictures
+  // do not flash on every update.
+  function renderToolCards(container, tools) {
+    const list = Array.isArray(tools) ? tools : [];
+    const signature = JSON.stringify(list.map((tool) => [tool.image, tool.name, tool.hp]));
+    container.hidden = list.length === 0;
+    if (container.dataset.tools === signature) return;
+    container.dataset.tools = signature;
+    container.textContent = '';
+    list.forEach((tool) => {
+      const card = el('span', tool.image ? 'tool-card' : 'tool-card plain');
+      card.title = tool.hp ? `${tool.name} (+${tool.hp} HP)` : tool.name;
+      if (tool.image) {
+        const img = el('img', 'tool-card-img');
+        img.decoding = 'async';
+        img.alt = tool.name;
+        img.src = tool.image;
+        card.appendChild(img);
+      } else {
+        card.appendChild(el('span', 'tool-card-name', tool.name));
+      }
+      if (tool.hp) card.appendChild(el('span', 'tool-card-hp', `+${tool.hp}`));
+      container.appendChild(card);
+    });
+  }
+
+  // The Pokémon Tools on a Pokémon by name (not on by default; a design can ask for it): the name of each, and the HP it adds when it adds some
   function renderTools(container, tools) {
     const list = Array.isArray(tools) ? tools : [];
     container.textContent = '';
@@ -282,6 +311,7 @@
       renderRetreat(mon.retreat, pokemon.retreat, status.indexOf('trapped') !== -1);
     }
     renderAbilities(mon.abilities, pokemon.abilities);
+    renderToolCards(mon.toolCards, pokemon.tools);
     renderTools(mon.tools, pokemon.tools);
     renderAttacks(mon.attacks, mon.mini ? pokemon.attacks : []);
 
@@ -986,10 +1016,10 @@
         });
       });
 
-      // crop: the part of the card that shows for the Active Pokémon (ca), the bench (cb), the Stadium (sa) and the cards put on the prize
-      // cards (cp); the artwork unless the design says (the whole card for the prize cards)
+      // crop: the part of the card that shows for the Active Pokémon (ca), the bench (cb), the Stadium (sa), the cards put on the prize
+      // cards (cp) and the Pokémon Tools (ct); the artwork unless the design says (the whole card for the prize cards)
       const crop = theme.crop || {};
-      [['active', 'ca'], ['bench', 'cb'], ['stadium', 'sa'], ['prize', 'cp']].forEach(([which, prefix]) => {
+      [['active', 'ca'], ['bench', 'cb'], ['stadium', 'sa'], ['prize', 'cp'], ['tool', 'ct']].forEach(([which, prefix]) => {
         const rect = crop[which];
         if (!rect) return;
         ['x', 'y', 'w', 'h'].forEach((side) => set(`--${prefix}-${side}`, String(rect[side])));

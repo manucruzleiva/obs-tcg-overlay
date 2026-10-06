@@ -175,7 +175,7 @@ Behind the password:
 
 Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The handlers live in [src/actions.js](../src/actions.js). A selection (not the whole list):
 
-- Pokémon: `select` (a card into a slot, with `evolve`, `back` for a de-evolution, `asPokemon` for a Fossil or Doll Item), `devolve`, `moveSlot` (`{ from, to }`, `-1` is the Active spot: move or swap), `swapWithActive`, `clearSlot`, `setRetreat`, `setMaxHP` (`{ max, keepDamage }`), `attachTool` / `removeTool` (`{ name, image, hp }`), `moveDamage` (`{ from: { side, slot }, to: { side, slot }, amount }` over any two Pokémon), `knockOut` and `knockOutMany` (`{ knockouts: [{ side, slot, prizes }], clear }`), `benchSizeReset`.
+- Pokémon: `select` (a card into a slot; its `cardData` may say `evolvesFrom`, and the Pokémon remembers it for the Devolution tab; with `evolve`, `back` for a de-evolution, `asPokemon` for a Fossil or Doll Item), `devolve`, `moveSlot` (`{ from, to }`, `-1` is the Active spot: move or swap), `swapWithActive`, `clearSlot`, `setRetreat`, `setMaxHP` (`{ max, keepDamage }`), `attachTool` / `removeTool` (`{ name, image, hp }`), `moveDamage` (`{ from: { side, slot }, to: { side, slot }, amount }` over any two Pokémon), `knockOut` and `knockOutMany` (`{ knockouts: [{ side, slot, prizes }], clear }`), `benchSizeReset`.
 - Energy and status: `attachEnergy` / `attachSpecialEnergy` (with `countsAsTurn`), `toggleStatus` / `clearStatus`, `gxPlus` / `vstarPlus` (and `Minus`, `Reset`).
 - Prizes: `prizePenaltySet`, `prizeCardsSet` (`{ cards }`: up to six `{ cardId, name, image }`, or `null`).
 - Deck: `setDeck` (`{ deck }`), `setDeckIcon` (`{ icon }`).

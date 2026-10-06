@@ -824,6 +824,38 @@ describe('design editor', { skip }, () => {
       });
     });
 
+    describe('the crop of the Pokémon Tools', () => {
+      beforeEach(async () => { await page.locator('.crop-panel .seg', { hasText: 'Tools' }).click(); });
+      const toolCrop = () => crop().then((all) => all.tool);
+      const USUAL = { x: 0.082, y: 0.145, w: 0.836, h: 0.37 };
+
+      it('is a tab of its own, with the picture window of a Trainer card as the usual, which is not written down, and no bench to share it with', async () => {
+        assert.equal(await page.locator('.crop-panel .switch').isHidden(), true, 'nothing to share with the bench');
+        assert.deepEqual(await rectFields(), { Left: '8.2', Top: '14.5', Width: '83.6', Height: '37' });
+        assert.equal(await page.locator('.crop-panel .btn[data-preset="art"]').getAttribute('aria-pressed'), 'true');
+        assert.deepEqual(await page.locator('.crop-presets .btn').allTextContents(), ['Full card', 'Art only', 'Name and art']);
+        assert.equal(await toolCrop(), undefined);
+        assert.match(await page.locator('.crop-card-field option').first().textContent(), /sample Pokémon Tool card/);
+      });
+
+      it('shows the whole card on the tools of the canvas when asked, written down, and goes back to the picture', async () => {
+        await page.locator('.crop-panel .btn[data-preset="full"]').click();
+        assert.deepEqual(await toolCrop(), { x: 0, y: 0, w: 1, h: 1 });
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--ct-w') === '1');
+        const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .active .tool-card').getBoundingClientRect().height);
+        assert.ok(Math.abs(height - 104 * 1.393333) < 1, `the tool is as tall as the whole card: ${height}`);
+        assert.deepEqual(await crop(), { tool: { x: 0, y: 0, w: 1, h: 1 } }, 'and the Pokémon are as they were');
+        await page.locator('.crop-panel .btn[data-preset="art"]').click();
+        assert.equal(await toolCrop(), undefined, 'the picture is the usual');
+        assert.deepEqual(USUAL, { x: 0.082, y: 0.145, w: 0.836, h: 0.37 });
+      });
+
+      it('has a sample tool on the canvas, shown as a picture of its card', async () => {
+        assert.equal(await overlayFrame().evaluate(() => document.querySelectorAll('.trainer-a .active .tool-card img').length), 1);
+        assert.equal(await overlayFrame().evaluate(() => document.querySelector('.trainer-a .active .tool-card-hp').textContent), '+50');
+      });
+    });
+
     describe('the circle for Special Energy', () => {
       beforeEach(async () => { await page.locator('.crop-panel .seg', { hasText: 'Special energy' }).click(); });
       const circle = () => crop().then((all) => all.energy);

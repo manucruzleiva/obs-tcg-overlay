@@ -70,25 +70,46 @@ const FILTERS = [
   { label: 'Energy', value: 'Energy' }
 ];
 
-// What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution, a Special Energy
+// What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution (the egg: two tabs, Evolution and Devolution, and
+// `tab` says which opens first), a Special Energy
 // card for a Pokémon (`countsAsTurn` and `onDone` belong to that one: whether it uses up the turn's energy
 // attachment, and what to do when a card has been attached), or one of the prize cards (`onPick` gets the card: nothing is sent,
 // the prize cards dialog behind it holds the choice).
 export function openPicker(app, purpose) {
   const { kind, side, slot, countsAsTurn, onDone, onPick } = purpose;
   const state = app.state;
-  const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'special-energy' ? 'Energy' : kind === 'tool' ? 'Trainer' : kind === 'active' || kind === 'bench' || kind === 'evolve' || kind === 'devolve' ? 'Pokémon' : '';
+  const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'special-energy' ? 'Energy' : kind === 'tool' ? 'Trainer' : kind === 'active' || kind === 'bench' || kind === 'evolve' ? 'Pokémon' : '';
   let filter = fixedFilter;
-  let evolvesFrom = '';
   let token = 0;
+
+  // The egg: Evolution (the cards that evolve from this Pokémon, and any other card by typing) and Devolution (the card it evolved from, and any
+  // other card by typing). What is listed before anything is typed depends on the tab.
+  let tab = kind === 'evolve' && purpose.tab === 'devolve' ? 'devolve' : 'evolve';
+  const monNow = () => {
+    const trainer = app.state[side];
+    return (slot === -1 ? trainer.active : trainer.bench[slot]) || {};
+  };
+  // { stage } the card it was before it evolved, on file; { evolvesFrom } the cards that evolve from this Pokémon; { query } what to look for
+  // (the Pokémon the card says it evolves from); nothing: the starting list
+  const defaultsFor = (which) => {
+    if (kind !== 'evolve') return {};
+    const mon = monNow();
+    if (which === 'evolve') return mon.name ? { evolvesFrom: mon.name } : {};
+    const stages = Array.isArray(mon.stages) ? mon.stages : [];
+    if (stages.length > 0) return { stage: stages[stages.length - 1] };
+    return mon.evolvesFrom ? { query: mon.evolvesFrom } : {};
+  };
+  const hasDefault = () => {
+    const found = defaultsFor(tab);
+    return Boolean(found.stage || found.evolvesFrom || found.query);
+  };
 
   const titles = {
     active: `Deploy the Active Pokémon · ${side && trainerName(state, side)}`,
     bench: `Bench slot ${slot + 1} · ${side && trainerName(state, side)}`,
     stadium: 'Stadium',
     feature: 'Feature a card',
-    evolve: 'Evolve',
-    devolve: 'Go back to an earlier card',
+    evolve: `Evolution · ${(slot !== undefined && side && ((slot === -1 ? state[side].active : state[side].bench[slot]) || {}).name) || ''}`,
     tool: `Pokémon Tool · ${side && slot !== undefined ? ((slot === -1 ? state[side].active : state[side].bench[slot]) || {}).name || '' : ''}`,
     'special-energy': `Special Energy · ${side && trainerName(state, side)}`,
     prize: `Prize card ${slot + 1} · ${side && trainerName(state, side)}`
@@ -100,12 +121,17 @@ export function openPicker(app, purpose) {
   // What the list shows: 'start' (the most used and the saved cards, before anything is typed), 'search' or nothing
   let showing = '';
 
-  if (kind === 'evolve') {
-    const mon = app.state[side][slot === -1 ? 'active' : 'bench'];
-    evolvesFrom = (slot === -1 ? mon : mon[slot]).name;
-    status.textContent = `Searching for evolutions of ${evolvesFrom}…`;
-  }
-  if (kind === 'devolve') status.textContent = 'Search the card this Pokémon was before it evolved. It keeps what is attached to it and its damage.';
+  // the two tabs of the egg
+  const tabRow = kind === 'evolve' ? h('div', { class: 'item-mode evolve-tabs' }) : null;
+  const drawTabs = () => {
+    if (!tabRow) return;
+    replace(tabRow, h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Evolution or devolution' },
+      [['evolve', 'Evolution', 'A card that evolves from this Pokémon: it keeps its energy, tools and damage'], ['devolve', 'Devolution', 'The card this Pokémon was before it evolved: it keeps its energy, tools and damage']].map(([key, label, help]) => h('button', {
+        class: `seg${tab === key ? ' on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(tab === key), title: help, dataset: { tab: key },
+        onclick: () => { if (tab === key) return; tab = key; input.value = ''; drawTabs(); search(); input.focus(); }
+      }, label))));
+    input.placeholder = tab === 'devolve' ? 'Search any card it can go back to…' : 'Search any card to evolve into…';
+  };
 
   // An Item card can be played as a Pokémon (a Fossil, a Doll): the picker of the Active Pokémon and of the bench can search those too
   let asItem = false;
@@ -151,7 +177,10 @@ export function openPicker(app, purpose) {
     // where the card came from goes with it, so the details (attacks, abilities) are asked of the same service
     const cardData = { id: card.id, name: card.name, hp: card.hp, images: card.images, source: card.source, language: card.language };
     let result;
-    if (kind === 'feature') {
+    if (card.stage) {
+      // the card it evolved from is on file with its attacks and retreat cost: back to it as it was
+      result = await app.act(`action:${side}`, { action: 'devolve', slot });
+    } else if (kind === 'feature') {
       result = await app.act('action:card', { action: 'addFeatureCard', cardId: card.id, name: card.name, image: (card.images && (card.images.large || card.images.small)) || '' });
     } else if (kind === 'stadium') {
       result = await app.act('action:card', { action: 'select', target: 'stadium', cardId: card.id, cardData, playedBy, consume });
@@ -170,11 +199,11 @@ export function openPicker(app, purpose) {
       });
     } else {
       const target = `${side}-${slot === undefined || slot === -1 ? 'active' : `bench-${slot}`}`;
-      result = await app.act('action:card', { action: 'select', target, cardId: card.id, cardData, evolve: kind === 'evolve', back: kind === 'devolve', asPokemon: asItem });
+      result = await app.act('action:card', { action: 'select', target, cardId: card.id, cardData, evolve: kind === 'evolve' && tab === 'evolve', back: kind === 'evolve' && tab === 'devolve', asPokemon: asItem });
     }
     if (result.ok) {
-      // counted, so it is offered first next time (nobody waits for this)
-      fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
+      // counted, so it is offered first next time (nobody waits for this); the card it evolved from is only on file here, it is no search result
+      if (!card.stage) fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
       closeModal();
       if (onDone) onDone();
     }
@@ -189,8 +218,8 @@ export function openPicker(app, purpose) {
   };
   const render = (cards) => {
     replace(results, cards.map((card) => {
-      const star = h('button', { class: 'star-btn', type: 'button', 'aria-label': `Favorite: ${card.name}`, dataset: { card: card.id } }, icon('star', 16));
-      showStar(star, isFavorite(card));
+      const star = card.stage ? null : h('button', { class: 'star-btn', type: 'button', 'aria-label': `Favorite: ${card.name}`, dataset: { card: card.id } }, icon('star', 16));
+      if (star) showStar(star, isFavorite(card));
       const toggleStar = async () => {
         const was = isFavorite(card);
         const result = await app.act('action:card', { action: 'favorite', cardId: card.id });
@@ -199,12 +228,13 @@ export function openPicker(app, purpose) {
         // so the card can be listed with the favorites later, whatever the picture it was found with
         if (!was) fetch('/api/cards/known', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
       };
-      star.addEventListener('click', toggleStar);
-      return h('div', { class: 'card-tile', oncontextmenu: (event) => { event.preventDefault(); toggleStar(); } },
-        h('button', { class: 'card-pick', type: 'button', onclick: () => pick(card), title: `${card.name} · ${card.setName} #${card.number}` },
+      if (star) star.addEventListener('click', toggleStar);
+      const where = card.stage ? 'The card it evolved from' : `${card.setName} #${card.number}`;
+      return h('div', { class: `card-tile${card.stage ? ' stage-card' : ''}`, oncontextmenu: (event) => { event.preventDefault(); if (star) toggleStar(); } },
+        h('button', { class: 'card-pick', type: 'button', onclick: () => pick(card), title: `${card.name} · ${where}` },
           card.images && card.images.small ? h('img', { src: card.images.small, alt: card.name, loading: 'lazy' }) : h('span', { class: 'art-fallback' }, icon('star', 28)),
           h('span', { class: 'card-name' }, card.name),
-          h('span', { class: 'card-meta' }, `${card.setName} #${card.number}`)),
+          h('span', { class: 'card-meta' }, where)),
         star);
     }));
   };
@@ -227,18 +257,30 @@ export function openPicker(app, purpose) {
       status.textContent = 'Type Fossil or Doll to find the Item cards that are played as a Pokémon.';
       return;
     }
-    // Nothing typed: start from the cards used most, then the ones already saved on this computer
-    const starting = !text && !evolvesFrom;
+    // Nothing typed: what the tab starts from (the evolutions, or the card it evolved from), or else the cards used most, then the ones already
+    // saved on this computer
+    const base = text ? {} : defaultsFor(tab);
+    if (base.stage) {
+      // (the card it evolved from is on file: no search is needed)
+      listed = [{ stage: true, id: base.stage.cardId, name: base.stage.name, setName: '', number: '', images: { small: base.stage.image, large: base.stage.image } }];
+      showing = 'start';
+      render(listed);
+      moreButton.hidden = true;
+      status.textContent = `This is the card ${monNow().name} evolved from. It keeps its energy, tools and damage. Type a card name to go back to any other card.`;
+      return;
+    }
+    const query = text || base.query || '';
+    const starting = !query && !base.evolvesFrom;
     status.textContent = starting ? 'Looking at the cards on this computer…' : 'Searching…';
     const params = new URLSearchParams({ page: String(pageNumber) });
-    if (text) params.set('q', text);
+    if (query) params.set('q', query);
     // The card API groups cards as Pokémon, Trainer or Energy; a Stadium is a kind of Trainer
     if (kind === 'stadium') { params.set('supertype', 'Trainer'); params.set('subtype', 'Stadium'); }
     else if (kind === 'special-energy') { params.set('supertype', 'Energy'); params.set('subtype', 'Special'); }
     else if (kind === 'tool') { params.set('supertype', 'Trainer'); params.set('subtype', 'Pokémon Tool'); }
     else if (asItem) { params.set('supertype', 'Trainer'); params.set('subtype', 'Item'); }
     else if (filter) params.set('supertype', filter);
-    if (evolvesFrom) params.set('evolvesFrom', evolvesFrom);
+    if (base.evolvesFrom) params.set('evolvesFrom', base.evolvesFrom);
     try {
       const response = await fetch(starting ? `/api/cards/popular?${params}` : `/api/cards/search?${params}`);
       const data = await response.json();
@@ -257,9 +299,11 @@ export function openPicker(app, purpose) {
         const where = data.source === 'library' ? ` in your ${data.library} library` : data.source === 'tcgdex' ? ' on TCGdex' : data.source === 'scrydex' ? ' on Scrydex' : '';
         // TCGdex does not say how many cards there are in all: a full page means there may be more
         const open = data.source === 'tcgdex' && data.hasMore;
+        const about = base.evolvesFrom ? `Evolutions of ${base.evolvesFrom}: ` : base.query ? `${base.query}, which ${monNow().name} evolves from: ` : '';
+        const more = base.evolvesFrom || base.query ? ' Type a card name to look for any other card.' : '';
         status.textContent = listed.length
-          ? `${open ? `${listed.length}+` : data.totalCount} cards found${where}${!open && data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}`
-          : data.offline ? `Nothing in your ${data.library} library matches, and the online search cannot be reached.` : `No cards found${where}.`;
+          ? `${about}${open ? `${listed.length}+` : data.totalCount} cards found${where}${!open && data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}.${more}`.replace(/\.\.$/, '.')
+          : data.offline ? `Nothing in your ${data.library} library matches, and the online search cannot be reached.` : `No cards found${where}.${more}`;
       }
       render(listed);
       moreButton.hidden = listed.length >= data.totalCount || data.cards.length === 0;
@@ -290,7 +334,7 @@ export function openPicker(app, purpose) {
     if (event.key !== 'Enter') return;
     event.preventDefault();
     // with nothing typed the list is a suggestion, not an answer: Enter does not choose from it
-    if (!input.value.trim() && !evolvesFrom) return;
+    if (!input.value.trim() && !hasDefault()) return;
     const first = results.querySelector('.card-pick');
     if (first) first.click(); else search();
   });
@@ -320,9 +364,10 @@ export function openPicker(app, purpose) {
   openModal({
     title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy' || kind === 'prize', // over the energy editor or the prize cards that asked for it
     onClose: followStars,
-    body: [fromBench, playRow, modeRow, bonusRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
+    body: [fromBench, playRow, modeRow, tabRow, bonusRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
   });
   drawMode();
+  drawTabs();
   search();
 }
 
@@ -689,29 +734,28 @@ export function openPrizes(app, side) {
     const result = await app.act(`action:${key}`, { action: 'prizeCardsSet', cards });
     if (result.ok) closeModal();
   } }, 'Set prizes');
-  const clearAll = h('button', { class: 'btn tiny', type: 'button', onclick: () => { cards.fill(null); draw(); } }, 'Clear all');
+  const clearAll = h('button', { class: 'btn tiny clear-all', type: 'button', onclick: () => { cards.fill(null); draw(); } }, 'Clear all');
 
   function draw() {
     const left = app.state[key].prizes.count; // the prize cards from the right are the ones taken
     replace(body,
-      h('p', { class: 'hint-line' }, 'Choose the card of each prize. They show on the prize cards of the overlay, and turn face down with the Hide prizes switch. Prize cards that are taken fade out, from the right.'),
       h('div', { class: 'prize-slots' }, cards.map((card, index) => h('div', { class: `prize-slot${card ? ' filled' : ''}${index >= left ? ' taken' : ''}`, dataset: { slot: index } },
         h('button', {
           class: 'prize-pick', type: 'button', 'data-autofocus': index === 0 || undefined,
           'aria-label': card ? `Prize card ${index + 1}: ${card.name}. Choose another card` : `Prize card ${index + 1}: choose a card`,
           onclick: () => choose(index)
-        }, card && card.image ? h('img', { src: card.image, alt: '' }) : card ? icon('star', 28) : icon('plus', 24)),
-        h('span', { class: 'prize-slot-name' }, card ? card.name : `Prize ${index + 1}`),
-        card ? h('button', { class: 'btn tiny danger-text', type: 'button', 'aria-label': `Clear prize card ${index + 1}`, onclick: () => { cards[index] = null; draw(); } }, 'Clear') : h('span', { class: 'prize-slot-gap' })))),
-      h('div', { class: 'button-row' }, clearAll));
+        }, card && card.image ? h('img', { src: card.image, alt: '' }) : card ? icon('star', 24) : icon('plus', 20)),
+        // (the little button on the corner of a card that is chosen takes it off again)
+        card && h('button', { class: 'prize-clear', type: 'button', title: 'Take this card off', 'aria-label': `Clear prize card ${index + 1}`, onclick: () => { cards[index] = null; draw(); } }, icon('close', 12)),
+        h('span', { class: 'prize-slot-name' }, card ? card.name : `Prize ${index + 1}`)))));
     clearAll.disabled = !cards.some(Boolean);
     apply.disabled = cards.every((card, index) => sameCard(card, saved()[index] || null));
   }
 
   draw(); // before it opens, so the first prize card is there to take the focus
   openModal({
-    title: `Prize cards · ${trainerName(app.state, key)}`, subtitle: 'Put cards on the prizes', size: 'lg', name: 'prizes', body,
-    footer: [h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Cancel'), apply]
+    title: `Prize cards · ${trainerName(app.state, key)}`, subtitle: 'Choose the card of each prize. Prizes that are taken fade out, from the right.', size: 'md', name: 'prizes', body,
+    footer: [clearAll, h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Cancel'), apply]
   });
 }
 
@@ -739,7 +783,7 @@ export function openBench(app, side) {
           h('div', { class: 'bench-actions' },
             h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openPicker({ kind: 'bench', side: current, slot: index }) }, present ? 'Replace' : 'Add Pokémon'),
             present && h('button', { class: 'btn tiny', type: 'button', onclick: async () => { await app.act(`action:${current}`, { action: 'swapWithActive', slot: index }); draw(); } }, 'Switch in'),
-            present && h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openEvolve(current, index) }, 'Evolve'),
+            present && h('button', { class: 'btn tiny', type: 'button', title: 'Evolve this Pokémon, or take it back a stage', onclick: () => app.openEvolve(current, index) }, 'Evolution'),
             present && h('button', { class: 'btn tiny danger-text', type: 'button', onclick: async () => { await app.act(`action:${current}`, { action: 'clearSlot', slot: index }); draw(); } }, 'Remove')));
       })));
   };
@@ -809,16 +853,15 @@ const tens = (value) => Math.max(0, Math.min(9999, Math.round((parseInt(value, 1
 const damageText = (attack) => (attack.damage ? `${attack.damage}${attack.mod || ''}` : attack.mod || '—');
 const MODIFIER_HINT = { '+': 'and more with some conditions', '×': 'times something', '-': 'less with some conditions' };
 
-// Announce an attack or an ability. The Active Pokémon's attacks and the abilities of the Pokémon in play are listed from
-// their cards: pick one (or press its number) and the name and the base damage are filled in, ready to be changed.
+// Announce an attack. The Active Pokémon's attacks are listed from its card: pick one (or press its number) and the name and the base
+// damage are filled in, ready to be changed. (An ability is not announced from here: its token is marked used with X.)
 // The attacks of the benched Pokémon are in a list that is closed until it is wanted (an attack that is copied from the bench, for example).
 export function openAttack(app) {
   const holder = app.state.trainerA.isTurn ? 'trainerA' : app.state.trainerB.isTurn ? 'trainerB' : app.focus;
   let attacker = holder;
-  let chosen = null; // what was picked from a card: { kind: 'attack' | 'ability', slot, index, label, base, used }
+  let chosen = null; // the attack that was picked from a card: { kind: 'attack', slot, index, label, base, mod }
   let items = []; // what the number keys pick, in the order they are listed
   let applyDamage = true;
-  let markUsed = true;
   let benchOpen = false; // the list of the benched Pokémon's attacks stays as it was left while the dialog is drawn again
 
   const body = h('div', {});
@@ -828,7 +871,6 @@ export function openAttack(app) {
   const moreButton = h('button', { class: 'round-btn', type: 'button', 'aria-label': '10 more' }, icon('plus', 16));
   const baseButton = h('button', { class: 'btn tiny', type: 'button', hidden: true });
   const applyBox = h('input', { type: 'checkbox', checked: true });
-  const usedBox = h('input', { type: 'checkbox', checked: true });
   const announce = h('button', { class: 'btn danger', type: 'button' });
 
   const setDamage = (value) => {
@@ -878,31 +920,26 @@ export function openAttack(app) {
   damage.addEventListener('input', refresh);
   damage.addEventListener('change', () => setDamage(damage.value));
   applyBox.addEventListener('change', () => { applyDamage = applyBox.checked; });
-  usedBox.addEventListener('change', () => { markUsed = usedBox.checked; });
 
   const sameAsChosen = (entry) => chosen && chosen.kind === entry.kind && chosen.slot === entry.slot && chosen.index === entry.index;
 
   const choose = (entry) => {
     chosen = entry;
-    if (entry.kind === 'attack') {
-      name.value = entry.label;
-      modInputs['×'].value = '1';
-      modInputs['+'].value = '0';
-      modInputs['-'].value = '0';
-      damage.value = String(tens(entry.base));
-    } else {
-      markUsed = !entry.used; // an ability that is already used is announced again without marking it twice
-      usedBox.checked = markUsed;
-    }
+    name.value = entry.label;
+    modInputs['×'].value = '1';
+    modInputs['+'].value = '0';
+    modInputs['-'].value = '0';
+    damage.value = String(tens(entry.base));
     draw();
-    if (entry.kind === 'attack') { damage.focus(); damage.select(); } else announce.focus();
+    damage.focus();
+    damage.select();
   };
 
   // (the attacks of the benched Pokémon have no number: they are picked with a click)
   const listed = (entry, content, { numbered = true } = {}) => {
     if (numbered) items.push(entry);
     return h('button', {
-      class: `attack-pick${entry.kind === 'ability' ? ' ability' : ''}${numbered ? '' : ' bench-pick'}${sameAsChosen(entry) ? ' on' : ''}`, type: 'button',
+      class: `attack-pick${numbered ? '' : ' bench-pick'}${sameAsChosen(entry) ? ' on' : ''}`, type: 'button',
       'aria-pressed': String(Boolean(sameAsChosen(entry))), dataset: { kind: entry.kind, index: String(entry.index), slot: String(entry.slot) },
       'data-autofocus': (numbered && items.length === 1) || undefined,
       onclick: () => choose(entry)
@@ -917,7 +954,6 @@ export function openAttack(app) {
     const defender = otherSide(attacker);
     const active = state[attacker].active;
     const attacks = hasPokemon(active) ? active.attacks || [] : [];
-    const owners = inPlay(state, attacker).filter(({ pokemon }) => (pokemon.abilities || []).length > 0);
     items = [];
 
     const attackList = attacks.map((attack, index) => listed(
@@ -925,12 +961,6 @@ export function openAttack(app) {
       [h('span', { class: 'attack-name' }, attack.name),
         h('span', { class: 'attack-damage', title: attack.mod ? `${attack.damage} ${MODIFIER_HINT[attack.mod] || ''}`.trim() : undefined }, damageText(attack))]));
 
-    const abilityList = owners.flatMap(({ slot, pokemon }) => pokemon.abilities.map((ability, index) => listed(
-      { kind: 'ability', slot, index, label: ability.name, used: Boolean(ability.used), owner: pokemon.name },
-      [h('span', { class: 'diamond' }), h('span', { class: 'attack-name' }, ability.name, h('small', {}, ` ${pokemon.name} · ${slotLabel(slot)}`)),
-        ability.used ? h('span', { class: 'used-tag' }, 'USED') : h('span', { class: 'attack-damage' }, ability.scope === 'game' ? 'game' : 'turn')])));
-
-    const usingAbility = chosen && chosen.kind === 'ability';
     // the benched Pokémon that have attacks on file, in a list of their own
     const benched = inPlay(state, attacker).filter(({ slot, pokemon }) => slot >= 0 && (pokemon.attacks || []).length > 0);
     const benchList = benched.length > 0 && h('details', {
@@ -947,20 +977,15 @@ export function openAttack(app) {
 
     const chosenAttack = chosen && chosen.kind === 'attack' ? (holderOf(state, chosen) || {}).attacks?.[chosen.index] : null;
     const card = chosenAttack && chosenAttack.mod ? chosenAttack : null;
-    const fields = usingAbility
-      ? [
-        h('p', { class: 'ability-line' }, h('span', { class: 'diamond' }), h('strong', {}, chosen.label), h('small', {}, ` ${chosen.owner}`)),
-        h('label', { class: 'switch inline' }, usedBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Mark ${chosen.label} as used`))
-      ]
-      : [
-        chosen && chosen.slot >= 0 && h('p', { class: 'hint-line from-bench' }, `The attack of ${chosen.owner} (${slotLabel(chosen.slot)}), on the bench.`),
-        h('label', { class: 'field' }, h('span', {}, 'Attack'), name),
-        h('div', { class: 'field' }, h('span', {}, 'Damage', h('small', { class: 'tens-note' }, ' · in tens')),
-          h('div', { class: 'amount-row' }, lessButton, damage, moreButton, baseButton)),
-        card && h('p', { class: 'hint-line' }, `The card says ${damageText(card)}: ${MODIFIER_HINT[card.mod]}. ${card.mod === '×' ? 'Say how many times, or change the damage to what it really did.' : 'Say how much more, or change the damage to what it really did.'}`),
-        card && modRows[card.mod],
-        h('label', { class: 'switch inline' }, applyBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Also apply the damage to ${trainerName(state, defender)}'s Active Pokémon`))
-      ];
+    const fields = [
+      chosen && chosen.slot >= 0 && h('p', { class: 'hint-line from-bench' }, `The attack of ${chosen.owner} (${slotLabel(chosen.slot)}), on the bench.`),
+      h('label', { class: 'field' }, h('span', {}, 'Attack'), name),
+      h('div', { class: 'field' }, h('span', {}, 'Damage', h('small', { class: 'tens-note' }, ' · in tens')),
+        h('div', { class: 'amount-row' }, lessButton, damage, moreButton, baseButton)),
+      card && h('p', { class: 'hint-line' }, `The card says ${damageText(card)}: ${MODIFIER_HINT[card.mod]}. ${card.mod === '×' ? 'Say how many times, or change the damage to what it really did.' : 'Say how much more, or change the damage to what it really did.'}`),
+      card && modRows[card.mod],
+      h('label', { class: 'switch inline' }, applyBox, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Also apply the damage to ${trainerName(state, defender)}'s Active Pokémon`))
+    ];
 
     replace(body,
       sideTabs(app, attacker, (next) => { attacker = next; chosen = null; name.value = ''; damage.value = '0'; draw(); subtitle(); }),
@@ -969,23 +994,14 @@ export function openAttack(app) {
         ? h('div', { class: 'attack-list' }, attackList)
         : h('p', { class: 'empty' }, hasPokemon(active) ? 'This card has no attacks on file. Type the attack below.' : `${trainerName(state, attacker)} has no Active Pokémon. Type the attack below.`),
       benchList,
-      abilityList.length > 0 && h('div', { class: 'section-label' }, 'Abilities', h('span', { class: 'hint' }, 'Announced like an attack')),
-      abilityList.length > 0 && h('div', { class: 'attack-list' }, abilityList),
       h('div', { class: 'section-label' }, 'Announce'),
       fields);
-    announce.textContent = usingAbility ? 'Announce ability' : 'Announce attack';
+    announce.textContent = 'Announce attack';
     refresh();
   };
 
   const go = async () => {
     const defender = otherSide(attacker);
-    if (chosen && chosen.kind === 'ability') {
-      const said = await app.act('action:toast', { action: 'attack', attackName: chosen.label, ability: true, source: attacker });
-      if (!said.ok) return;
-      if (markUsed && !chosen.used) await app.act(`action:${attacker}`, { action: 'setAbilityUsed', slot: chosen.slot, index: chosen.index, used: true });
-      closeModal();
-      return;
-    }
     const amount = tens(damage.value);
     const said = await app.act('action:toast', { action: 'attack', attackName: name.value.trim() || undefined, damage: amount, source: attacker });
     if (!said.ok) return;

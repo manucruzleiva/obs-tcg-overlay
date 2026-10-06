@@ -336,6 +336,33 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('is a small dialog: the six prize cards in one row, and a little button on a chosen card to take it off', async () => {
+      await setButton('a').click();
+      await dialog().waitFor();
+      assert.equal(await dialog().evaluate((node) => node.classList.contains('modal-md') || Boolean(node.closest('.modal-md'))), true, 'the narrow size of dialog');
+      assert.equal(await dialog().locator('.hint-line').count(), 0, 'no paragraph of instructions: they are the subtitle');
+      assert.match(await dialog().locator('.modal-sub').textContent(), /Choose the card of each prize/);
+      const tops = await dialog().locator('.prize-slot').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+      assert.equal(new Set(tops).size, 1, 'all six in one row');
+      assert.equal(await dialog().locator('.prize-clear').count(), 0, 'nothing to take off yet');
+      const size = await dialog().boundingBox();
+      assert.ok(size.height < 420, `not tall: ${size.height}px`);
+      // Clear all is in the footer, with the buttons that close the dialog
+      assert.equal(await dialog().locator('.modal-foot').getByRole('button', { name: 'Clear all' }).count(), 1);
+
+      await producer.act('action:trainerA', { action: 'prizeCardsSet', cards: [{ cardId: 'p1', name: 'First', image: IMG }, null, { cardId: 'p3', name: 'Third', image: IMG }] });
+      await press('Escape');
+      await dialogClosed();
+      await setButton('a').click();
+      await dialog().waitFor();
+      assert.equal(await dialog().locator('.prize-clear').count(), 2, 'one on each chosen card');
+      assert.equal(await slot(2).locator('.prize-clear').count(), 1);
+      await slot(2).locator('.prize-clear').click();
+      assert.equal(await dialog().locator('.prize-slot.filled').count(), 1);
+      assert.equal(await slot(2).locator('.prize-slot-name').textContent(), 'Prize 3');
+      await press('Escape');
+    });
+
     it('chooses the card of a prize card with the card selector, over the dialog, and sets the cards all at once', async () => {
       await setButton('a').click();
       await dialog().waitFor();
@@ -896,26 +923,65 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
-    it('lets a Pokémon evolve from its card and go back a stage, keeping its energy and its damage', async () => {
+    it('has an egg on the Pokémon that opens Evolution and Devolution in two tabs: the evolutions to start with, any card by typing', async () => {
       await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 1 });
       await producer.act('action:trainerA', { action: 'activeDamage', amount: 30 });
       await expectLive((state) => state.trainerA.active.hp.current, 70);
-      await page.locator(`${active()} .mini-btn[title="Evolve"]`).click();
-      await page.waitForSelector('.modal[aria-label="Evolve"]');
+      const egg = `${active()} .mini-btn[title="Evolve or go back a stage"]`;
+      assert.equal(await page.locator(`${active()} .mini-btn[title="Evolve"]`).count() + await page.locator(`${active()} .mini-btn[title="Go back a stage"]`).count(), 0, 'one egg instead of two buttons');
+      assert.equal(await page.locator(`${active()} .mini-btn[title="Evolve or go back a stage"] svg`).count(), 1);
+
+      api.requests.length = 0;
+      await page.locator(egg).click();
+      await page.waitForSelector('.modal[aria-label^="Evolution"]');
+      assert.deepEqual(await modal().locator('.evolve-tabs .seg').allTextContents(), ['Evolution', 'Devolution']);
+      assert.equal(await modal().locator('.evolve-tabs .seg.on').textContent(), 'Evolution');
+      await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).waitFor();
+      assert.ok(api.requests.some((url) => decodeURIComponent(url).includes('evolvesFrom:"Pikachu"')), 'it starts from the cards that evolve from this Pokémon');
+
+      // what is typed looks among every card, not only the evolutions
+      api.requests.length = 0;
+      await modal().locator('.search-input').fill('raichu');
+      for (let waited = 0; !api.requests.some((url) => decodeURIComponent(url).includes('raichu')) && waited < 3000; waited += 50) await wait(50);
+      const typed = api.requests.map((url) => decodeURIComponent(url)).find((url) => url.includes('raichu'));
+      assert.ok(typed, 'the typed name was searched');
+      assert.equal(typed.includes('evolvesFrom'), false, 'among all the cards');
+
       await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).click();
       await dialogClosed();
       await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp, state.trainerA.active.energies], ['Pikachu ex', { max: 200, current: 170 }, ['lightning']]);
       assert.deepEqual((await live()).trainerA.active.stages.map((stage) => stage.name), ['Pikachu']);
 
-      await page.locator(`${active()} .mini-btn[title="Go back a stage"]`).click();
-      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp, state.trainerA.active.energies], ['Pikachu', { max: 100, current: 70 }, ['lightning']]);
+      // Devolution starts from the card it evolved from, which is on file: one click takes it back, as it was
+      await page.locator(egg).click();
+      await page.waitForSelector('.modal[aria-label^="Evolution"]');
+      await modal().locator('.evolve-tabs [data-tab="devolve"]').click();
+      assert.equal(await modal().locator('.evolve-tabs .seg.on').textContent(), 'Devolution');
+      assert.equal(await modal().locator('.card-tile.stage-card').count(), 1);
+      assert.match(await modal().locator('.stage-card').textContent(), /Pikachu\s*The card it evolved from/);
+      assert.equal(await modal().locator('.stage-card .star-btn').count(), 0, 'it is no search result to give a star to');
+      await modal().locator('.stage-card .card-pick').click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp, state.trainerA.active.energies, state.trainerA.active.stages], ['Pikachu', { max: 100, current: 70 }, ['lightning'], []]);
+      assert.deepEqual(page.problems, []);
+    });
 
-      // it did not evolve here any more: the earlier card is chosen instead
-      await page.locator(`${active()} .mini-btn[title="Go back a stage"]`).click();
-      await page.waitForSelector('.modal[aria-label="Go back to an earlier card"]');
+    it('starts Devolution from the card that the card says it evolves from when nothing is on file, and lets any card be picked by typing', async () => {
+      await producer.act('action:card', { action: 'select', target: 'trainerA-active', cardId: 'sv-9', cardData: { id: 'sv-9', name: 'Raichu', hp: '120', images: { small: IMG }, abilities: [], attacks: [], retreat: 1, evolvesFrom: 'Pichu' } });
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.evolvesFrom, state.trainerA.active.stages], ['Raichu', 'Pichu', []]);
+      await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 2 });
+      api.requests.length = 0;
+      await page.locator(`${active()} .mini-btn[title="Evolve or go back a stage"]`).click();
+      await page.waitForSelector('.modal[aria-label^="Evolution"]');
+      await modal().locator('.evolve-tabs [data-tab="devolve"]').click();
       await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).waitFor();
-      assert.deepEqual((await live()).trainerA.active.stages, [], 'nothing is remembered when going back by choosing');
-      await press('Escape');
+      assert.equal(await modal().locator('.stage-card').count(), 0, 'nothing is on file');
+      assert.ok(api.requests.some((url) => decodeURIComponent(url).includes('Pichu')), 'it looks for the card it evolves from');
+      assert.match(await modal().locator('.picker-status').textContent(), /Pichu, which Raichu evolves from/);
+      // the card is chosen by hand: the Pokémon goes back to it, keeping what is on it, and remembers nothing
+      await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.energies, state.trainerA.active.stages], ['Pikachu ex', ['lightning', 'lightning'], []]);
     });
 
     it('puts a Pokémon Tool on a Pokémon of the bench too, with the HP it adds, and takes it off with a click', async () => {
@@ -1095,6 +1161,46 @@ describe('control panel', { skip }, () => {
     assert.equal(await modal().locator('.amount-input').inputValue(), '10');
   });
 
+  it('announces the winner with W and the start of the game with G, as the buttons do, and lists them with the other shortcuts', async () => {
+    assert.match(await page.locator('.hype-grid button', { hasText: 'Winner' }).textContent(), /W$/);
+    assert.match(await page.locator('.hype-grid button', { hasText: 'Game start' }).textContent(), /G$/);
+    let heard = producer.expect('announce', (announcement) => announcement.type === 'win');
+    await press('w');
+    const winner = await heard;
+    assert.equal(winner.side, 'trainerA', 'Ash has the turn');
+    heard = producer.expect('announce', (announcement) => announcement.title === 'GAME START');
+    await press('g');
+    await heard;
+    assert.equal((await live()).trainerA.prizes.count, 6, 'they are banners only: nothing about the game changes');
+    await press('?');
+    await page.waitForSelector('.modal');
+    const help = await modal().textContent();
+    assert.match(help, /Winner banner/);
+    assert.match(help, /Game start banner/);
+    await press('Escape');
+    assert.deepEqual(page.problems, []);
+  });
+
+  it('keeps the deck, its picture and the record on one row at the same height, and a gap between the prize cards and the Pokémon', async () => {
+    for (const side of ['a', 'b']) {
+      const panel = `.trainer-panel.side-${side}`;
+      const deck = await page.locator(`${panel} .deck-field input`).boundingBox();
+      const picture = await page.locator(`${panel} .picture-field input`).boundingBox();
+      const wins = await page.locator(`${panel} .record input`).first().boundingBox();
+      const ties = await page.locator(`${panel} .record input`).last().boundingBox();
+      for (const box of [picture, wins, ties]) assert.ok(Math.abs(box.y - deck.y) <= 1 && Math.abs(box.height - deck.height) <= 1, `${side}: the same height as the deck box`);
+      assert.ok(deck.x < picture.x && picture.x < wins.x, 'deck, then picture, then record');
+      assert.ok(deck.width > 120, `the deck box is still wide enough to write in: ${deck.width}px`);
+      const row = await page.locator(`${panel} .panel-row`).boundingBox();
+      const pokemon = await page.locator(`${panel} .block.pokemon`).boundingBox();
+      assert.ok(pokemon.y - (row.y + row.height) >= 8, `${side}: room between the prize cards and the Pokémon: ${pokemon.y - (row.y + row.height)}px`);
+    }
+    // the record still works from its place
+    await page.locator('.trainer-panel.side-a .record input').first().fill('4');
+    await page.keyboard.press('Enter');
+    await expectLive((state) => state.trainerA.record.wins, 4);
+  });
+
   it('has one Winner button in the hype, for the player whose turn it is, and no victory button for each: whoever takes the last prize card wins by itself', async () => {
     assert.equal(await page.locator('.hype-grid button', { hasText: 'Victory' }).count(), 0);
     assert.equal(await page.locator('.hype-grid button', { hasText: 'Game start' }).count(), 1);
@@ -1144,8 +1250,7 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(await picks().locator('.attack-name').allTextContents(), ['Gnaw', 'Thunder Jolt']);
       assert.deepEqual(await picks().locator('.attack-damage').allTextContents(), ['20', '30+']);
       assert.deepEqual(await picks().locator('kbd').allTextContents(), ['1', '2']);
-      assert.match(await modal().locator('.attack-pick.ability').textContent(), /Static/);
-      assert.equal(await modal().locator('.attack-pick.ability kbd').textContent(), '3');
+      assert.equal(await modal().locator('.attack-pick.ability').count(), 0, 'abilities are not announced from here');
 
       await press('2');
       assert.equal(await modal().locator('input[aria-label="Attack name"]').inputValue(), 'Thunder Jolt');
@@ -1203,44 +1308,20 @@ describe('control panel', { skip }, () => {
       assert.equal((await live()).trainerB.active.hp.current, 150, 'announced, not applied');
     });
 
-    it('announces an ability the same way, and marks its token used', async () => {
-      await press('c');
-      await page.waitForSelector('.modal');
-      await modal().locator('.attack-pick.ability').click();
-      assert.match(await modal().locator('.modal-body').textContent(), /Mark Static as used/);
-      assert.equal(await damageBox().count(), 0, 'an ability has no damage');
-      assert.equal(await modal().locator('.modal-foot .danger').textContent(), 'Announce ability');
-      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack' && announcement.data && announcement.data.ability === true);
-      await modal().locator('.modal-foot .danger').click();
-      const announced = await heard;
-      assert.equal(announced.title, 'Static');
-      assert.equal(announced.subtitle, 'ABILITY USED');
-      assert.equal(announced.side, 'trainerA', 'the trainer who uses it');
-      await expectLive((state) => state.trainerA.active.abilities.map((ability) => ability.used), [true]);
-      assert.equal((await live()).trainerB.active.hp.current, 150, 'nobody is damaged by an ability');
-      await dialogClosed();
-
-      // one that is already used is announced again without being marked twice
-      await press('c');
-      await page.waitForSelector('.modal');
-      assert.match(await modal().locator('.attack-pick.ability').textContent(), /USED/);
-      await modal().locator('.attack-pick.ability').click();
-      assert.equal(await modal().locator('.switch input').isChecked(), false);
-      await modal().locator('.modal-foot .danger').click();
-      await dialogClosed();
-    });
-
-    it('lists the abilities of the Pokémon on the bench too', async () => {
+    it('does not list abilities: their tokens are marked with X, and an attack is all that is announced from here', async () => {
       await producer.act('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60, abilities: ['Adaptability'] });
-      await expectLive((state) => state.trainerA.bench[0].abilities.map((ability) => ability.name), ['Adaptability']);
+      await expectLive((state) => [state.trainerA.active.abilities.map((ability) => ability.name), state.trainerA.bench[0].abilities.map((ability) => ability.name)], [['Static'], ['Adaptability']]);
       await press('c');
       await page.waitForSelector('.modal');
-      assert.deepEqual(await modal().locator('.attack-pick.ability .attack-name').allTextContents(), ['Static Pikachu · Active', 'Adaptability Eevee · Bench 1']);
-      await modal().locator('.attack-pick.ability', { hasText: 'Adaptability' }).click();
-      const heard = producer.expect('announce', (announcement) => announcement.data && announcement.data.ability === true);
-      await modal().locator('.modal-foot .danger').click();
-      assert.equal((await heard).title, 'Adaptability');
-      await expectLive((state) => [state.trainerA.active.abilities[0].used, state.trainerA.bench[0].abilities[0].used], [false, true]);
+      assert.equal(await modal().locator('.attack-pick.ability').count(), 0);
+      assert.doesNotMatch(await modal().locator('.modal-body').textContent(), /Abilities|Static|Adaptability/);
+      assert.equal(await modal().locator('.modal-foot .danger').textContent(), 'Announce attack');
+      await press('Escape');
+      // (the tokens are where they were)
+      await press('x');
+      await page.waitForSelector('.modal');
+      assert.match(await modal().locator('.ability-list').textContent(), /Static[\s\S]*Adaptability/);
+      await press('Escape');
     });
 
     it('keeps the attacks of the benched Pokémon in a list that is closed until it is wanted, and takes one like any other attack', async () => {
@@ -1261,9 +1342,9 @@ describe('control panel', { skip }, () => {
       assert.equal(await list().evaluate((node) => node.open), false);
       assert.match(await list().locator('summary').textContent(), /Attacks of the benched Pokémon\s*2 Pokémon/);
       assert.equal(await modal().locator('.bench-pick').first().isVisible(), false);
-      assert.deepEqual(await modal().locator('.attack-pick:not(.ability):not(.bench-pick) .attack-name').allTextContents(), ['Gnaw', 'Thunder Jolt']);
+      assert.deepEqual(await modal().locator('.attack-pick:not(.bench-pick) .attack-name').allTextContents(), ['Gnaw', 'Thunder Jolt']);
       assert.equal(await modal().locator('.bench-pick kbd').count(), 0, 'the benched ones have no number key');
-      assert.equal(await modal().locator('.attack-pick.ability kbd').textContent(), '3', 'the numbers of the others do not change');
+      assert.deepEqual(await picks().locator('kbd').allTextContents(), ['1', '2'], 'the numbers are those of the Active Pokémon attacks');
 
       // it opens from the keyboard without announcing anything
       await list().locator('summary').focus();

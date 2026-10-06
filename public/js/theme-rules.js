@@ -112,7 +112,7 @@
     }
     for (const [key, value] of Object.entries(input)) {
       if (!CROP_KEYS.includes(key)) {
-        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active", "bench", "stadium", "prize" or "energy")`);
+        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active", "bench", "stadium", "prize", "tool" or "energy")`);
         continue;
       }
       const circle = key === 'energy';
@@ -126,7 +126,7 @@
         continue;
       }
       // what is usual (the picture of the card, the Stadium's own picture window, and for energy the usual circle) is not listed; the whole card is
-      const usual = key === 'stadium' ? STADIUM_CROP_DEFAULT : key === 'prize' ? PRIZE_CROP_DEFAULT : CROP_DEFAULT;
+      const usual = key === 'stadium' || key === 'tool' ? STADIUM_CROP_DEFAULT : key === 'prize' ? PRIZE_CROP_DEFAULT : CROP_DEFAULT;
       if (circle ? !isUsualCircle(rect) : !isUsualCrop(rect, usual)) crop[key] = rect;
     }
     return crop;

@@ -67,9 +67,9 @@ export class CenterView {
         hype('Attack', 'C', () => app.openAttack(), 'red'),
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
         hype('Move damage', 'M', () => app.openMoveDamage(), 'blue'),
-        hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), ''),
+        hype('Game start', 'G', () => app.announceGameStart(), ''),
         // the victory banner for the player whose turn it is (before anybody has it, for the one the shortcuts are for)
-        hype('Winner', '', () => app.act('action:toast', { action: app.prizeSide() === 'trainerA' ? 'trainerAWin' : 'trainerBWin' }), 'gold'),
+        hype('Winner', 'W', () => app.announceWinner(), 'gold'),
         this.pauseButton));
 
     // ---- table

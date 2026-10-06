@@ -17,7 +17,7 @@ const sameRect = (a, b) => near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) &&
 const percent = (fraction) => String(Math.round(fraction * 1000) / 10);
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const LABELS = { active: 'Active Pokémon', bench: 'Bench', stadium: 'Stadium', prize: 'Prize cards', energy: 'Special energy' };
+const LABELS = { active: 'Active Pokémon', bench: 'Bench', stadium: 'Stadium', prize: 'Prize cards', tool: 'Tools', energy: 'Special energy' };
 const CARD_ASPECT = THEME.CARD_ASPECT;
 
 export class CropSelector {
@@ -45,7 +45,7 @@ export class CropSelector {
 
   // The quick choices of the tab being edited: the Stadium has its own picture window, so its "Art only" is another rectangle
   presetsOf(which) {
-    return which === 'stadium' ? THEME.STADIUM_PRESETS : which === 'prize' ? THEME.PRIZE_PRESETS : THEME.CROP_PRESETS;
+    return which === 'stadium' ? THEME.STADIUM_PRESETS : which === 'tool' ? THEME.TOOL_PRESETS : which === 'prize' ? THEME.PRIZE_PRESETS : THEME.CROP_PRESETS;
   }
 
   drawPresets() {

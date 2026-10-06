@@ -58,6 +58,8 @@ export const KEYMAP = [
 
   { group: 'Hype', keys: ['C'], label: 'Announce an attack', test: plain('c'), run: (app) => app.openAttack() },
   { group: 'Hype', keys: ['T'], label: 'Announce a Top Deck', test: plain('t'), run: (app) => app.act('action:toast', { action: 'topDeck', target: app.focus }) },
+  { group: 'Hype', keys: ['W'], label: 'Winner banner for the player whose turn it is (the game and the score do not change)', test: plain('w'), run: (app) => app.announceWinner() },
+  { group: 'Hype', keys: ['G'], label: 'Game start banner', test: plain('g'), run: (app) => app.announceGameStart() },
   { group: 'Hype', keys: ['P'], label: 'Pause the game, or resume it (the overlay is grayed out while it is paused)', test: plain('p'), run: (app) => app.togglePause() },
 
   { group: 'History', keys: ['Ctrl', 'Z'], label: 'Undo', test: (e) => ctrl('z')(e) && !e.shiftKey, run: (app) => app.undo() },
@@ -149,6 +151,15 @@ class App {
   }
 
   // Pause the game, or resume it. It says what it wants (not "toggle"), so two producers pressing it at once agree.
+  // The victory banner for the player whose turn it is (before anybody has it, for the one the shortcuts are for)
+  announceWinner() {
+    return this.act('action:toast', { action: this.prizeSide() === 'trainerA' ? 'trainerAWin' : 'trainerBWin' });
+  }
+
+  announceGameStart() {
+    return this.act('action:toast', { action: 'startGame' });
+  }
+
   togglePause() {
     return this.act('action:match', { action: 'togglePause', enabled: !(this.state && this.state.paused === true) });
   }
@@ -342,15 +353,10 @@ class App {
   // ---- dialogs
 
   openPicker(purpose) { modals.openPicker(this, purpose); }
-  openEvolve(side, slot) { modals.openPicker(this, { kind: 'evolve', side, slot }); }
+  // The egg on a Pokémon: the cards it can evolve into and the card it can go back to, in two tabs
+  openEvolve(side, slot, tab) { modals.openPicker(this, { kind: 'evolve', side, slot, tab }); }
   openTool(side, slot) { modals.openPicker(this, { kind: 'tool', side, slot }); }
 
-  // Go back to the card a Pokémon was before it evolved: the one that is on file, or (when it did not evolve here) another that is chosen
-  async devolve(side, slot) {
-    const pokemon = slot === -1 ? this.state[side].active : this.state[side].bench[slot];
-    if (pokemon && Array.isArray(pokemon.stages) && pokemon.stages.length > 0) await this.act(`action:${side}`, { action: 'devolve', slot });
-    else modals.openPicker(this, { kind: 'devolve', side, slot });
-  }
   openKO(side, slot) { modals.openKO(this, side, slot); }
   openMoveDamage() { modals.openMoveDamage(this); }
   openDamage(mode, side, slot) { modals.openDamage(this, mode, side, slot); }

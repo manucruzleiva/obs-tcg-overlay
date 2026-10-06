@@ -73,7 +73,8 @@ function cleanStages(list) {
     hp: Number.isFinite(stage.hp) ? Math.max(0, Math.min(9999, Math.trunc(stage.hp))) : 0,
     abilities: Array.isArray(stage.abilities) ? stage.abilities.filter((name) => typeof name === 'string').slice(0, MAX_ABILITIES) : [],
     attacks: Array.isArray(stage.attacks) ? stage.attacks.slice(0, MAX_ATTACKS) : [],
-    retreat: Number.isInteger(stage.retreat) ? Math.max(0, Math.min(MAX_RETREAT, stage.retreat)) : 0
+    retreat: Number.isInteger(stage.retreat) ? Math.max(0, Math.min(MAX_RETREAT, stage.retreat)) : 0,
+    evolvesFrom: typeof stage.evolvesFrom === 'string' ? stage.evolvesFrom.slice(0, 80) : ''
   }));
 }
 
@@ -93,6 +94,8 @@ const emptyPokemon = (slot) => ({
   tools: [],
   // the card this Pokémon was before it evolved (the last one is the stage just before this one)
   stages: [],
+  // what the card says it evolves from (the name of the earlier Pokémon), when the card service told: the card to go back to when none is on file
+  evolvesFrom: '',
   status: [],
   // Ability tokens: { name, used, scope } where scope 'turn' refreshes every turn and 'game' never does
   abilities: []
@@ -247,6 +250,7 @@ class GameStateService {
         if (!Number.isInteger(pokemon.retreat)) pokemon.retreat = 0;
         pokemon.tools = cleanTools(pokemon.tools);
         pokemon.stages = cleanStages(pokemon.stages);
+        pokemon.evolvesFrom = typeof pokemon.evolvesFrom === 'string' ? pokemon.evolvesFrom.slice(0, 80) : '';
         pokemon.status = GAME.cleanStatus(pokemon.status);
       }
       // The penalty used to be an on/off flag: it is a number of prize cards now
@@ -442,7 +446,7 @@ class GameStateService {
   // Put a card into a slot. A fresh Pokémon starts at full HP with nothing attached;
   // an evolution (keep: true) keeps its attachments and the damage already taken, and remembers the card it was (so it can go back:
   // see devolve). `back` is that going back: it does not remember anything.
-  setPokemon(side, slot, { cardId, name, image, hp, abilities, attacks, retreat }, { keep = false, back = false } = {}) {
+  setPokemon(side, slot, { cardId, name, image, hp, abilities, attacks, retreat, evolvesFrom }, { keep = false, back = false } = {}) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
 
@@ -455,13 +459,14 @@ class GameStateService {
       const own = Math.max(0, pokemon.hp.max - cleanTools(pokemon.tools).reduce((sum, tool) => sum + tool.hp, 0));
       pokemon.stages = cleanStages([...(pokemon.stages || []), {
         cardId: pokemon.cardId, name: pokemon.name, image: pokemon.image, hp: own,
-        abilities: (pokemon.abilities || []).map((ability) => ability.name), attacks: pokemon.attacks, retreat: pokemon.retreat
+        abilities: (pokemon.abilities || []).map((ability) => ability.name), attacks: pokemon.attacks, retreat: pokemon.retreat, evolvesFrom: pokemon.evolvesFrom
       }]);
     } else if (!keep) {
       pokemon.stages = [];
     }
 
     Object.assign(pokemon, { cardId, name, image });
+    pokemon.evolvesFrom = typeof evolvesFrom === 'string' ? evolvesFrom.slice(0, 80) : '';
     // A different card, an evolution too, has no special conditions (the rules cure them when a Pokémon evolves)
     pokemon.status = [];
     if (!keep) {
@@ -539,9 +544,10 @@ class GameStateService {
   }
 
   // The attacks and the retreat cost of the card found after the Pokémon was put there
-  fillPokemonDetails(side, slot, { attacks, retreat }) {
+  fillPokemonDetails(side, slot, { attacks, retreat, evolvesFrom }) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
+    if (typeof evolvesFrom === 'string' && !pokemon.evolvesFrom) pokemon.evolvesFrom = evolvesFrom.slice(0, 80);
     pokemon.attacks = Array.isArray(attacks) ? attacks.slice(0, MAX_ATTACKS) : pokemon.attacks;
     if (Number.isInteger(retreat)) pokemon.retreat = Math.max(0, Math.min(MAX_RETREAT, retreat));
   }
@@ -796,7 +802,7 @@ class GameStateService {
     if (!match) throw new Error(`Invalid card target: ${target}`);
     const [, side, where, benchIndex] = match;
     const slot = where === 'active' ? -1 : Number(benchIndex);
-    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities, attacks: card.attacks, retreat: card.retreat }, { keep, back });
+    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities, attacks: card.attacks, retreat: card.retreat, evolvesFrom: card.evolvesFrom }, { keep, back });
   }
 
   setStadium(cardId, name, image) {

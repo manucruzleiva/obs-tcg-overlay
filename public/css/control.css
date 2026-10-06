@@ -198,6 +198,7 @@ kbd {
 /* two boxes side by side (they stack when there is not room) */
 .panel-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
 .panel-row > .block { margin-top: 0; }
+.panel-row + .block { margin-top: 12px; }
 .block-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font: 700 12px/1.2 var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-secondary); }
 .block-title.sub { margin-top: 16px; }
 .block-title .hint { margin-left: auto; font: 500 11px var(--font-body); letter-spacing: 0.02em; text-transform: none; color: var(--fg-muted); }
@@ -247,9 +248,14 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .deck-hint { grid-column: 1 / -1; min-height: 1.2em; margin: -4px 0 0; font-size: 12px; color: var(--fg-muted); }
 .deck-hint:empty { display: none; }
 .deck-hint.warn { color: var(--warning); }
-.record { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--fg-muted); }
-.record label { flex-direction: row; align-items: center; gap: 6px; }
-.record input { width: 62px; text-align: center; }
+/* the deck, its picture and the record, side by side (they wrap on a narrow panel) */
+.deck-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.deck-row .deck-field { flex: 1.5 1 150px; min-width: 0; }
+.deck-row .picture-field { flex: 1 1 110px; min-width: 0; }
+.record { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); }
+.record-inputs { display: flex; align-items: center; gap: 6px; }
+.record label { flex-direction: row; align-items: center; gap: 4px; }
+.record input { width: 48px; padding-left: 4px; padding-right: 4px; text-align: center; }
 
 .prize-row { display: flex; align-items: center; gap: 8px; }
 .prize-row .prize-number { min-width: 22px; text-align: center; }
@@ -273,15 +279,17 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .set-prizes { margin-left: auto; }
 
 /* the dialog that chooses the cards of the prizes */
-.prize-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 14px 0 10px; }
-.prize-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.prize-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 2px 0 0; }
+.prize-slot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.prize-clear { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid var(--border); background: rgba(10, 13, 20, 0.85); color: var(--fg-primary); }
+.prize-clear:hover { background: var(--danger); border-color: var(--danger); color: #1a0505; }
+.clear-all { margin-right: auto; }
 .prize-pick { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 5 / 7; padding: 0; overflow: hidden; border-radius: 8px; border: 1px dashed var(--border); background: var(--bg-tertiary); color: var(--fg-muted); transition: transform var(--transition), border-color var(--transition); }
 .prize-pick:hover { transform: translateY(-2px); border-color: var(--fg-muted); }
 .prize-pick img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .prize-slot.filled .prize-pick { border-style: solid; border-color: rgba(255, 255, 255, 0.4); }
 .prize-slot.taken .prize-pick { opacity: 0.45; filter: grayscale(1); }
-.prize-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-muted); }
-.prize-slot-gap { display: block; height: 22px; }
+.prize-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--fg-muted); }
 .penalty-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .penalty-label { display: flex; flex-direction: column; margin-right: auto; font-size: 13px; color: var(--fg-primary); }
 .penalty-label small { font-size: 11px; color: var(--fg-muted); }
@@ -745,3 +753,7 @@ body.dragging::after { content: 'Drop a .oto file to install it'; position: fixe
   .color-row { grid-template-columns: 1fr; }
   .add-token { grid-template-columns: 1fr; }
 }
+
+/* the tabs of the crop selector (the Active Pokémon, the bench, the Stadium, the prize cards, the Tools, Special Energy): all of them show, on two rows when they do not fit on one */
+.crop-panel .segmented { display: flex; flex-wrap: wrap; }
+.crop-panel .segmented .seg { flex: 1 1 auto; padding: 7px 10px; white-space: nowrap; }

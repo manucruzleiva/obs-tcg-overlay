@@ -283,7 +283,8 @@ class Session {
     if (!details) return;
     const attacks = attacksOf(details.attacks) || [];
     const retreat = retreatOf({ retreat: details.retreat });
-    if (attacks.length === 0 && !retreat) return;
+    const evolvesFrom = typeof details.evolvesFrom === 'string' ? details.evolvesFrom : '';
+    if (attacks.length === 0 && !retreat && !evolvesFrom) return;
 
     const slot = [-1, 0, 1, 2, 3, 4, 5, 6, 7].find((candidate) => {
       const pokemon = this.gs.pokemonAt(side, candidate);
@@ -293,7 +294,7 @@ class Session {
 
     const before = this.gs.snapshot();
     const name = this.gs.pokemonAt(side, slot).name;
-    this.gs.fillPokemonDetails(side, slot, { attacks, retreat });
+    this.gs.fillPokemonDetails(side, slot, { attacks, retreat, evolvesFrom });
     this.finish({
       before, targets: [slot === -1 ? `${side}.active` : `${side}.bench.${slot}`], by: { clientId: 'card-service', name: 'Card service' },
       label: `${name}: attacks and retreat cost from the card`, kind: 'details', recordUndo: false, keepRedo: true

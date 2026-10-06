@@ -558,6 +558,63 @@ html, body {
   font: 700 15px/1.2 var(--font-labels, var(--font-display));
 }
 .tool-hp { color: var(--success); font-weight: 800; }
+/* the Pokémon Tools as pictures of their cards: the part of the card that shows (--ct-*, as fractions of the card), the picture unless a design says
+   otherwise. A tool with no picture is a chip with its name. */
+:root { --ct-x: 0.082; --ct-y: 0.145; --ct-w: 0.836; --ct-h: 0.37; }
+.tool-cards { display: flex; flex-wrap: wrap; gap: 6px; }
+.trainer-b .tool-cards { justify-content: flex-end; }
+.tool-card {
+  --tool-width: 104px;
+  position: relative;
+  display: block;
+  flex: none;
+  width: var(--tool-width);
+  height: calc(var(--tool-width) * 1.393333 * var(--ct-h) / var(--ct-w));
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 0 0 2px var(--warning), 0 6px 14px var(--shadow);
+}
+.tool-card-img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  object-fit: fill;
+  width: calc(100% / var(--ct-w));
+  height: calc(100% / var(--ct-h));
+  left: calc(-100% * var(--ct-x) / var(--ct-w));
+  top: calc(-100% * var(--ct-y) / var(--ct-h));
+}
+.tool-card-hp {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--success);
+  font: 800 13px/1.2 var(--font-numbers, var(--font-display));
+}
+.tool-card.plain {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  padding: 3px 10px;
+  border-radius: 6px;
+  box-shadow: none;
+  border-left: 3px solid var(--warning);
+  font: 700 15px/1.2 var(--font-labels, var(--font-display));
+}
+.tool-card.plain .tool-card-hp { position: static; padding: 0; background: none; font-size: inherit; }
+.mon.mini .tool-cards { gap: 4px; }
+.mon.mini .tool-card { --tool-width: 64px; border-radius: 6px; }
+.mon.mini .tool-card-hp { right: 2px; bottom: 2px; padding: 0 4px; font-size: 10px; }
+.mon.mini .tool-card.plain { padding: 1px 7px; font-size: 12px; }
+.trainer-b .mon.mini .tool-cards { justify-content: flex-end; }
+#stage.bench-row .mon.mini .tool-cards, #stage.bench-row .trainer-b .mon.mini .tool-cards { justify-content: center; }
+
 .mon.mini .tools { gap: 4px; }
 .mon.mini .tool { gap: 5px; padding: 1px 7px; font-size: 12px; }
 .trainer-b .mon.mini .tools { justify-content: flex-end; }

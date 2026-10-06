@@ -128,6 +128,14 @@
     { key: 'top', label: 'Name and art', help: 'The name and the picture', rect: { x: 0.03, y: 0.065, w: 0.94, h: 0.455 } }
   ];
 
+  // The picture of a Pokémon Tool on a Pokémon: a Trainer card too, so its picture window is the Stadium's unless a design says otherwise
+  const TOOL_CROP_DEFAULT = STADIUM_CROP_DEFAULT;
+  const TOOL_PRESETS = [
+    { key: 'full', label: 'Full card', help: 'The whole card', rect: { x: 0, y: 0, w: 1, h: 1 } },
+    { key: 'art', label: 'Art only', help: 'Just the picture of the Tool (the usual)', rect: { ...TOOL_CROP_DEFAULT } },
+    { key: 'top', label: 'Name and art', help: 'The name and the picture', rect: { x: 0.03, y: 0.065, w: 0.94, h: 0.455 } }
+  ];
+
   // The overlay draws a card 300 x 418 (the shape of a real card): the height is this many times the width
   const CARD_ASPECT = 418 / 300;
 
@@ -220,10 +228,12 @@
     CROP_MIN_SIZE,
     STADIUM_CROP_DEFAULT,
     STADIUM_PRESETS,
+    TOOL_CROP_DEFAULT,
+    TOOL_PRESETS,
     CARD_ASPECT,
     ENERGY_CIRCLE,
     ENERGY_ART,
-    CROP_KEYS: ['active', 'bench', 'stadium', 'prize', 'energy'],
+    CROP_KEYS: ['active', 'bench', 'stadium', 'prize', 'tool', 'energy'],
     TILE_KEYS: ['active', 'bench'],
     TILE_PARTS,
     tilePartsOf,

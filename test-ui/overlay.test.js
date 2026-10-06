@@ -832,26 +832,72 @@ describe('overlay', { skip }, () => {
   });
 
   describe('Pokémon Tools', () => {
+    const cards = (side) => page.$$eval(`.trainer-${side} .tool-cards:not([hidden]) .tool-card`, (nodes) => nodes.map((node) => ({
+      text: node.textContent, plain: node.classList.contains('plain'), image: node.querySelector('img') ? node.querySelector('img').getAttribute('src') : null, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height
+    })));
     const names = (side) => page.$$eval(`.trainer-${side} .tools:not([hidden]) .tool`, (nodes) => nodes.map((node) => node.textContent));
+    const visible = (selector) => page.$$eval(selector, (nodes) => nodes.filter((node) => node.offsetParent !== null).length);
 
-    it('are shown on the Pokémon that has them, with the HP they add, and go with the attachments option', async () => {
-      const shown = () => page.$$eval('.tools', (nodes) => nodes.filter((node) => node.offsetParent !== null).length);
-      assert.equal(await shown(), 0, 'nothing is shown until there is a tool');
+    it('are shown as the pictures of their cards, with the HP they add, and not by name unless that is asked for', async () => {
+      assert.equal(await visible('.tool-cards'), 0, 'nothing is shown until there is a tool');
       await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 50 });
       await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'b0', name: 'Eevee', image: IMG, hp: 60 });
       await send('action:trainerA', { action: 'attachTool', slot: 0, cardId: 't2', name: 'Float Stone', image: IMG });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tool-cards:not([hidden]) .tool-card').length === 2);
+      const [active, bench] = await cards('a');
+      assert.deepEqual([active.image, active.plain, active.text], [IMG, false, '+50'], 'the picture of the card, and the HP it adds');
+      assert.deepEqual([bench.image, bench.plain, bench.text], [IMG, false, ''], 'a tool that adds nothing says nothing');
+      assert.ok(Math.abs(active.width - 104) < 1 && Math.abs(bench.width - 64) < 1, `the Active Pokémon's is bigger: ${active.width} and ${bench.width}`);
+      assert.ok(Math.abs(active.height - 104 * 1.393333 * 0.37 / 0.836) < 1, `the shape of the picture window of the card: ${active.height}`);
+      assert.equal(await page.locator('.trainer-a .active .hp-text').textContent(), '150/150', 'the Pokémon has the HP the tool adds');
+      assert.equal(await visible('.tools'), 0, 'the names are not shown unless a design or a producer asks for them');
+
+      // the names, as text, for the ones who want them
+      await send('action:settings', { action: 'update', display: { toolNames: true } });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tools:not([hidden]) .tool').length === 2);
       assert.deepEqual(await names('a'), ['Bravery Charm+50', 'Float Stone']);
       assert.equal(await page.$eval('.trainer-a .active .tool-hp', (node) => node.textContent), '+50');
-      assert.equal(await page.locator('.trainer-a .active .hp-text').textContent(), '150/150', 'the Pokémon has the HP the tool adds');
-
-      await send('action:settings', { action: 'update', display: { attachments: false } });
-      await page.waitForFunction(() => ![...document.querySelectorAll('.tools')].some((node) => node.offsetParent !== null));
-      await send('action:settings', { action: 'update', display: { attachments: true } });
-      await page.waitForFunction(() => [...document.querySelectorAll('.tools')].some((node) => node.offsetParent !== null));
+      await send('action:settings', { action: 'update', display: { toolCards: false } });
+      await page.waitForFunction(() => ![...document.querySelectorAll('.tool-cards')].some((node) => node.offsetParent !== null));
+      assert.equal(await visible('.tools'), 2, 'the names stay');
+      await send('action:settings', { action: 'update', display: { toolCards: true, toolNames: false } });
+      await page.waitForFunction(() => [...document.querySelectorAll('.tool-cards')].some((node) => node.offsetParent !== null) && ![...document.querySelectorAll('.tools')].some((node) => node.offsetParent !== null));
 
       await send('action:trainerA', { action: 'removeTool', slot: -1, index: 0 });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tools:not([hidden]) .tool').length === 1);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .tool-cards:not([hidden]) .tool-card').length === 1);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('are not drawn again when something else changes, so their pictures do not flash', async () => {
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 50 });
+      await page.waitForSelector('.trainer-a .active .tool-card img');
+      await page.evaluate(() => { document.querySelector('.trainer-a .active .tool-card').dataset.same = 'yes'; });
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'fire', count: 1 });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '140/150');
+      assert.equal(await page.$eval('.trainer-a .active .tool-card', (node) => node.dataset.same), 'yes', 'the same picture is still there');
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't3', name: 'Another', image: IMG, hp: 0 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .tool-card').length === 2);
+    });
+
+    it('is a chip with the name when the tool has no picture (put there by hand)', async () => {
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: '', name: 'Lucky Helmet', image: '', hp: 0 });
+      await page.waitForSelector('.trainer-a .active .tool-card.plain');
+      const [plain] = await cards('a');
+      assert.deepEqual([plain.plain, plain.image, plain.text], [true, null, 'Lucky Helmet']);
+    });
+
+    it('show the part of the card that the design says (the picture of a Trainer card unless it asks for the whole card)', async () => {
+      await send('action:trainerA', { action: 'attachTool', slot: -1, cardId: 't1', name: 'Bravery Charm', image: IMG, hp: 0 });
+      await page.waitForSelector('.trainer-a .active .tool-card img');
+      const height = () => page.$eval('.trainer-a .active .tool-card', (node) => node.getBoundingClientRect().height);
+      assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1);
+      await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { tool: { x: 0, y: 0, w: 1, h: 1 } } }));
+      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '1');
+      assert.ok(Math.abs(await height() - 104 * 1.393333) < 1, 'the whole card');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '');
+      assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1, 'back to the usual');
       assert.deepEqual(page.problems, []);
     });
   });
@@ -1559,7 +1605,7 @@ describe('overlay', { skip }, () => {
         assert.equal(await page.locator('.trainer-a .active .art .retreat').count(), 0);
         assert.equal(await page.locator('.trainer-a .active .art .statuses').count(), 0);
         // in their old order: the name, the HP, the energy, the retreat cost, the abilities (and the attacks of a benched Pokémon, which are not shown here)
-        assert.deepEqual(await page.$$eval('.trainer-a .active .details > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['mon-name', 'hp', 'energies', 'retreat', 'abilities', 'tools', 'attacks', 'statuses']);
+        assert.deepEqual(await page.$$eval('.trainer-a .active .details > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['mon-name', 'hp', 'energies', 'retreat', 'abilities', 'tool-cards', 'tools', 'attacks', 'statuses']);
         const hp = await page.$eval('.trainer-a .active .details .hp-text', (node) => ({ position: getComputedStyle(node).position, margin: getComputedStyle(node).marginTop }));
         assert.equal(hp.position, 'static', 'the numbers are under the bar again');
         const art = await page.$eval('.trainer-a .active .art', (node) => node.getBoundingClientRect().height);

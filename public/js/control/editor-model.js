@@ -157,7 +157,7 @@ export class EditorModel {
   // differently, and a prize card shows the whole card
   usualCrop(which) {
     const THEME = window.OTO_THEME;
-    return which === 'stadium' ? THEME.STADIUM_CROP_DEFAULT : which === 'prize' ? THEME.PRIZE_CROP_DEFAULT : THEME.CROP_DEFAULT;
+    return which === 'stadium' || which === 'tool' ? THEME.STADIUM_CROP_DEFAULT : which === 'prize' ? THEME.PRIZE_CROP_DEFAULT : THEME.CROP_DEFAULT;
   }
 
   setCrop(which, rect, options) {
