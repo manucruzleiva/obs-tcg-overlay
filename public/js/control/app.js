@@ -48,6 +48,7 @@ export const KEYMAP = [
   { group: 'Dialogs', keys: ['A'], label: 'Deploy a new Active Pokémon', test: plain('a'), run: (app) => app.openPicker({ kind: 'active', side: app.focus }) },
   { group: 'Dialogs', keys: ['B'], label: 'Edit the bench', test: plain('b'), run: (app) => app.openBench(app.focus) },
   { group: 'Dialogs', keys: ['Shift', 'B'], label: 'Bench back to 5 slots (focused trainer)', test: shifted('b'), run: (app) => app.act(`action:${app.focus}`, { action: 'benchSizeReset' }) },
+  { group: 'Dialogs', keys: ['M'], label: 'Move damage from one Pokémon to another (any Pokémon of either trainer)', test: plain('m'), run: (app) => app.openMoveDamage() },
   { group: 'Dialogs', keys: ['D'], label: 'Damage', test: plain('d'), run: (app) => app.openDamage('damage') },
   { group: 'Dialogs', keys: ['H'], label: 'Heal', test: plain('h'), run: (app) => app.openDamage('heal', app.focus) },
   { group: 'Dialogs', keys: ['E'], label: 'Energy (the turn\'s attachment, or a special one)', test: plain('e'), run: (app) => app.openEnergy(app.focus) },
@@ -342,7 +343,16 @@ class App {
 
   openPicker(purpose) { modals.openPicker(this, purpose); }
   openEvolve(side, slot) { modals.openPicker(this, { kind: 'evolve', side, slot }); }
+  openTool(side, slot) { modals.openPicker(this, { kind: 'tool', side, slot }); }
+
+  // Go back to the card a Pokémon was before it evolved: the one that is on file, or (when it did not evolve here) another that is chosen
+  async devolve(side, slot) {
+    const pokemon = slot === -1 ? this.state[side].active : this.state[side].bench[slot];
+    if (pokemon && Array.isArray(pokemon.stages) && pokemon.stages.length > 0) await this.act(`action:${side}`, { action: 'devolve', slot });
+    else modals.openPicker(this, { kind: 'devolve', side, slot });
+  }
   openKO(side, slot) { modals.openKO(this, side, slot); }
+  openMoveDamage() { modals.openMoveDamage(this); }
   openDamage(mode, side, slot) { modals.openDamage(this, mode, side, slot); }
   openEnergy(side, slot) { modals.openEnergy(this, side, slot); }
   openBench(side) { modals.openBench(this, side); }

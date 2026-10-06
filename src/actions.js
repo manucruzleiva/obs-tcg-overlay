@@ -479,9 +479,61 @@ const TRAINER = {
     run: (gs, side, p) => gs.setHP(side, pickSlot(p.slot), integer(p.current, 'current', 0, 9999)),
     label: (gs, side, p) => `${slotName(gs, side, p.slot)} HP set to ${gs.pokemonAt(side, Number(p.slot)).hp.current}`
   },
+  // A Pokémon went back to the card it was before it evolved (it keeps what is attached to it and its damage)
+  devolve: {
+    sfx: () => 'deploy',
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const before = gs.pokemonAt(side, slot);
+      if (!before || !(before.cardId || before.name)) throw new ActionError('no Pokémon in that slot');
+      ctx.from = before.name;
+      if (!gs.devolve(side, slot)) throw new ActionError(`there is no earlier card on file for ${before.name || 'this Pokémon'}: it did not evolve here. Choose the earlier card instead`);
+      ctx.to = gs.pokemonAt(side, slot).name;
+    },
+    label: (gs, side, p, ctx) => `${ctx.from} went back to ${ctx.to}`
+  },
+
+  // A Pokémon Tool on any Pokémon; what it adds to the maximum HP (`hp`, in tens) goes with it
+  attachTool: {
+    sfx: () => 'bench',
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+      const tool = {
+        cardId: text(p.cardId ?? '', 'cardId', 64),
+        name: text(p.name ?? '', 'name', 80),
+        image: imageUrl(p.image, 'image'),
+        hp: p.hp === undefined ? 0 : inTens(integer(p.hp, 'hp', 0, 500), 'the maximum HP a tool adds')
+      };
+      if (!tool.name) throw new ActionError('the tool needs a name');
+      ctx.name = pokemon.name;
+      ctx.tool = tool;
+      if (!gs.attachTool(side, slot, tool)) throw new ActionError(`${pokemon.name} already has as many Pokémon Tools as it can hold`);
+    },
+    label: (gs, side, p, ctx) => `${ctx.tool.name} attached to ${ctx.name}${ctx.tool.hp ? ` (+${ctx.tool.hp} HP)` : ''}`
+  },
+  removeTool: {
+    targets: (side, p) => [slotKey(side, p.slot)],
+    run: (gs, side, p, out, ctx) => {
+      const slot = pickSlot(p.slot);
+      const pokemon = gs.pokemonAt(side, slot);
+      if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError('no Pokémon in that slot');
+      const index = integer(p.index, 'index', 0, 9);
+      const tool = (pokemon.tools || [])[index];
+      if (!tool) throw new ActionError('that Pokémon has no such tool');
+      ctx.name = pokemon.name;
+      ctx.tool = tool.name;
+      gs.removeTool(side, slot, index);
+    },
+    label: (gs, side, p, ctx) => `${ctx.tool} taken off ${ctx.name}`
+  },
+
   setMaxHP: {
     targets: () => null,
-    run: (gs, side, p) => gs.setMaxHP(side, pickSlot(p.slot), integer(p.max, 'max', 0, 9999)),
+    run: (gs, side, p) => gs.setMaxHP(side, pickSlot(p.slot), integer(p.max, 'max', 0, 9999), { keepDamage: p.keepDamage === true }),
     label: (gs, side, p) => `${slotName(gs, side, p.slot)} max HP set to ${gs.pokemonAt(side, Number(p.slot)).hp.max}`
   },
 
@@ -521,6 +573,16 @@ const TRAINER = {
 
 // ---------------------------------------------------------------------- match
 
+// Where a Pokémon is, in an action that is about more than one trainer: { side, slot }
+function pokemonRef(gs, value, what) {
+  if (!value || typeof value !== 'object' || !isSide(value.side)) throw new ActionError(`${what}: say whose Pokémon it is (trainerA or trainerB) and its slot`);
+  const slot = pickSlot(value.slot);
+  const pokemon = gs.pokemonAt(value.side, slot);
+  if (!pokemon || !(pokemon.cardId || pokemon.name)) throw new ActionError(`${what}: there is no Pokémon in that slot`);
+  return { side: value.side, slot, pokemon };
+}
+const refKey = (ref) => slotKey(ref.side, ref.slot);
+
 function matchWinAction(side, direction) {
   return {
     sfx: () => (direction > 0 ? 'point' : null),
@@ -534,6 +596,56 @@ function matchWinAction(side, direction) {
 }
 
 const MATCH = {
+  // Damage moves from one Pokémon (it is healed by as much) to another (damaged by as much), whoever they belong to
+  moveDamage: {
+    sfx: () => 'damage',
+    targets: (side, p) => [p && p.from && isSide(p.from.side) ? `${slotKey(p.from.side, p.from.slot)}.hp` : '*', p && p.to && isSide(p.to.side) ? `${slotKey(p.to.side, p.to.slot)}.hp` : '*'],
+    run: (gs, side, p, out, ctx) => {
+      const from = pokemonRef(gs, p.from, 'from');
+      const to = pokemonRef(gs, p.to, 'to');
+      if (refKey(from) === refKey(to)) throw new ActionError('damage moves to another Pokémon');
+      const wanted = inTens(integer(p.amount, 'amount', 10, 9999), 'the damage to move');
+      const moved = gs.moveDamage(from, to, wanted);
+      if (moved <= 0) throw new ActionError(`${from.pokemon.name} has no damage to move`);
+      ctx.moved = moved;
+      ctx.from = `${from.pokemon.name} (${who(gs, from.side)})`;
+      ctx.to = `${to.pokemon.name} (${who(gs, to.side)})`;
+    },
+    label: (gs, side, p, ctx) => `Moved ${ctx.moved} damage from ${ctx.from} to ${ctx.to}`
+  },
+
+  // Several Pokémon are knocked out at the same time (of one trainer, or of both). Each says how many prize cards the other trainer takes.
+  knockOutMany: {
+    sfx: () => 'ko',
+    targets: (side, p) => (Array.isArray(p.knockouts) && p.knockouts.every((entry) => entry && isSide(entry.side))
+      ? p.knockouts.flatMap((entry) => [slotKey(entry.side, entry.slot), `${opponent(entry.side)}.prizes`])
+      : ['*']),
+    run: (gs, side, p, out, ctx) => {
+      const list = Array.isArray(p.knockouts) ? p.knockouts.slice(0, 16) : [];
+      if (list.length === 0) throw new ActionError('choose the Pokémon that were knocked out');
+      // everything is checked before anything happens, so a mistake knocks nothing out
+      const checked = list.map((entry) => {
+        const ref = pokemonRef(gs, entry, 'knocked out');
+        const prizes = entry.prizes === undefined ? 1 : integer(entry.prizes, 'prizes', 0, 6);
+        return { side: ref.side, slot: ref.slot, prizes, name: ref.pokemon.name || 'Pokémon' };
+      });
+      if (new Set(checked.map((entry) => `${entry.side}:${entry.slot}`)).size !== checked.length) throw new ActionError('a Pokémon is in the list twice');
+      const clear = p.clear !== false;
+      for (const entry of checked) gs.knockOut(entry.side, entry.slot, { prizesTaken: entry.prizes, clear });
+      ctx.checked = checked;
+      const a = announcements.build(gs.state, 'ko', checked.length === 1
+        ? { side: checked[0].side, isOOC: checked[0].slot !== -1, slot: checked[0].slot }
+        : { count: checked.length, names: checked.map((entry) => entry.name), sides: checked.map((entry) => entry.side), inCombat: checked.some((entry) => entry.slot === -1) });
+      if (a) out.push(a);
+    },
+    label: (gs, side, p, ctx) => {
+      const takes = {};
+      for (const entry of ctx.checked) takes[opponent(entry.side)] = (takes[opponent(entry.side)] || 0) + entry.prizes;
+      const prizes = Object.entries(takes).map(([taker, count]) => `${who(gs, taker)} takes ${count} prize${count === 1 ? '' : 's'}`).join(', ');
+      return `${ctx.checked.map((entry) => entry.name).join(' and ')} knocked out (${prizes})`;
+    }
+  },
+
   toggleTurn: {
     sfx: () => 'turn',
     targets: () => ['turn'],
@@ -697,7 +809,11 @@ const CARD = {
     },
     run: (gs, side, p, out, ctx) => {
       if (p.target !== 'stadium' && !CARD_TARGET.test(String(p.target))) throw new ActionError('invalid card target');
-      gs.selectCard(p.target, cleanCard(p.cardData), { keep: p.evolve === true });
+      const card = cleanCard(p.cardData);
+      // an Item card that is played as a Pokémon (a Fossil, a Doll) has no HP on the card of the library: it is a 60 HP Pokémon
+      if (p.asPokemon === true && !parseInt(card.hp, 10)) card.hp = '60';
+      // `back`: the card is an earlier stage that the Pokémon goes back to (it keeps what is attached and its damage, and remembers nothing)
+      gs.selectCard(p.target, card, { keep: p.evolve === true || p.back === true, back: p.back === true });
       if (p.target === 'stadium' && p.consume !== false) ctx.usedBy = gs.useStadiumPlay(stadiumPlayedBy(gs, p));
     },
     label: (gs, side, p, ctx) => `${p.target === 'stadium' ? 'Stadium' : p.target.replace('-', ' ').replace('-', ' ')} → ${p.cardData && p.cardData.name}${stadiumLabel(gs, ctx)}`
@@ -732,9 +848,21 @@ const CARD = {
       if (!GAME.FEATURE_SEPARATORS.some((one) => one.symbol === p.symbol)) {
         throw new ActionError(`the sign between feature cards can be: ${GAME.FEATURE_SEPARATORS.map((one) => one.symbol).join(', ')}`);
       }
-      gs.addFeatureSeparator(p.symbol);
+      gs.addFeatureSeparator(p.symbol, p.at === undefined ? undefined : integer(p.at, 'at', 0, 20));
     },
     label: (gs, side, p) => `Feature separator added: ${p.symbol}`
+  },
+  // The feature cards and the signs in another order, so a combo reads the way it is played
+  moveFeature: {
+    targets: () => ['featureCards'],
+    run: (gs, side, p, out, ctx) => {
+      const id = text(p.id ?? '', 'id', 64);
+      const entry = gs.state.featureCards.find((one) => one.id === id);
+      if (!entry) throw new ActionError('there is no such card or sign among the feature cards');
+      ctx.name = entry.separator || entry.name;
+      gs.moveFeature(id, integer(p.to, 'to', 0, 20));
+    },
+    label: (gs, side, p, ctx) => `Feature cards: ${ctx.name} moved`
   },
   removeFeatureCard: {
     targets: () => ['featureCards'],
@@ -795,6 +923,9 @@ const RESET = {
   label: () => 'Everything reset'
 };
 
+// The actions that take a Pokémon off the table: when a trainer has none left after one of them, the other trainer wins the game
+const LEAVES_THE_TABLE = new Set(['knockOut', 'knockOutMany', 'clearSlot']);
+
 // ----------------------------------------------------------------- public API
 
 // Look up the handler for a socket event + payload. Returns null for anything unknown or invalid.
@@ -843,6 +974,7 @@ function resolve(event, payload) {
     run(gs) {
       const out = [];
       const winning = { trainerA: gs.isWinning('trainerA'), trainerB: gs.isWinning('trainerB') };
+      const had = { trainerA: gs.hasPokemon('trainerA'), trainerB: gs.hasPokemon('trainerB') };
       spec.run(gs, side, payload, out, ctx);
       // Whoever has just taken the last prize card they need has won the game: the score goes up and the victory is announced by
       // itself, whatever took the card (a knock out, the minus button, a draft sent from somewhere else) or gave the opponent the
@@ -855,6 +987,19 @@ function resolve(event, payload) {
         ctx.won = true;
         ctx.winners = [...(ctx.winners || []), trainer];
       }
+      // A trainer who has no Pokémon left on the table after one was knocked out or taken off it has lost the game at once: the other one wins
+      if (LEAVES_THE_TABLE.has(action) && event !== 'action:reset') {
+        for (const loser of ['trainerA', 'trainerB']) {
+          const rival = opponent(loser);
+          if (!had[loser] || gs.hasPokemon(loser) || winning[rival] || (ctx.winners || []).includes(rival)) continue;
+          gs.matchWin(rival);
+          const victory = announcements.build(gs.state, 'win', { side: rival, game: true });
+          if (victory) out.push(victory);
+          ctx.won = true;
+          ctx.winners = [...(ctx.winners || []), rival];
+          ctx.noPokemon = [...(ctx.noPokemon || []), loser];
+        }
+      }
       return out;
     },
     // Human-readable description, to be called after run()
@@ -862,7 +1007,8 @@ function resolve(event, payload) {
       const text = spec.label(gs, side, payload, ctx);
       if (!ctx.winners) return text;
       const { trainerAWins, trainerBWins } = gs.state.matchScore;
-      return `${text} · ${ctx.winners.map((winner) => who(gs, winner)).join(' and ')} won the game (${trainerAWins}–${trainerBWins})`;
+      const why = ctx.noPokemon ? ` (${ctx.noPokemon.map((loser) => who(gs, loser)).join(' and ')} has no Pokémon left)` : '';
+      return `${text} · ${ctx.winners.map((winner) => who(gs, winner)).join(' and ')} won the game${why} (${trainerAWins}–${trainerBWins})`;
     },
     // The sound cues this action makes, to be called after run(). Independent of the visual announcements.
     cues: () => [...(spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : []), ...(ctx.won ? ['win'] : [])]

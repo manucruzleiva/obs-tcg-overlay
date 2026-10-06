@@ -544,6 +544,25 @@ html, body {
   letter-spacing: 0.14em;
 }
 
+/* the Pokémon Tools on a Pokémon */
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.trainer-b .tools { justify-content: flex-end; }
+.tool {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 10px;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: var(--bg-card);
+  font: 700 15px/1.2 var(--font-display);
+}
+.tool-hp { color: var(--success); font-weight: 800; }
+.mon.mini .tools { gap: 4px; }
+.mon.mini .tool { gap: 5px; padding: 1px 7px; font-size: 12px; }
+.trainer-b .mon.mini .tools { justify-content: flex-end; }
+#stage.bench-row .mon.mini .tools, #stage.bench-row .trainer-b .mon.mini .tools { justify-content: center; }
+
 /* the attacks of a benched Pokémon (an option): the name and the damage, one per line */
 .attacks { display: flex; flex-direction: column; gap: 3px; }
 .attack-line {

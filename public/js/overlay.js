@@ -108,13 +108,14 @@
     const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
     const attacks = opt(el('div', 'attacks'), 'benchAttacks'); // (the benched Pokémon only)
+    const tools = opt(el('div', 'tools'), 'attachments'); // the Pokémon Tools, with the other attachments
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
-    [name, hp, energies, retreat, abilities, attacks, statuses].forEach((node) => details.appendChild(node));
+    [name, hp, energies, retreat, abilities, tools, attacks, statuses].forEach((node) => details.appendChild(node));
 
     root.appendChild(art);
     root.appendChild(details);
     root.hidden = true;
-    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, attacks, statuses };
+    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, tools, attacks, statuses };
   }
 
   // Where the parts of a tile go: the usual places, with what a design says (a design is checked by the server, this only
@@ -152,6 +153,7 @@
     mon.details.appendChild(mon.name);
     below.forEach((node) => mon.details.appendChild(node));
     mon.details.appendChild(mon.abilities);
+    mon.details.appendChild(mon.tools);
     mon.details.appendChild(mon.attacks);
     below.length = 0;
     put('status', mon.statuses);
@@ -225,6 +227,20 @@
     container.hidden = list.length === 0;
   }
 
+  // The Pokémon Tools on a Pokémon: the name of each, and the HP it adds when it adds some
+  function renderTools(container, tools) {
+    const list = Array.isArray(tools) ? tools : [];
+    container.textContent = '';
+    list.forEach((tool) => {
+      const chip = el('span', 'tool');
+      chip.title = tool.hp ? `${tool.name} (+${tool.hp} HP)` : tool.name;
+      chip.appendChild(el('span', 'tool-name', tool.name));
+      if (tool.hp) chip.appendChild(el('span', 'tool-hp', `+${tool.hp}`));
+      container.appendChild(chip);
+    });
+    container.hidden = list.length === 0;
+  }
+
   // What a benched Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
   function renderAttacks(container, attacks) {
     const list = attacks || [];
@@ -266,6 +282,7 @@
       renderRetreat(mon.retreat, pokemon.retreat, status.indexOf('trapped') !== -1);
     }
     renderAbilities(mon.abilities, pokemon.abilities);
+    renderTools(mon.tools, pokemon.tools);
     renderAttacks(mon.attacks, mon.mini ? pokemon.attacks : []);
 
     mon.statuses.textContent = '';

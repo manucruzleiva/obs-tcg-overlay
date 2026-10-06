@@ -15,6 +15,8 @@ const { MAX_ATTACKS, MAX_RETREAT } = require('./attacks');
 const MAX_ENERGIES_PER_POKEMON = 20;
 const MAX_ABILITIES = 4;
 const MAX_SPECIAL_ENERGIES = 4;
+const MAX_TOOLS = 3; // Pokémon Tools attached to one Pokémon (the rules say one, but some effects allow more)
+const MAX_STAGES = 4; // the earlier stages of a Pokémon that evolved, kept so it can go back
 const MIN_SECONDS = 1;
 const MAX_SECONDS = 30;
 
@@ -50,6 +52,31 @@ function cleanPrizeCards(list) {
   return cards;
 }
 
+// What a Pokémon Tool is when it is kept: the card, and how much it adds to the maximum HP of the Pokémon (0 for most)
+function cleanTools(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((tool) => tool && typeof tool === 'object' && typeof tool.name === 'string' && tool.name).slice(0, MAX_TOOLS).map((tool) => ({
+    cardId: typeof tool.cardId === 'string' ? tool.cardId.slice(0, 64) : '',
+    name: tool.name.slice(0, 80),
+    image: typeof tool.image === 'string' ? tool.image : '',
+    hp: Number.isInteger(tool.hp) ? Math.max(0, Math.min(999, tool.hp)) : 0
+  }));
+}
+
+// The earlier stages of a Pokémon that evolved (Pichu, then Pikachu, then Raichu): the card each was, to go back to
+function cleanStages(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((stage) => stage && typeof stage === 'object' && typeof stage.name === 'string' && stage.name).slice(-MAX_STAGES).map((stage) => ({
+    cardId: typeof stage.cardId === 'string' ? stage.cardId.slice(0, 64) : '',
+    name: stage.name.slice(0, 80),
+    image: typeof stage.image === 'string' ? stage.image : '',
+    hp: Number.isFinite(stage.hp) ? Math.max(0, Math.min(9999, Math.trunc(stage.hp))) : 0,
+    abilities: Array.isArray(stage.abilities) ? stage.abilities.filter((name) => typeof name === 'string').slice(0, MAX_ABILITIES) : [],
+    attacks: Array.isArray(stage.attacks) ? stage.attacks.slice(0, MAX_ATTACKS) : [],
+    retreat: Number.isInteger(stage.retreat) ? Math.max(0, Math.min(MAX_RETREAT, stage.retreat)) : 0
+  }));
+}
+
 const emptyPokemon = (slot) => ({
   slot,
   cardId: '',
@@ -62,7 +89,10 @@ const emptyPokemon = (slot) => ({
   // What the card says it can do: [{ name, damage, mod }] (see attacks.js), and how many Energy it costs to retreat
   attacks: [],
   retreat: 0,
+  // Pokémon Tools: { cardId, name, image, hp } where hp is what the tool adds to the maximum HP
   tools: [],
+  // the card this Pokémon was before it evolved (the last one is the stage just before this one)
+  stages: [],
   status: [],
   // Ability tokens: { name, used, scope } where scope 'turn' refreshes every turn and 'game' never does
   abilities: []
@@ -212,6 +242,8 @@ class GameStateService {
         if (!Array.isArray(pokemon.specialEnergies)) pokemon.specialEnergies = [];
         if (!Array.isArray(pokemon.attacks)) pokemon.attacks = [];
         if (!Number.isInteger(pokemon.retreat)) pokemon.retreat = 0;
+        pokemon.tools = cleanTools(pokemon.tools);
+        pokemon.stages = cleanStages(pokemon.stages);
         pokemon.status = GAME.cleanStatus(pokemon.status);
       }
       // The penalty used to be an on/off flag: it is a number of prize cards now
@@ -394,21 +426,37 @@ class GameStateService {
     pokemon.hp.current = Math.max(0, max > 0 ? Math.min(max, current) : current);
   }
 
-  setMaxHP(side, slot, max) {
+  // The maximum HP. By default the current HP only comes down when it is over the new maximum; with `keepDamage` the damage taken stays what it
+  // is (a Pokémon with 10 more maximum HP has 10 more HP).
+  setMaxHP(side, slot, max, { keepDamage = false } = {}) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
+    const before = pokemon.hp.max;
     pokemon.hp.max = Math.max(0, max);
-    pokemon.hp.current = Math.min(pokemon.hp.current, pokemon.hp.max);
+    pokemon.hp.current = keepDamage ? Math.max(0, Math.min(pokemon.hp.max, pokemon.hp.current + (pokemon.hp.max - before))) : Math.min(pokemon.hp.current, pokemon.hp.max);
   }
 
   // Put a card into a slot. A fresh Pokémon starts at full HP with nothing attached;
-  // an evolution (keep: true) keeps its attachments and the damage already taken.
-  setPokemon(side, slot, { cardId, name, image, hp, abilities, attacks, retreat }, { keep = false } = {}) {
+  // an evolution (keep: true) keeps its attachments and the damage already taken, and remembers the card it was (so it can go back:
+  // see devolve). `back` is that going back: it does not remember anything.
+  setPokemon(side, slot, { cardId, name, image, hp, abilities, attacks, retreat }, { keep = false, back = false } = {}) {
     const pokemon = this.pokemonAt(side, slot);
     if (!pokemon) return;
 
-    const newMax = Number.isFinite(hp) && hp > 0 ? hp : 0;
+    // What the tools add to the maximum HP stays with the Pokémon while it evolves, so the card's own HP is what is left
+    const toolBonus = keep ? cleanTools(pokemon.tools).reduce((sum, tool) => sum + tool.hp, 0) : 0;
+    const newMax = (Number.isFinite(hp) && hp > 0 ? hp : 0) + (Number.isFinite(hp) && hp > 0 ? toolBonus : 0);
     const damageTaken = Math.max(0, pokemon.hp.max - pokemon.hp.current);
+
+    if (keep && !back && (pokemon.cardId || pokemon.name)) {
+      const own = Math.max(0, pokemon.hp.max - cleanTools(pokemon.tools).reduce((sum, tool) => sum + tool.hp, 0));
+      pokemon.stages = cleanStages([...(pokemon.stages || []), {
+        cardId: pokemon.cardId, name: pokemon.name, image: pokemon.image, hp: own,
+        abilities: (pokemon.abilities || []).map((ability) => ability.name), attacks: pokemon.attacks, retreat: pokemon.retreat
+      }]);
+    } else if (!keep) {
+      pokemon.stages = [];
+    }
 
     Object.assign(pokemon, { cardId, name, image });
     // A different card, an evolution too, has no special conditions (the rules cure them when a Pokémon evolves)
@@ -429,6 +477,62 @@ class GameStateService {
     pokemon.retreat = Number.isInteger(retreat) ? Math.max(0, Math.min(MAX_RETREAT, retreat)) : 0;
     pokemon.hp.max = newMax;
     pokemon.hp.current = keep ? Math.max(0, newMax - damageTaken) : newMax;
+  }
+
+  // Go back to the card this Pokémon was before it evolved: it keeps what is attached to it and the damage it has taken. False when
+  // it never evolved here (there is no earlier card on file).
+  devolve(side, slot) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon || !Array.isArray(pokemon.stages) || pokemon.stages.length === 0) return false;
+    const stage = pokemon.stages[pokemon.stages.length - 1];
+    const rest = pokemon.stages.slice(0, -1);
+    this.setPokemon(side, slot, stage, { keep: true, back: true });
+    pokemon.stages = rest;
+    return true;
+  }
+
+  // A Pokémon Tool on a Pokémon (any slot). `tool.hp` is what it adds to the maximum HP: the Pokémon has that much more HP while it is there.
+  // False when it already holds as many as it may.
+  attachTool(side, slot, tool) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon || !(pokemon.cardId || pokemon.name)) return false;
+    const [clean] = cleanTools([tool]);
+    if (!clean) return false;
+    pokemon.tools = cleanTools(pokemon.tools);
+    if (pokemon.tools.length >= MAX_TOOLS) return false;
+    pokemon.tools.push(clean);
+    pokemon.hp.max += clean.hp;
+    pokemon.hp.current += clean.hp;
+    return true;
+  }
+
+  // Take a tool off: what it added to the maximum HP goes with it (the damage counters stay)
+  removeTool(side, slot, index) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon || !Array.isArray(pokemon.tools) || index < 0 || index >= pokemon.tools.length) return;
+    const [tool] = pokemon.tools.splice(index, 1);
+    const bonus = Number(tool.hp) || 0;
+    pokemon.hp.max = Math.max(0, pokemon.hp.max - bonus);
+    pokemon.hp.current = Math.max(0, Math.min(pokemon.hp.max, pokemon.hp.current - bonus));
+  }
+
+  // Move damage from one Pokémon to another (an effect that moves damage counters): the first is healed by as much as the second is damaged.
+  // `from` and `to` are { side, slot }; it never moves more than the first has taken. Returns how much it moved.
+  moveDamage(from, to, amount) {
+    const source = this.pokemonAt(from.side, from.slot);
+    const target = this.pokemonAt(to.side, to.slot);
+    if (!source || !target) return 0;
+    const moved = Math.max(0, Math.min(amount, source.hp.max - source.hp.current));
+    source.hp.current += moved;
+    target.hp.current = Math.max(0, target.hp.current - moved);
+    return moved;
+  }
+
+  // Has this trainer any Pokémon on the table?
+  hasPokemon(side) {
+    const trainer = this.state[side];
+    const there = (pokemon) => Boolean(pokemon && (pokemon.cardId || pokemon.name));
+    return there(trainer.active) || trainer.bench.slice(0, trainer.benchSize).some(there);
   }
 
   // The attacks and the retreat cost of the card found after the Pokémon was put there
@@ -676,7 +780,7 @@ class GameStateService {
   // ------------------------------------------------------------------- cards
 
   // target: 'trainerA-active', 'trainerB-bench-2' or 'stadium'. `card` is already resolved card data.
-  selectCard(target, card, { keep = false } = {}) {
+  selectCard(target, card, { keep = false, back = false } = {}) {
     const image = this.pokemonTCG.selectBestImageUrl(card, 'large');
     const hp = parseInt(card.hp, 10);
 
@@ -689,7 +793,7 @@ class GameStateService {
     if (!match) throw new Error(`Invalid card target: ${target}`);
     const [, side, where, benchIndex] = match;
     const slot = where === 'active' ? -1 : Number(benchIndex);
-    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities, attacks: card.attacks, retreat: card.retreat }, { keep });
+    this.setPokemon(side, slot, { cardId: card.id, name: card.name, image, hp, abilities: card.abilities, attacks: card.attacks, retreat: card.retreat }, { keep, back });
   }
 
   setStadium(cardId, name, image) {
@@ -713,11 +817,24 @@ class GameStateService {
     while (this.state.featureCards.length > MAX_FEATURE_ENTRIES) this.state.featureCards.shift();
   }
 
-  // A sign between two feature cards ("+", "→", "=" or "or") that says how they go together
-  addFeatureSeparator(symbol) {
+  // A sign between two feature cards ("+", "→", "=" or "or") that says how they go together. It goes at the end unless `at` says where.
+  addFeatureSeparator(symbol, at) {
     if (!GAME.FEATURE_SEPARATORS.some((one) => one.symbol === symbol)) return;
-    this.state.featureCards.push({ id: randomUUID(), separator: symbol, addedAt: Date.now() });
-    while (this.state.featureCards.length > MAX_FEATURE_ENTRIES) this.state.featureCards.shift();
+    const entry = { id: randomUUID(), separator: symbol, addedAt: Date.now() };
+    const list = this.state.featureCards;
+    if (Number.isInteger(at)) list.splice(Math.max(0, Math.min(list.length, at)), 0, entry);
+    else list.push(entry);
+    while (list.length > MAX_FEATURE_ENTRIES) list.shift();
+  }
+
+  // Put a feature card (or a sign) at another place in the row: `to` is the place it ends up in. False when there is no such entry.
+  moveFeature(id, to) {
+    const list = this.state.featureCards;
+    const from = list.findIndex((entry) => entry.id === id);
+    if (from < 0) return false;
+    const [entry] = list.splice(from, 1);
+    list.splice(Math.max(0, Math.min(list.length, to)), 0, entry);
+    return true;
   }
 
   // Remove by id (stable even if another producer changed the list) or, for older clients, by index

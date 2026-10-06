@@ -24,10 +24,18 @@ describe('control panel', { skip }, () => {
     const pokemon = { id: 'sv-1', name: 'Pikachu ex', supertype: 'Pokémon', subtypes: ['Basic'], hp: '200', number: '1', rarity: 'Rare', types: ['Lightning'], set: { id: 'sv', name: 'Test' }, images: { small: ART('pikachu-ex'), large: ART('pikachu-ex') } };
     const special = { id: 'sv-3', name: 'Double Turbo Energy', supertype: 'Energy', subtypes: ['Special'], number: '3', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('double-turbo'), large: ART('double-turbo') } };
     const stadium = { id: 'sv-2', name: 'Area Zero', supertype: 'Trainer', subtypes: ['Stadium'], number: '2', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('area-zero'), large: ART('area-zero') } };
+    const fossil = { id: 'sv-4', name: 'Antique Cover Fossil', supertype: 'Trainer', subtypes: ['Item'], number: '4', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('fossil'), large: ART('fossil') } };
+    const tool = { id: 'sv-5', name: 'Bravery Charm', supertype: 'Trainer', subtypes: ['Pokémon Tool'], number: '5', rarity: 'Uncommon', set: { id: 'sv', name: 'Test' }, images: { small: ART('charm'), large: ART('charm') } };
     api = await startMockCardApi({
       '/cards/sv-1': { data: { ...pokemon, abilities: [{ name: 'Resolute Heart' }] } },
-      // a Stadium search answers with a Stadium, a Special Energy search with a Special Energy card, anything else with the Pokémon
-      '/cards?': (url) => ({ data: [decodeURIComponent(url).includes('subtypes:"Stadium"') ? stadium : decodeURIComponent(url).includes('subtypes:"Special"') ? special : pokemon], totalCount: 1, page: 1, pageSize: 20 })
+      '/cards/sv-4': { data: fossil },
+      // a Stadium search answers with a Stadium, a Special Energy search with a Special Energy card, an Item search with a Fossil, a Pokémon Tool
+      // search with a tool, anything else with the Pokémon
+      '/cards?': (url) => {
+        const query = decodeURIComponent(url);
+        const card = query.includes('subtypes:"Stadium"') ? stadium : query.includes('subtypes:"Special"') ? special : query.includes('subtypes:"Item"') ? fossil : query.includes('subtypes:"Pokémon Tool"') ? tool : pokemon;
+        return { data: [card], totalCount: 1, page: 1, pageSize: 20 };
+      }
     });
     server = await startServer({ label: 'ui-control', env: { POKEMONTCG_API_URL: api.url } });
     producer = server.client({ clientId: 'ui-other-producer', name: 'Maya' });
@@ -619,6 +627,35 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('puts the cards and the signs in any order by dragging them, and a sign dragged from the row goes where it is dropped', async () => {
+      const add = (name) => producer.act('action:card', { action: 'addFeatureCard', cardId: name, name, image: IMG });
+      for (const name of ['Boss Orders', 'Ultra Ball', 'Iono']) await add(name);
+      await expectLive((state) => state.featureCards.length, 3);
+      const item = (label) => page.locator(`${FEATURES} .feature-item`).filter({ hasText: label });
+      assert.deepEqual(await names(), ['Boss Orders', 'Ultra Ball', 'Iono']);
+      assert.equal(await item('Boss Orders').getAttribute('draggable'), 'true');
+
+      // Iono to the front: dropped on the upper half of the first card
+      await item('Iono').dragTo(item('Boss Orders'), { sourcePosition: { x: 20, y: 10 }, targetPosition: { x: 40, y: 4 } });
+      await expectLive((state) => state.featureCards.map((entry) => entry.name), ['Iono', 'Boss Orders', 'Ultra Ball']);
+      assert.deepEqual(await names(), ['Iono', 'Boss Orders', 'Ultra Ball']);
+
+      // Iono to the end: dropped on the lower half of the last card
+      const lastBox = await item('Ultra Ball').boundingBox();
+      await item('Iono').dragTo(item('Ultra Ball'), { sourcePosition: { x: 20, y: 10 }, targetPosition: { x: 40, y: Math.round(lastBox.height) - 4 } });
+      await expectLive((state) => state.featureCards.map((entry) => entry.name), ['Boss Orders', 'Ultra Ball', 'Iono']);
+
+      // a sign from the row of signs, dropped between the first two
+      const sign = page.locator(`${FEATURES} .sign-btn`, { hasText: '→' });
+      await sign.dragTo(item('Ultra Ball'), { targetPosition: { x: 40, y: 3 } });
+      await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', '→', 'Ultra Ball', 'Iono']);
+      // and the sign moves like a card
+      await item('→').dragTo(item('Iono'), { sourcePosition: { x: 10, y: 6 }, targetPosition: { x: 40, y: 4 } });
+      await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Boss Orders', 'Ultra Ball', '→', 'Iono']);
+      assert.deepEqual(await names(), ['Boss Orders', 'Ultra Ball', '→', 'Iono']);
+      assert.deepEqual(page.problems, []);
+    });
+
     it('lists the featured cards in the order they were added, with the signs between them, and removes either', async () => {
       const add = (name) => producer.act('action:card', { action: 'addFeatureCard', cardId: name, name, image: IMG });
       await add('Boss Orders');
@@ -835,6 +872,193 @@ describe('control panel', { skip }, () => {
     await page.locator('.from-bench .choice', { hasText: 'Eevee' }).click();
     await expectLive((state) => state.trainerA.active.name, 'Eevee');
     await page.waitForFunction(() => !document.querySelector('.modal'));
+  });
+
+  describe('the Pokémon on the table', () => {
+    const active = (side = 'a') => `.trainer-panel.side-${side} .active-slot .mon-card`;
+    const pickCard = async (name) => { await modal().locator('.card-pick', { hasText: name }).click(); await dialogClosed(); };
+
+    it('puts an Item played as a Pokémon (a Fossil, a Doll) in play, with 60 HP', async () => {
+      await press('a');
+      await page.waitForSelector('.modal');
+      assert.equal(await modal().locator('.item-mode .seg.on').textContent(), 'Pokémon');
+      await modal().locator('.item-mode [data-mode="item"]').click();
+      assert.match(await modal().locator('.picker-status').textContent(), /Type Fossil or Doll/);
+      assert.equal(await modal().locator('.card-pick').count(), 0, 'nothing is listed until a name is typed');
+      await modal().locator('.quick-row .chip', { hasText: 'Fossil' }).click();
+      await modal().locator('.card-pick', { hasText: 'Antique Cover Fossil' }).waitFor();
+      await modal().locator('.card-pick', { hasText: 'Antique Cover Fossil' }).click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp], ['Antique Cover Fossil', { max: 60, current: 60 }]);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('lets a Pokémon evolve from its card and go back a stage, keeping its energy and its damage', async () => {
+      await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 1 });
+      await producer.act('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await expectLive((state) => state.trainerA.active.hp.current, 70);
+      await page.locator(`${active()} .mini-btn[title="Evolve"]`).click();
+      await page.waitForSelector('.modal[aria-label="Evolve"]');
+      await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp, state.trainerA.active.energies], ['Pikachu ex', { max: 200, current: 170 }, ['lightning']]);
+      assert.deepEqual((await live()).trainerA.active.stages.map((stage) => stage.name), ['Pikachu']);
+
+      await page.locator(`${active()} .mini-btn[title="Go back a stage"]`).click();
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.active.hp, state.trainerA.active.energies], ['Pikachu', { max: 100, current: 70 }, ['lightning']]);
+
+      // it did not evolve here any more: the earlier card is chosen instead
+      await page.locator(`${active()} .mini-btn[title="Go back a stage"]`).click();
+      await page.waitForSelector('.modal[aria-label="Go back to an earlier card"]');
+      await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).waitFor();
+      assert.deepEqual((await live()).trainerA.active.stages, [], 'nothing is remembered when going back by choosing');
+      await press('Escape');
+    });
+
+    it('puts a Pokémon Tool on a Pokémon of the bench too, with the HP it adds, and takes it off with a click', async () => {
+      const bench = '.trainer-panel.side-a .mon-card.compact';
+      await page.locator(`${bench} .mini-btn[title="Tool"]`).first().click();
+      await page.waitForSelector('.modal[aria-label^="Pokémon Tool"]');
+      assert.match(await modal().locator('.hint-line').first().textContent(), /Most Pokémon Tools add nothing/);
+      await modal().locator('.tool-bonus input').fill('50');
+      await modal().locator('.search-input').fill('charm');
+      await modal().locator('.card-pick', { hasText: 'Bravery Charm' }).click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.bench[0].tools.map((tool) => [tool.name, tool.hp]), state.trainerA.bench[0].hp.max], [[['Bravery Charm', 50]], 110]);
+      const chip = page.locator(`${bench} .tool-chip`);
+      assert.match(await chip.textContent(), /Bravery Charm\s*\+50 HP/);
+      await chip.click();
+      await expectLive((state) => [state.trainerA.bench[0].tools.length, state.trainerA.bench[0].hp.max], [0, 60]);
+    });
+
+    it('raises and lowers the maximum HP by tens', async () => {
+      const more = page.locator(`${active()} button[aria-label="Maximum HP 10 more"]`);
+      await more.click();
+      await expectLive((state) => state.trainerA.active.hp, { max: 110, current: 110 });
+      await page.locator(`${active()} button[aria-label="Maximum HP 10 less"]`).click();
+      await expectLive((state) => state.trainerA.active.hp, { max: 100, current: 100 });
+      assert.equal(await page.locator(`${active()} .max-hp-number`).textContent(), '100');
+    });
+
+    it('knocks out several Pokémon at once, of both trainers, each with its prize cards, and offers the next Active Pokémon', async () => {
+      await producer.act('action:trainerB', { action: 'setBench', slot: 0, cardId: 'b-2', name: 'Gengar', image: IMG, hp: 90 });
+      await expectLive((state) => state.trainerB.bench[0].name, 'Gengar');
+      await press('k');
+      await page.waitForSelector('.modal[aria-label="Knock out"]');
+      assert.equal(await modal().locator('.choice.on').count(), 1, 'the Active Pokémon of the trainer in focus to begin with');
+      assert.equal(await modal().locator('.ko-chosen .ko-row').count(), 0, 'one Pokémon: no list');
+      await modal().locator('.choice', { hasText: 'Eevee' }).click();
+      await modal().locator('.side-tab', { hasText: 'Gary' }).click();
+      await modal().locator('.choice', { hasText: 'Charizard' }).click();
+      assert.equal(await modal().locator('.ko-row').count(), 3);
+      assert.match(await modal().locator('.ko-summary').textContent(), /Gary takes 2 prize cards · Ash takes 1 prize card/);
+      // Pikachu is worth two prize cards, and Eevee none by mistake: each has its own
+      await modal().locator('.ko-row', { hasText: 'Pikachu' }).locator('.seg', { hasText: '2' }).click();
+      assert.match(await modal().locator('.ko-summary').textContent(), /Gary takes 3 prize cards · Ash takes 1 prize card/);
+      await modal().locator('.ko-row', { hasText: 'Eevee' }).locator('.seg', { hasText: '0' }).click();
+      assert.match(await modal().locator('.ko-summary').textContent(), /Gary takes 2 prize cards/);
+      assert.equal(await modal().locator('.modal-foot .danger').textContent(), 'Knock out 3');
+
+      const announced = producer.expect('announce', (announcement) => announcement.type === 'ko');
+      await modal().locator('.modal-foot .danger').click();
+      assert.equal((await announced).title, 'TRIPLE KO!');
+      await expectLive((state) => [state.trainerA.active.name, state.trainerA.bench[0].name, state.trainerB.active.name, state.trainerA.prizes.count, state.trainerB.prizes.count], ['', '', '', 5, 4]);
+      assert.match(await page.locator('.feed').textContent(), /Pikachu and Eevee and Charizard knocked out/);
+      // (Ash has no Pokémon left: Gary won the game at once. The next Active Pokémon is still offered)
+      await page.waitForSelector('.modal[aria-label^="Deploy the Active Pokémon"]');
+      await press('Escape');
+    });
+
+    it('moves damage from one Pokémon to another with M: any Pokémon of either trainer, in tens, never more than it has taken', async () => {
+      await producer.act('action:trainerA', { action: 'activeDamage', amount: 40 });
+      await expectLive((state) => state.trainerA.active.hp.current, 60);
+      await press('m');
+      await page.waitForSelector('.modal[aria-label="Move damage"]');
+      const from = (name) => modal().locator('.move-column[data-role="from"] .choice', { hasText: name });
+      const to = (name) => modal().locator('.move-column[data-role="to"] .choice', { hasText: name });
+      assert.equal(await from('Charizard').isDisabled(), true, 'a Pokémon with no damage has none to give');
+      assert.equal(await from('Pikachu').isDisabled(), false);
+      assert.equal(await modal().locator('.modal-foot .primary').isDisabled(), true, 'nothing chosen yet');
+      await from('Pikachu').click();
+      assert.equal(await to('Pikachu').isDisabled(), true, 'not to itself');
+      await to('Charizard').click();
+      assert.match(await modal().locator('.move-preview').textContent(), /Pikachu\s*60 → 70 \/ 100 \(healed\)/);
+      assert.match(await modal().locator('.move-preview').textContent(), /Charizard\s*150 → 140 \/ 150 \(damaged\)/);
+      await modal().locator('button', { hasText: 'All' }).click();
+      assert.equal(await modal().locator('.amount-input').inputValue(), '40');
+      await modal().getByRole('button', { name: '10 more' }).isDisabled().then((disabled) => assert.equal(disabled, true, 'not more than it has taken'));
+      await modal().getByRole('button', { name: '10 less' }).click();
+      assert.equal(await modal().locator('.amount-input').inputValue(), '30');
+      await modal().locator('.modal-foot .primary').click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerA.active.hp.current, state.trainerB.active.hp.current], [90, 120]);
+      assert.match(await page.locator('.feed').textContent(), /Moved 30 damage from Pikachu \(Ash\) to Charizard \(Gary\)/);
+
+      // and back, from the other trainer to a Pokémon on the bench
+      await press('m');
+      await page.waitForSelector('.modal[aria-label="Move damage"]');
+      await from('Charizard').click();
+      await to('Eevee').click();
+      await modal().locator('.modal-foot .primary').click();
+      await dialogClosed();
+      await expectLive((state) => [state.trainerB.active.hp.current, state.trainerA.bench[0].hp.current], [130, 50]);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('attacks that say × or +', () => {
+    beforeEach(async () => {
+      await producer.act('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Pikachu', image: IMG, hp: 100, attacks: [{ name: 'Triple Kick', damage: '20×' }, { name: 'Surge', damage: '30+' }, { name: 'Weak Hit', damage: '50-' }] });
+      await expectLive((state) => state.trainerA.active.attacks.length, 3);
+    });
+
+    it('asks how many times for an attack that says ×, and works the damage out from the card\'s number', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      assert.equal(await modal().locator('.mod-field').count(), 0, 'nothing to say until an attack that needs it is chosen');
+      await press('1');
+      const times = modal().locator('.mod-field[data-mod="×"] input');
+      assert.equal(await times.inputValue(), '1');
+      assert.equal(await modal().locator('.amount-input').first().inputValue() !== '', true);
+      await times.fill('3');
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '60');
+      await modal().getByRole('button', { name: 'Times +' }).click();
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '80');
+      await modal().getByRole('button', { name: 'Times −' }).click();
+      await modal().getByRole('button', { name: 'Times −' }).click();
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '40');
+      const heard = producer.expect('announce', (announcement) => announcement.type === 'attack');
+      await modal().locator('.modal-foot .danger').click();
+      const announced = await heard;
+      assert.deepEqual([announced.title, announced.subtitle], ['Triple Kick', '40 damage']);
+      await expectLive((state) => state.trainerB.active.hp.current, 110);
+    });
+
+    it('asks how much more for an attack that says +, and how much less for -, in tens', async () => {
+      await press('c');
+      await page.waitForSelector('.modal');
+      await press('2');
+      const more = modal().locator('.mod-field[data-mod="+"] input');
+      assert.equal(await more.inputValue(), '0');
+      await more.fill('40');
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '70');
+      await modal().getByRole('button', { name: 'More damage −' }).click();
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '60');
+      // the damage can still be changed by hand, and Base brings back the card's number
+      await modal().locator('input[aria-label="Damage"]').fill('90');
+      await modal().getByRole('button', { name: 'Base 30' }).click();
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '30');
+
+      await press('Escape');
+      await press('c');
+      await page.waitForSelector('.modal');
+      await press('3');
+      const less = modal().locator('.mod-field[data-mod="-"] input');
+      await less.fill('20');
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '30');
+      await less.fill('100');
+      assert.equal(await modal().locator('input[aria-label="Damage"]').inputValue(), '0', 'never less than nothing');
+    });
   });
 
   it('applies damage and heals with D and H', async () => {

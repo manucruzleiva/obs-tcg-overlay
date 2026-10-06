@@ -72,7 +72,28 @@ function build(state, type, params = {}) {
       break;
     }
 
-    case 'ko': {
+    // Several Pokémon were knocked out at once (of one trainer, or of both): one banner for all of them
+    case 'ko': if (params.count > 1) {
+      const names = (Array.isArray(params.names) ? params.names : []).filter((name) => typeof name === 'string').slice(0, 6);
+      const sides = [...new Set((Array.isArray(params.sides) ? params.sides : []).map((entry) => sideOf(entry)))];
+      const both = sides.length > 1;
+      const label = sides[0] === 'trainerB' ? 'B' : 'A';
+      const count = Math.min(Number(params.count), 16);
+      const title = count === 2 ? 'DOUBLE KO!' : count === 3 ? 'TRIPLE KO!' : `${count} KNOCKED OUT!`;
+      const inCombat = Boolean(params.inCombat);
+      const on = (kind) => (both ? s.enableTrainerAKOToast || s.enableTrainerBKOToast : s[`enableTrainer${label}KO${kind}`]);
+      spec = {
+        side: both ? null : sides[0],
+        title,
+        subtitle: names.join(' · ') || (inCombat ? 'In combat' : 'Out of combat'),
+        toast: inCombat ? on('Toast') : false,
+        animation: both
+          ? (inCombat ? s.enableTrainerAKOAnimation || s.enableTrainerBKOAnimation : s.enableTrainerAKO_OOC_Animation || s.enableTrainerBKO_OOC_Animation)
+          : (inCombat ? s[`enableTrainer${label}KOAnimation`] : s[`enableTrainer${label}KO_OOC_Animation`]),
+        data: { outOfCombat: !inCombat, count }
+      };
+      break;
+    } else {
       const side = sideOf(params.side);
       const label = side === 'trainerA' ? 'A' : 'B';
       const outOfCombat = Boolean(params.isOOC);

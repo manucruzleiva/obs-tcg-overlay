@@ -4,6 +4,9 @@
  */
 import { h, icon, replace, ago, personColor } from './dom.js';
 
+const FEATURE_TYPE = 'application/x-oto-feature'; // what an entry of the feature list carries when it is dragged
+const SIGN_TYPE = 'application/x-oto-sign'; // and a sign dragged from the row of signs
+
 export class CenterView {
   constructor(app) {
     this.app = app;
@@ -63,6 +66,7 @@ export class CenterView {
         hype('Top Deck', 'T', () => app.act('action:toast', { action: 'topDeck', target: app.focus }), 'gold'),
         hype('Attack', 'C', () => app.openAttack(), 'red'),
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
+        hype('Move damage', 'M', () => app.openMoveDamage(), 'blue'),
         hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), ''),
         // the victory banner for the player whose turn it is (before anybody has it, for the one the shortcuts are for)
         hype('Winner', '', () => app.act('action:toast', { action: app.prizeSide() === 'trainerA' ? 'trainerAWin' : 'trainerBWin' }), 'gold'),
@@ -72,6 +76,7 @@ export class CenterView {
     this.stadiumArt = h('div', { class: 'stadium-art' });
     this.stadiumName = h('div', { class: 'stadium-name' });
     this.featureList = h('div', { class: 'feature-list' });
+    this.enableFeatureDragAndDrop();
     // the Stadium in play, and the cards that are featured: a card each
     const stadium = h('section', { class: 'block stadium-block' },
       h('div', { class: 'block-title' }, 'Stadium'),
@@ -84,10 +89,17 @@ export class CenterView {
     // a sign between two cards says how they go together ("A + B → C"): the cards and signs are shown in the order they were added
     const signs = h('div', { class: 'feature-signs', role: 'group', 'aria-label': 'Add a sign between feature cards' },
       h('span', { class: 'hint' }, 'Between cards'),
-      window.OTO_GAME.FEATURE_SEPARATORS.map((one) => h('button', {
-        class: 'btn tiny sign-btn', type: 'button', title: `Add "${one.symbol}" (${one.label}) after the last card`, 'aria-label': `Add a sign: ${one.label}`,
-        onclick: () => app.act('action:card', { action: 'addFeatureSeparator', symbol: one.symbol })
-      }, one.symbol)));
+      window.OTO_GAME.FEATURE_SEPARATORS.map((one) => {
+        const button = h('button', {
+          class: 'btn tiny sign-btn', type: 'button', draggable: 'true', title: `Add "${one.symbol}" (${one.label}) after the last card, or drag it to where it goes`, 'aria-label': `Add a sign: ${one.label}`,
+          onclick: () => app.act('action:card', { action: 'addFeatureSeparator', symbol: one.symbol })
+        }, one.symbol);
+        button.addEventListener('dragstart', (event) => {
+          event.dataTransfer.effectAllowed = 'copy';
+          event.dataTransfer.setData(SIGN_TYPE, one.symbol);
+        });
+        return button;
+      }));
     const features = h('section', { class: 'block feature-block' },
       h('div', { class: 'block-title' }, 'Feature cards',
         h('span', { class: 'hint' }, 'The overlay shows the last three'),
@@ -102,6 +114,64 @@ export class CenterView {
       this.feed);
 
     return h('section', { class: 'center-panel' }, score, turn, hypeBlock, stadium, features, activity);
+  }
+
+  // The feature cards and the signs can be put in any order by dragging them in the list; a sign dragged from the row of signs goes where it is
+  // dropped. Each entry takes the place of the one it is dropped on (before it when the pointer is in its upper half, after it otherwise).
+  enableFeatureDragAndDrop() {
+    const { app } = this;
+    const list = this.featureList;
+    let dragged = null; // the id of the entry being moved
+    const entryAt = (event) => (event.target instanceof Element ? event.target.closest('.feature-item') : null);
+    const placeOf = (event) => {
+      const entry = entryAt(event);
+      if (!entry) return { index: (this.featureEntries || []).length, node: null, after: false };
+      const box = entry.getBoundingClientRect();
+      const after = event.clientY > box.top + box.height / 2;
+      return { index: Number(entry.dataset.index) + (after ? 1 : 0), node: entry, after };
+    };
+    const clear = () => { for (const node of list.querySelectorAll('.drop-before, .drop-after, .dragging')) node.classList.remove('drop-before', 'drop-after', 'dragging'); };
+    const types = (event) => Array.from((event.dataTransfer && event.dataTransfer.types) || []);
+
+    list.addEventListener('dragstart', (event) => {
+      const entry = entryAt(event);
+      if (!entry) return;
+      dragged = entry.dataset.id;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(FEATURE_TYPE, dragged);
+      entry.classList.add('dragging');
+    });
+    list.addEventListener('dragend', () => { dragged = null; clear(); });
+    list.addEventListener('dragover', (event) => {
+      const ours = types(event);
+      if (!ours.includes(FEATURE_TYPE) && !ours.includes(SIGN_TYPE)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = ours.includes(SIGN_TYPE) ? 'copy' : 'move';
+      for (const node of list.querySelectorAll('.drop-before, .drop-after')) node.classList.remove('drop-before', 'drop-after');
+      const place = placeOf(event);
+      if (place.node) place.node.classList.add(place.after ? 'drop-after' : 'drop-before');
+    });
+    list.addEventListener('dragleave', (event) => {
+      if (!event.relatedTarget || !list.contains(event.relatedTarget)) for (const node of list.querySelectorAll('.drop-before, .drop-after')) node.classList.remove('drop-before', 'drop-after');
+    });
+    list.addEventListener('drop', (event) => {
+      const kinds = types(event);
+      const place = placeOf(event);
+      const id = dragged || event.dataTransfer.getData(FEATURE_TYPE);
+      const symbol = event.dataTransfer.getData(SIGN_TYPE);
+      dragged = null;
+      clear();
+      if (!kinds.includes(FEATURE_TYPE) && !kinds.includes(SIGN_TYPE)) return;
+      event.preventDefault();
+      if (kinds.includes(SIGN_TYPE) && symbol) {
+        app.act('action:card', { action: 'addFeatureSeparator', symbol, at: place.index });
+      } else if (id) {
+        const from = (this.featureEntries || []).findIndex((entry) => entry.id === id);
+        if (from < 0) return;
+        const to = place.index > from ? place.index - 1 : place.index; // (the entry leaves its place before it arrives at the other)
+        if (to !== from) app.act('action:card', { action: 'moveFeature', id, to });
+      }
+    });
   }
 
   update(state) {
@@ -133,14 +203,15 @@ export class CenterView {
     this.stadiumName.textContent = present ? stadium.name || 'Stadium in play' : 'No stadium in play';
 
     // feature cards
+    this.featureEntries = state.featureCards;
     replace(this.featureList, state.featureCards.length === 0
       ? h('p', { class: 'empty' }, 'Nothing featured. Add a card to show it to the audience.')
-      : state.featureCards.map((card) => (card.separator
-        ? h('div', { class: 'feature-item feature-sign' },
+      : state.featureCards.map((card, index) => (card.separator
+        ? h('div', { class: 'feature-item feature-sign', draggable: 'true', dataset: { id: card.id, index: String(index) } },
           h('strong', { class: 'sign' }, card.separator),
           h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove the sign ${card.separator}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14)))
-        : h('div', { class: 'feature-item' },
-          h('img', { src: card.image, alt: '', loading: 'lazy' }),
+        : h('div', { class: 'feature-item', draggable: 'true', dataset: { id: card.id, index: String(index) } },
+          h('img', { src: card.image, alt: '', loading: 'lazy', draggable: 'false' }),
           h('div', { class: 'feature-text' }, h('strong', {}, card.name)),
           h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove ${card.name}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14))))));
   }

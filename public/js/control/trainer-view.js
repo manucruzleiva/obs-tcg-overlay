@@ -414,13 +414,23 @@ export class TrainerView {
       oncontextmenu: (event) => { event.preventDefault(); act('attachSpecialEnergy', { cardId: card.cardId, name: card.name, image: card.image, countsAsTurn }); }
     }, card.image && h('img', { src: card.image, alt: '', loading: 'lazy', draggable: 'false' })));
 
-    // How many Energy it costs to retreat (the card says, and an effect can change it)
+    // How many Energy it costs to retreat (the card says, and an effect can change it), and its maximum HP (an effect can raise it, in tens)
     const cost = Number.isInteger(pokemon.retreat) ? pokemon.retreat : 0;
     const retreat = h('div', { class: 'retreat-line' },
       h('span', { class: 'retreat-label' }, 'Retreat'),
       h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Retreat cost one less', disabled: cost <= 0 || undefined, onclick: () => act('setRetreat', { cost: cost - 1 }) }, icon('minus', 12)),
       h('output', { class: 'retreat-number', 'aria-label': 'Retreat cost' }, String(cost)),
-      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Retreat cost one more', disabled: cost >= 6 || undefined, onclick: () => act('setRetreat', { cost: cost + 1 }) }, icon('plus', 12)));
+      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Retreat cost one more', disabled: cost >= 6 || undefined, onclick: () => act('setRetreat', { cost: cost + 1 }) }, icon('plus', 12)),
+      h('span', { class: 'retreat-label max-label' }, 'Max HP'),
+      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Maximum HP 10 less', title: 'Maximum HP 10 less', disabled: hp.max <= 10 || undefined, onclick: () => act('setMaxHP', { max: hp.max - 10, keepDamage: true }) }, icon('minus', 12)),
+      h('output', { class: 'retreat-number max-hp-number', 'aria-label': 'Maximum HP' }, String(hp.max)),
+      h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Maximum HP 10 more', title: 'Maximum HP 10 more (the Pokémon has 10 more HP, with the damage it has taken)', disabled: hp.max <= 0 || hp.max >= 9990 || undefined, onclick: () => act('setMaxHP', { max: hp.max + 10, keepDamage: true }) }, icon('plus', 12)));
+
+    // Pokémon Tools: click one to take it off (what it added to the maximum HP goes with it)
+    const tools = (pokemon.tools || []).map((tool, index) => h('button', {
+      class: 'tool-chip', type: 'button', title: `${tool.name}${tool.hp ? ` (+${tool.hp} HP)` : ''}: click to take it off`, 'aria-label': `Take off ${tool.name}`,
+      onclick: () => act('removeTool', { index })
+    }, icon('tool', 12), tool.name, tool.hp ? h('span', { class: 'tool-hp' }, `+${tool.hp} HP`) : null));
 
     const abilities = (pokemon.abilities || []).map((ability, index) => h('button', {
       class: `ability-chip${ability.used ? ' used' : ''}`, type: 'button',
@@ -444,6 +454,9 @@ export class TrainerView {
     const buttons = compact
       ? [
         this.mini('Switch in', 'swap', () => act('swapWithActive')),
+        this.mini('Evolve', 'evolve', () => app.openEvolve(side, slot)),
+        this.mini('Go back a stage', 'devolve', () => app.devolve(side, slot)),
+        this.mini('Tool', 'tool', () => app.openTool(side, slot)),
         this.mini('Energy', 'bolt', () => app.openEnergy(side, slot)),
         this.mini('Damage', 'drop', () => app.openDamage('damage', side, slot)),
         this.mini('Knock out', 'skull', () => app.openKO(side, slot)),
@@ -451,6 +464,9 @@ export class TrainerView {
       ]
       : [
         this.mini('Deploy another (A)', 'swap', () => app.openPicker({ kind: 'active', side })),
+        this.mini('Evolve', 'evolve', () => app.openEvolve(side, -1)),
+        this.mini('Go back a stage', 'devolve', () => app.devolve(side, -1)),
+        this.mini('Tool', 'tool', () => app.openTool(side, -1)),
         this.mini('Energy (E)', 'bolt', () => app.openEnergy(side, -1)),
         this.mini('Damage (D)', 'drop', () => app.openDamage('damage', side, -1)),
         this.mini('Heal (H)', 'plus', () => app.openDamage('heal', side, -1)),
@@ -467,6 +483,7 @@ export class TrainerView {
         h('div', { class: `hp-line${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, hpValue),
         (energies.length > 0 || specials.length > 0) && h('div', { class: 'chips energies' }, [...energies, ...specials]),
         retreat,
+        tools.length > 0 && h('div', { class: 'chips tools' }, tools),
         abilities.length > 0 && h('div', { class: 'chips abilities' }, abilities),
         conditions,
         h('div', { class: 'mon-actions' }, buttons)));
