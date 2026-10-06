@@ -405,7 +405,7 @@ describe('overlay', { skip }, () => {
       await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
       await waitFaces('a', 1);
       assert.equal(await front('a', 0), 'none', 'face down: no card shows');
-      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), '"?"');
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), 'none', 'nothing is written on it: it is just the back');
       await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
       await page.waitForFunction(() => !document.querySelector('.trainer-a .prizes.is-hidden'));
       assert.match(await front('a', 0), /\/art\/one\.svg/);
@@ -452,7 +452,7 @@ describe('overlay', { skip }, () => {
       const faceUp = await shot('a', 0);
       await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
       await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
-      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), '"?"', 'a question mark, not the card');
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), 'none', 'no question mark, and not the card');
       assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').backgroundImage), 'none');
       assert.ok(!(await shot('a', 0)).equals(faceUp), 'face down');
       assert.deepEqual(await faces('a'), [true, true, false, false, false, false], 'the cards are still chosen');
@@ -1695,7 +1695,7 @@ describe('overlay', { skip }, () => {
         assert.notEqual(mask, 'rgba(0, 0, 0, 0)', 'the red mask is still drawn');
         await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
         await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
-        assert.equal(await page.$eval('.trainer-a .prize', (node) => getComputedStyle(node, '::after').content), '"?"');
+        assert.equal(await page.$eval('.trainer-a .prize', (node) => getComputedStyle(node, '::after').content), 'none');
       });
 
       it('ignores a picture it does not know, whatever a hand-written design says', async () => {

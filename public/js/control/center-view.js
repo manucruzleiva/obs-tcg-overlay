@@ -56,14 +56,13 @@ export class CenterView {
     const hype = (label, key, run, cls = '') => h('button', { class: `btn hype ${cls}`, type: 'button', onclick: run }, label, key && h('kbd', {}, key));
     // The pause is a switch: its label says what pressing it does, and it is lit while the game is paused
     this.pauseButton = h('button', { class: 'btn hype amber', type: 'button', 'aria-pressed': 'false', title: 'The overlay shows a PAUSED banner, grayed out, until you resume', onclick: () => app.togglePause() },
-      h('span', { class: 'pause-label' }, 'Pause game'), h('kbd', {}, 'Shift+P'));
+      h('span', { class: 'pause-label' }, 'Pause game'), h('kbd', {}, 'P'));
     const hypeBlock = h('section', { class: 'block hype-block' },
       h('div', { class: 'block-title' }, 'Hype', h('span', { class: 'hint' }, 'Shown on the overlay')),
       h('div', { class: 'hype-grid' },
         hype('Top Deck', 'T', () => app.act('action:toast', { action: 'topDeck', target: app.focus }), 'gold'),
         hype('Attack', 'C', () => app.openAttack(), 'red'),
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
-        hype('Pass turn', 'P', () => app.act('action:toast', { action: 'passTurn' }), 'blue'),
         hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), ''),
         // the victory banner for the player whose turn it is (before anybody has it, for the one the shortcuts are for)
         hype('Winner', '', () => app.act('action:toast', { action: app.prizeSide() === 'trainerA' ? 'trainerAWin' : 'trainerBWin' }), 'gold'),

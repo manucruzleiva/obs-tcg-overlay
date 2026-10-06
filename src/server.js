@@ -6,6 +6,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']); // where a connection from this very computer comes from
 const path = require('path');
 const compression = require('compression');
 const helmet = require('helmet');
@@ -314,7 +315,13 @@ async function initialize() {
     const hello = socket.handshake.auth || {};
     const clientId = typeof hello.clientId === 'string' && /^[\w-]{8,64}$/.test(hello.clientId) ? hello.clientId : socket.id;
     const authorized = auth.isAuthorized(socket.handshake.headers.cookie);
-    socket.data = { clientId, name: hello.name, canControl: hello.role === 'control' && authorized };
+    const canControl = hello.role === 'control' && authorized;
+    // somebody the host removed is not let back in as a producer for a while
+    if (canControl && session.isBanned(clientId, socket.handshake.address)) return next(new Error('kicked'));
+    // the host: a page opened on the computer that runs OTO (the connection comes from this computer, and was made to a local address)
+    const hostName = String(socket.handshake.headers.host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+    const host = canControl && LOOPBACK.has(socket.handshake.address) && ['localhost', '127.0.0.1', '::1'].includes(hostName);
+    socket.data = { clientId, name: hello.name, canControl, host };
     next();
   });
 

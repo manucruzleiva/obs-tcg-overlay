@@ -6,7 +6,8 @@
  * action; if another producer changed the same part of the game since then, the action is refused
  * instead of being applied twice.
  *
- * The producers can also work on a draft together: there is one for the whole table, started by any of them. Everybody's changes run against
+ * The producers can also work in draft mode together: there is one draft for the whole table, started by any of them, and it stays open
+ * (empty again) after it is sent, until one of them leaves the mode. Everybody's changes run against
  * a copy of the game that the overlay does not see, every producer sees the same preview and the same list of changes (and who made each),
  * and any of them can "send" it, which applies all of them to the live game in one step, or throw it away. Undoing a sent draft and then
  * redoing it opens the draft again with those changes, in case somebody wants to change something before it is sent once more.
@@ -25,6 +26,7 @@ const ACTION_EVENTS = [
 // Sockets that may change the game (control panels that passed the password check)
 const PRODUCERS = 'producers';
 const clientRoom = (clientId) => `client:${clientId}`;
+const KICK_MS = 60 * 60 * 1000; // how long a producer the host removed stays out
 
 // The state as clients see it: the keys of the card services are secrets and never leave the server. A page is told which
 // ones are saved, and how each looks masked (its first three characters, ***, its last four).
@@ -50,21 +52,29 @@ class Session {
     this.draft = null; // the draft of the table: { baseRevision, queue, fork, startedBy }, each change { event, payload, label, targets, conflict, by }
     this.announceId = 0;
     this.sfxId = 0;
+    this.kicked = new Map(); // "client:<id>" or "ip:<address>" -> when the host lets them back in again (a producer the host removed)
+  }
+
+  // Who may come in as a producer: not somebody the host removed a little while ago
+  isBanned(clientId, address) {
+    const now = Date.now();
+    for (const [key, until] of this.kicked) if (until <= now) this.kicked.delete(key);
+    return this.kicked.has(`client:${clientId}`) || (Boolean(address) && this.kicked.has(`ip:${address}`));
   }
 
   // ----------------------------------------------------------- connections
 
   // Wire up a freshly connected socket. socket.data holds { clientId, name, canControl }.
   attach(socket) {
-    const { clientId, name, canControl } = socket.data;
-    this.presence.join(socket.id, { role: canControl ? 'producer' : 'viewer', clientId, name });
+    const { clientId, name, canControl, host } = socket.data;
+    this.presence.join(socket.id, { role: canControl ? 'producer' : 'viewer', clientId, name, host: canControl && host });
 
     socket.emit('state:full', publicState(this.gs.state));
 
     if (canControl) {
       socket.join(PRODUCERS);
       socket.join(clientRoom(clientId));
-      socket.emit('you', this.presence.who(clientId));
+      socket.emit('you', this.youPayload(clientId));
       socket.emit('activity:history', this.collab.activity);
       if (this.draft) socket.emit('draft:state', this.draftPayload());
     }
@@ -77,8 +87,11 @@ class Session {
     socket.on('action:redo', (data) => this.guard(socket, () => this.redo(socket, data)));
     socket.on('draft:start', () => this.guard(socket, () => this.draftStart(socket)));
     socket.on('draft:discard', () => this.guard(socket, () => this.draftDiscard(socket)));
+    socket.on('draft:clear', () => this.guard(socket, () => this.draftClear(socket)));
     socket.on('draft:send', (data) => this.guard(socket, () => this.draftSend(socket, data)));
     socket.on('presence:rename', (data) => this.guard(socket, () => this.rename(socket, data)));
+    socket.on('presence:kick', (data) => this.guard(socket, () => this.kick(socket, data)));
+    socket.on('presence:forgive', () => this.guard(socket, () => this.forgive(socket)));
 
     socket.on('disconnect', () => this.detach(socket));
   }
@@ -107,16 +120,63 @@ class Session {
   broadcastPresence() {
     // (while there is a draft, every producer is editing it)
     const producers = this.presence.producers().map((p) => ({ ...p, drafting: Boolean(this.draft) }));
-    this.io.to(PRODUCERS).emit('presence', { producers, viewers: this.presence.viewerCount() });
+    this.io.to(PRODUCERS).emit('presence', { producers, viewers: this.presence.viewerCount(), kicked: this.kickedCount() });
   }
 
+  // What a producer's own page is told about them: who they are, and whether they are the host (the one on the computer that runs OTO)
+  youPayload(clientId) {
+    return { ...this.presence.who(clientId), host: this.presence.isHost(clientId) };
+  }
+
+  kickedCount() {
+    this.isBanned('', '');
+    return [...this.kicked.keys()].filter((key) => key.startsWith('client:')).length;
+  }
+
+  // Anybody can rename themselves; the host can rename any producer (`data.clientId` says whom)
   rename(socket, data) {
     if (!socket.data.canControl) return;
-    const { clientId } = socket.data;
-    if (this.presence.rename(clientId, data && data.name)) {
-      this.io.to(clientRoom(clientId)).emit('you', this.presence.who(clientId));
+    const target = data && typeof data.clientId === 'string' ? data.clientId : socket.data.clientId;
+    if (target !== socket.data.clientId && !this.presence.isHost(socket.data.clientId)) {
+      socket.emit('action:rejected', { reason: 'forbidden', message: 'Only the host (on the computer that runs OTO) can rename other producers.' });
+      return;
+    }
+    if (!this.presence.hasClient(target)) return;
+    if (this.presence.rename(target, data && data.name)) {
+      this.io.to(clientRoom(target)).emit('you', this.youPayload(target));
       this.broadcastPresence();
     }
+  }
+
+  // The host can remove a producer: their pages are closed, and they cannot come back for a while (until the host lets them in again)
+  kick(socket, data) {
+    if (!socket.data.canControl) return;
+    const target = data && typeof data.clientId === 'string' ? data.clientId : '';
+    if (!this.presence.isHost(socket.data.clientId)) {
+      socket.emit('action:rejected', { reason: 'forbidden', message: 'Only the host (on the computer that runs OTO) can remove producers.' });
+      return;
+    }
+    if (!target || target === socket.data.clientId || this.presence.isHost(target) || !this.presence.hasClient(target)) return;
+    const name = this.presence.who(target).name;
+    const until = Date.now() + KICK_MS;
+    this.kicked.set(`client:${target}`, until);
+    for (const socketId of this.presence.socketIdsOf(target)) {
+      const page = this.io.sockets.sockets.get(socketId);
+      if (!page) continue;
+      if (page.handshake.address) this.kicked.set(`ip:${page.handshake.address}`, until);
+      page.emit('kicked', { by: this.presence.who(socket.data.clientId).name });
+      page.disconnect(true);
+    }
+    const activity = this.collab.addActivity({ rev: this.gs.state.revision, by: this.presence.who(socket.data.clientId), label: `Removed ${name} from the session`, kind: 'system' });
+    this.io.to(PRODUCERS).emit('activity', activity);
+    this.broadcastPresence();
+  }
+
+  // The host lets everybody who was removed come back
+  forgive(socket) {
+    if (!socket.data.canControl || !this.presence.isHost(socket.data.clientId)) return;
+    this.kicked.clear();
+    this.broadcastPresence();
   }
 
   // --------------------------------------------------------------- actions
@@ -344,6 +404,24 @@ class Session {
     this.sendDraft();
   }
 
+  // Throw the changes of the draft away but stay in draft mode
+  draftClear(socket) {
+    if (!socket.data.canControl) return;
+    const draft = this.draft;
+    if (!draft) {
+      socket.emit('draft:state', { active: false });
+      return;
+    }
+    const count = draft.queue.length;
+    draft.queue = [];
+    draft.baseRevision = this.gs.state.revision;
+    draft.fork = this.gs.fork();
+    const by = this.presence.who(socket.data.clientId);
+    this.sendDraft();
+    this.io.to(PRODUCERS).emit('draft:cleared', { count, by: by.name, byClientId: by.clientId });
+  }
+
+  // Leave draft mode (what is in the draft is thrown away)
   draftDiscard(socket) {
     if (!socket.data.canControl) return;
     if (!this.draft) {
@@ -365,6 +443,11 @@ class Session {
       return;
     }
 
+    // (a draft with nothing in it starts from the game as it is now)
+    if (draft.queue.length === 0) {
+      draft.baseRevision = this.gs.state.revision;
+      draft.fork = this.gs.fork();
+    }
     const before = draft.fork.snapshot();
     try {
       spec.run(draft.fork);
@@ -379,6 +462,7 @@ class Session {
   // Replay a draft's actions on a fresh copy of the live game, marking the ones that touch something that
   // somebody else (not the one who made that change) changed since the draft began
   rebuildDraft(draft) {
+    if (draft.queue.length === 0) draft.baseRevision = this.gs.state.revision;
     const fork = this.gs.fork();
     for (const entry of draft.queue) {
       const conflict = entry.targets ? this.collab.findConflict(draft.baseRevision, entry.by.clientId, entry.targets) : null;
@@ -470,7 +554,7 @@ class Session {
       }
     }
 
-    this.draft = null;
+    this.draft = null; // (it is open again, empty, once what was sent is in the game: see below)
 
     if (applied.length) {
       const preview = applied.slice(0, 3).join('; ') + (applied.length > 3 ? '…' : '');
@@ -482,8 +566,10 @@ class Session {
     }
 
     const by = this.presence.who(clientId);
+    // draft mode goes on: the draft is empty again, for the next changes
+    this.draft = { baseRevision: this.gs.state.revision, queue: [], fork: this.gs.fork(), startedBy: draft.startedBy };
     this.io.to(PRODUCERS).emit('draft:sent', { applied: applied.length, skipped, by: by.name, byClientId: by.clientId });
-    this.io.to(PRODUCERS).emit('draft:state', { active: false });
+    this.sendDraft();
     this.broadcastPresence();
   }
 

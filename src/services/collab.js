@@ -117,8 +117,9 @@ class Presence {
     return name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24);
   }
 
-  join(socketId, { role, clientId, name }) {
-    this.sockets.set(socketId, { role, clientId });
+  // `host`: the page is open on the computer that runs OTO (the person who owns the session)
+  join(socketId, { role, clientId, name, host = false }) {
+    this.sockets.set(socketId, { role, clientId, host });
     if (role === 'producer') {
       const chosen = Presence.cleanName(name);
       if (chosen) this.names.set(clientId, chosen);
@@ -143,13 +144,27 @@ class Presence {
     return { clientId, name: this.names.get(clientId) || 'Someone' };
   }
 
-  // Producers with at least one open page, in the order they first appeared
+  // Producers with at least one open page, in the order they first appeared (`host`: one of the pages is on the computer that runs OTO)
   producers() {
     const tabs = new Map();
-    for (const { role, clientId } of this.sockets.values()) {
-      if (role === 'producer') tabs.set(clientId, (tabs.get(clientId) || 0) + 1);
+    for (const { role, clientId, host } of this.sockets.values()) {
+      if (role !== 'producer') continue;
+      const entry = tabs.get(clientId) || { count: 0, host: false };
+      entry.count++;
+      entry.host = entry.host || Boolean(host);
+      tabs.set(clientId, entry);
     }
-    return [...tabs].map(([clientId, count]) => ({ clientId, name: this.names.get(clientId), tabs: count }));
+    return [...tabs].map(([clientId, { count, host }]) => ({ clientId, name: this.names.get(clientId), tabs: count, host }));
+  }
+
+  isHost(clientId) {
+    for (const info of this.sockets.values()) if (info.clientId === clientId && info.role === 'producer' && info.host) return true;
+    return false;
+  }
+
+  // The sockets (pages) a producer has open
+  socketIdsOf(clientId) {
+    return [...this.sockets].filter(([, info]) => info.clientId === clientId).map(([socketId]) => socketId);
   }
 
   viewerCount() {

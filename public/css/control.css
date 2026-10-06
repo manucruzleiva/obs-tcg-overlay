@@ -145,6 +145,13 @@ kbd {
 .people { display: flex; gap: 6px; align-items: center; }
 .person { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 4px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border); font-size: 13px; }
 .person.me { border-color: rgba(124, 140, 255, 0.55); }
+.person.host .avatar { box-shadow: 0 0 0 2px var(--accent); }
+.person[title*="Double-click"] .person-name { cursor: text; }
+.person-edit { width: 120px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--accent); background: var(--bg-tertiary); color: var(--fg-primary); font-size: 13px; }
+.kick-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 0; background: transparent; color: var(--fg-muted); opacity: 0.6; }
+.kick-btn:hover, .kick-btn:focus-visible { opacity: 1; background: rgba(239, 68, 68, 0.25); color: var(--danger); }
+.forgive-btn[hidden] { display: none; }
+.kicked-screen { max-width: 520px; margin: 18vh auto 0; padding: 28px; text-align: center; border-radius: var(--radius); background: var(--bg-secondary); border: 1px solid var(--border); }
 .person.drafting { box-shadow: 0 0 0 2px var(--warning); }
 .avatar { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; color: #0a0d14; font: 800 11px var(--font-display); }
 .viewers { font-size: 12px; color: var(--fg-secondary); }
@@ -186,6 +193,11 @@ kbd {
   border: 1px solid var(--border);
 }
 .block + .block { margin-top: 12px; }
+.block.compact { padding: 10px 12px; }
+.block.compact .block-title { margin-bottom: 8px; }
+/* two boxes side by side (they stack when there is not room) */
+.panel-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
+.panel-row > .block { margin-top: 0; }
 .block-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font: 700 12px/1.2 var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-secondary); }
 .block-title.sub { margin-top: 16px; }
 .block-title .hint { margin-left: auto; font: 500 11px var(--font-body); letter-spacing: 0.02em; text-transform: none; color: var(--fg-muted); }
@@ -239,9 +251,14 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .record label { flex-direction: row; align-items: center; gap: 6px; }
 .record input { width: 62px; text-align: center; }
 
-.prize-row { display: flex; align-items: center; gap: 12px; }
+.prize-row { display: flex; align-items: center; gap: 8px; }
+.prize-row .prize-number { min-width: 22px; text-align: center; }
+.prizes.compact .pips { margin: 8px 0 0; }
+.prize-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.prize-extra .switch { font-size: 13px; }
+.prize-extra .penalty-row { margin-top: 0; gap: 8px; }
 .prize-number { min-width: 44px; text-align: center; font: 800 38px/1 var(--font-display); font-variant-numeric: tabular-nums; }
-.pips { display: flex; gap: 5px; margin-left: auto; }
+.pips { display: flex; gap: 5px; }
 .pip { position: relative; overflow: hidden; width: 22px; height: 30px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: transparent; transition: background var(--transition), transform var(--transition); }
 .pip.on { background: linear-gradient(145deg, var(--side), var(--bg-tertiary) 80%); border-color: rgba(255, 255, 255, 0.4); }
 .pip:hover { transform: translateY(-2px); }
@@ -272,8 +289,13 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .penalty-number.on { color: var(--danger); }
 
 .token-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.token-btn { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-tertiary); font-weight: 600; font-size: 13px; transition: opacity var(--transition); }
-.token-btn .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); }
+.token-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-tertiary); font-weight: 600; font-size: 12px; transition: opacity var(--transition); }
+.token-btn[hidden] { display: none; }
+.token-btn.once-game { border-style: dashed; }
+.turn-block .token-row { gap: 6px; }
+.turn-block .toggle-row { margin-top: 8px; gap: 6px 14px; }
+.turn-block .switch { font-size: 13px; }
+.token-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); }
 .token-btn .count { font-weight: 500; font-size: 12px; color: var(--fg-muted); }
 .token-btn.used { opacity: 0.6; }
 .token-btn.used .dot { background: transparent; border: 2px solid var(--fg-muted); box-shadow: none; }
@@ -322,14 +344,12 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .mon-name { font: 700 17px/1.15 var(--font-display); }
 .mon-card.compact .mon-name { font-size: 14px; }
 .hp-line { display: flex; align-items: center; gap: 10px; }
+.hp-line.warn .hp-value { color: var(--warning); }
+.hp-line.low .hp-value { color: var(--danger); }
 .hp-value { padding: 2px 8px; border-radius: 6px; border: 1px solid transparent; background: transparent; font: 700 14px var(--font-display); font-variant-numeric: tabular-nums; }
 .hp-value:hover { border-color: var(--border); background: rgba(255, 255, 255, 0.05); }
 .hp-editor { display: inline-flex; align-items: center; gap: 4px; }
 .hp-editor input { width: 66px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--accent); background: var(--bg-primary); color: var(--fg-primary); text-align: center; }
-.hp-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.4); overflow: hidden; }
-.hp-bar > div { height: 100%; background: var(--success); transition: width 0.4s ease; }
-.hp-bar.warn > div { background: var(--warning); }
-.hp-bar.low > div { background: var(--danger); }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .energy-chip { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--icon, none) center / contain no-repeat; }
 .no-energy-icons .energy-chip { border: 2px solid rgba(255, 255, 255, 0.75); background: var(--c, #ccc); }

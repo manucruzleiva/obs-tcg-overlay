@@ -110,9 +110,18 @@ describe('Presence', () => {
     presence.join('s3', { role: 'producer', clientId: 'alice' }); // a second tab
 
     assert.deepEqual(presence.producers(), [
-      { clientId: 'alice', name: 'Producer 1', tabs: 2 },
-      { clientId: 'bob', name: 'Producer 2', tabs: 1 }
+      { clientId: 'alice', name: 'Producer 1', tabs: 2, host: false },
+      { clientId: 'bob', name: 'Producer 2', tabs: 1, host: false }
     ]);
+
+    // the host is the one with a page on the computer that runs OTO, whichever of its pages that is
+    presence.join('s5', { role: 'producer', clientId: 'bob', host: true });
+    assert.equal(presence.isHost('bob'), true);
+    assert.equal(presence.isHost('alice'), false);
+    assert.equal(presence.producers()[1].host, true);
+    assert.deepEqual(presence.socketIdsOf('bob').sort(), ['s2', 's5']);
+    presence.leave('s5');
+    assert.equal(presence.isHost('bob'), false);
 
     presence.leave('s1');
     presence.leave('s3');

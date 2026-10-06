@@ -297,7 +297,7 @@ html, body {
 .prize-japanese .prize { background: url("/assets/cardbacks/japanese") center / cover no-repeat, var(--prize-japanese-drawn) center / cover no-repeat; }
 .prize-pokeball .prize { background: url("/assets/cardbacks/pokeball") center / cover no-repeat, var(--prize-pokeball-drawn) center / cover no-repeat; }
 
-/* a prize card that has a card chosen for it shows that card on its front, over its back (hidden prizes keep their back and the question mark) */
+/* a prize card that has a card chosen for it shows that card on its front, over its back (hidden prizes keep their back) */
 .prizes:not(.is-hidden) .prize.has-face::after {
   content: "";
   position: absolute;
@@ -310,16 +310,6 @@ html, body {
   background-repeat: no-repeat;
   background-size: calc(38px / var(--cp-w)) calc(53.2px / var(--cp-w));
   background-position: calc(-38px * var(--cp-x) / var(--cp-w)) calc(-53.2px * var(--cp-y) / var(--cp-w));
-}
-.prizes.is-hidden .prize::after {
-  content: "?";
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font: 800 22px var(--font-display);
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 2px 6px var(--shadow);
 }
 /* a penalty marks some of the prize cards red */
 .prize.penalty { border-color: var(--danger); box-shadow: 0 0 14px var(--danger); }

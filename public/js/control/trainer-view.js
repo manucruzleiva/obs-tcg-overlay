@@ -96,23 +96,23 @@ export class TrainerView {
     });
     // the arrows are for the player whose turn it is, and Shift + the arrows for the other one: which keys are this trainer's follows the turn
     this.prizeHint = h('span', { class: 'hint', title: 'The arrows are for the player whose turn it is, and Shift + the arrows for the other one' }, side === 'trainerA' ? '↑ ↓' : 'Shift + ↑ ↓');
-    const prizes = h('section', { class: 'block prizes' },
+    const prizes = h('section', { class: 'block prizes compact' },
       h('div', { class: 'block-title' }, 'Prize cards', this.prizeHint),
       h('div', { class: 'prize-row' },
-        h('button', { class: 'round-btn', type: 'button', 'aria-label': 'One prize card taken', onclick: () => act('prizeMinus') }, icon('minus')),
+        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'One prize card taken', onclick: () => act('prizeMinus') }, icon('minus', 14)),
         this.prizeCount,
-        h('button', { class: 'round-btn', type: 'button', 'aria-label': 'Give back a prize card', onclick: () => act('prizePlus') }, icon('plus')),
-        h('div', { class: 'pips' }, this.prizePips)),
-      h('div', { class: 'toggle-row' },
-        this.toggle('Hide prizes', (on) => act('togglePrizeHidden', { enabled: on }), (t) => { this.hiddenToggle = t; }),
+        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Give back a prize card', onclick: () => act('prizePlus') }, icon('plus', 14)),
         h('button', { class: 'btn tiny set-prizes', type: 'button', title: 'Choose the cards that are the prizes: they show on the prize cards of the overlay', onclick: () => app.openPrizes(side) }, 'Set prizes')),
-      // a penalty of this player is a number of prize cards the OTHER player counts as taken: that many of theirs are red on the overlay,
-      // and they need that many fewer to win
-      h('div', { class: 'penalty-row', title: 'The penalty of this player: the other player has that many prize cards in red, and needs that many fewer to win' },
-        h('span', { class: 'penalty-label' }, 'Penalty', h('small', {}, 'in red for the other player')),
-        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Penalty: one less', onclick: () => act('prizePenaltyMinus') }, icon('minus')),
-        this.penaltyCount,
-        h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Penalty: one more', onclick: () => act('prizePenaltyPlus') }, icon('plus'))));
+      h('div', { class: 'pips' }, this.prizePips),
+      h('div', { class: 'prize-extra' },
+        this.toggle('Hide prizes', (on) => act('togglePrizeHidden', { enabled: on }), (t) => { this.hiddenToggle = t; }),
+        // a penalty of this player is a number of prize cards the OTHER player counts as taken: that many of theirs are red on the overlay,
+        // and they need that many fewer to win
+        h('div', { class: 'penalty-row', title: 'The penalty of this player: the other player has that many prize cards in red, and needs that many fewer to win' },
+          h('span', { class: 'penalty-label' }, 'Penalty'),
+          h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Penalty: one less', onclick: () => act('prizePenaltyMinus') }, icon('minus', 14)),
+          this.penaltyCount,
+          h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Penalty: one more', onclick: () => act('prizePenaltyPlus') }, icon('plus', 14)))));
 
     // once-per-turn tokens (and the once-per-game ones) and locks
     const token = (label, kind) => h('button', { class: 'token-btn', type: 'button', onclick: () => this.stepToken(kind) },
@@ -124,12 +124,15 @@ export class TrainerView {
       gx: token('GX attack', 'gx'),
       vstar: token('VSTAR Power', 'vstar')
     };
-    const turnBlock = h('section', { class: 'block turn-block' },
-      h('div', { class: 'block-title' }, 'This turn', h('span', { class: 'hint' }, 'Shift+S supporter')),
-      h('div', { class: 'token-row' }, this.tokens.energy, this.tokens.stadium, this.tokens.supporter),
-      // once per game: they come back by themselves when the game ends
-      h('div', { class: 'block-title sub' }, 'This game', h('span', { class: 'hint' }, 'back when the game ends')),
-      h('div', { class: 'token-row' }, this.tokens.gx, this.tokens.vstar),
+    // the turn tracker: what is used each turn, then what is used once a game (GX and VSTAR: only when the overlay shows them; they come back
+    // by themselves when the game ends), then the locks
+    this.tokens.gx.classList.add('once-game');
+    this.tokens.vstar.classList.add('once-game');
+    this.tokens.gx.title = 'Once per game: it comes back when the game ends';
+    this.tokens.vstar.title = 'Once per game: it comes back when the game ends';
+    const turnBlock = h('section', { class: 'block turn-block compact' },
+      h('div', { class: 'block-title' }, 'Turn tracker', h('span', { class: 'hint' }, 'Shift+S supporter')),
+      h('div', { class: 'token-row' }, this.tokens.energy, this.tokens.stadium, this.tokens.supporter, this.tokens.gx, this.tokens.vstar),
       h('div', { class: 'toggle-row' },
         this.toggle('Item lock (I)', (on) => act('toggleItemLock', { enabled: on }), (t) => { this.itemToggle = t; }),
         this.toggle('Evolution lock (V)', (on) => act('toggleEvoLock', { enabled: on }), (t) => { this.evoToggle = t; })));
@@ -153,7 +156,7 @@ export class TrainerView {
     this.enableDragAndDrop(pokemon);
 
     return h('section', { class: `trainer-panel ${side === 'trainerA' ? 'side-a' : 'side-b'}`, dataset: { side } },
-      head, identity, prizes, turnBlock, pokemon);
+      head, identity, h('div', { class: 'panel-row' }, prizes, turnBlock), pokemon);
   }
 
   // A labelled on/off switch; `bind` receives it so update() can set it
@@ -276,7 +279,10 @@ export class TrainerView {
     this.itemToggle.input.checked = Boolean(trainer.locks.itemLock);
     this.evoToggle.input.checked = Boolean(trainer.locks.evoLock);
 
-    // tokens
+    // tokens (the GX attack and the VSTAR Power are not offered while the overlay does not show them)
+    const display = (state.settings && state.settings.display) || {};
+    this.tokens.gx.hidden = display.gxMarker !== true;
+    this.tokens.vstar.hidden = display.vstarMarker !== true;
     for (const [kind, resource] of [['energy', 'energyPerTurn'], ['stadium', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn'], ['gx', 'gxPerGame'], ['vstar', 'vstarPerGame']]) {
       const counter = trainer.resources[resource];
       if (!counter) continue;
@@ -458,7 +464,7 @@ export class TrainerView {
       art,
       h('div', { class: 'mon-info' },
         h('div', { class: 'mon-name' }, pokemon.name),
-        h('div', { class: 'hp-line' }, hpValue, h('div', { class: `hp-bar${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, h('div', { style: { width: `${percent}%` } }))),
+        h('div', { class: `hp-line${percent <= 25 ? ' low' : percent <= 50 ? ' warn' : ''}` }, hpValue),
         (energies.length > 0 || specials.length > 0) && h('div', { class: 'chips energies' }, [...energies, ...specials]),
         retreat,
         abilities.length > 0 && h('div', { class: 'chips abilities' }, abilities),

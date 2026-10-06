@@ -650,6 +650,81 @@ describe('control panel', { skip }, () => {
     assert.match(await page.locator('.people').textContent(), /Maya/);
   });
 
+  describe('the producers at the top', () => {
+    const person = (name) => page.locator('.people .person', { hasText: name });
+    const myName = () => page.evaluate(() => window.oto.conn.you.name);
+
+    it('rename you with a double click on your name: Enter keeps it, Escape leaves it', async () => {
+      const mine = page.locator('.people .person.me');
+      await mine.dblclick();
+      const box = page.locator('.people .person-edit');
+      await box.waitFor();
+      assert.equal(await box.inputValue(), await myName());
+      await box.fill('Nova');
+      await box.press('Escape');
+      assert.equal(await page.locator('.people .person-edit').count(), 0);
+      assert.notEqual(await myName(), 'Nova', 'Escape leaves the name as it was');
+
+      await page.locator('.people .person.me').dblclick();
+      await page.locator('.people .person-edit').fill('Nova');
+      await page.locator('.people .person-edit').press('Enter');
+      await page.waitForFunction(() => window.oto.conn.you.name === 'Nova');
+      assert.match(await page.locator('.people .person.me .person-name').textContent(), /Nova/);
+      assert.equal(await page.evaluate(() => window.localStorage.getItem('oto-producer-name')), 'Nova', 'and it is remembered');
+      await page.evaluate(() => window.oto.conn.rename('Producer 1'));
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('lets the host rename the others and remove them, and tells the one who is removed', async () => {
+      const guest = server.client({ clientId: 'ui-guest-producer', name: 'Guest', guest: true });
+      await guest.ready();
+      await person('Guest').waitFor();
+      assert.equal(await person('Guest').locator('.kick-btn').count(), 1, 'the host can remove them');
+      assert.equal(await person('Maya').locator('.kick-btn').count(), 0, 'but not the other pages of the computer that runs OTO');
+
+      const told = guest.expect('you', (you) => you.name === 'Sam');
+      await person('Guest').dblclick();
+      await page.locator('.people .person-edit').fill('Sam');
+      await page.locator('.people .person-edit').press('Enter');
+      await told;
+      await person('Sam').waitFor();
+
+      const gone = guest.expect('kicked');
+      await person('Sam').locator('.kick-btn').click();
+      const ask = page.locator('.modal[aria-label="Remove Sam?"]');
+      await ask.waitFor();
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      assert.equal(guest.socket.connected, true, 'asked first, and Cancel leaves them');
+      await person('Sam').locator('.kick-btn').click();
+      await ask.getByRole('button', { name: 'Remove', exact: true }).click();
+      assert.equal((await gone).by.length > 0, true);
+      await page.waitForFunction(() => ![...document.querySelectorAll('.people .person-name')].some((node) => node.textContent === 'Sam'));
+      assert.match(await page.locator('.forgive-btn').textContent(), /Let 1 removed back in/);
+      await page.locator('.forgive-btn').click();
+      await page.waitForFunction(() => document.querySelector('.forgive-btn').hidden);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('offers nothing about the others to a page that is not the host', async () => {
+      await page.evaluate(() => {
+        const me = window.oto.conn.you;
+        window.oto.topbar.updatePresence({ viewers: 0, kicked: 0, producers: [{ clientId: me.clientId, name: me.name, host: false }, { clientId: 'someone-else-1', name: 'Other', host: true }, { clientId: 'someone-else-2', name: 'Third', host: false }] }, { ...me, host: false });
+      });
+      assert.equal(await page.locator('.people .kick-btn').count(), 0, 'no remove buttons');
+      await person('Other').dblclick();
+      assert.equal(await page.locator('.people .person-edit').count(), 0, 'and no renaming of the others');
+      await page.locator('.people .person.me').dblclick();
+      assert.equal(await page.locator('.people .person-edit').count(), 1, 'but your own name');
+      await page.locator('.people .person-edit').press('Escape');
+    });
+
+    it('shows a page that was removed what happened, and stops it', async () => {
+      await page.evaluate(() => window.oto.conn.emit('kicked', { by: 'Host' }));
+      assert.match(await page.locator('.kicked-screen h2').textContent(), /You were removed from this session/);
+      assert.equal(await page.locator('.topbar').count(), 0, 'the control panel is gone');
+    });
+  });
+
   it('keeps two producers\' pages in step', async () => {
     const second = await openPage(browser, `${server.base}/control`);
     extra.push(second.context());
@@ -1131,9 +1206,17 @@ describe('control panel', { skip }, () => {
     assert.deepEqual(page.problems, []);
   });
 
-  it('marks the GX attack and the VSTAR Power used with their own tokens, and a new game gives them back', async () => {
+  it('marks the GX attack and the VSTAR Power used with their own tokens (only while the overlay shows them), and a new game gives them back', async () => {
     const token = (side, name) => page.locator(`.trainer-panel.side-${side} .token-btn`, { hasText: name });
-    assert.match(await page.locator('.trainer-panel.side-a .block-title.sub', { hasText: 'This game' }).textContent(), /back when the game ends/);
+    // the overlay does not show them at first, so the control panel does not offer them
+    assert.equal(await token('a', 'GX attack').isHidden(), true);
+    assert.equal(await token('a', 'VSTAR Power').isHidden(), true);
+    await producer.act('action:settings', { action: 'update', display: { gxMarker: true } });
+    await page.waitForFunction(() => !document.querySelector('.trainer-panel.side-a .token-btn.once-game').hidden);
+    assert.equal(await token('a', 'VSTAR Power').isHidden(), true, 'only the one that is switched on');
+    await producer.act('action:settings', { action: 'update', display: { gxMarker: true, vstarMarker: true } });
+    await page.waitForFunction(() => [...document.querySelectorAll('.trainer-panel.side-a .token-btn.once-game')].every((node) => !node.hidden));
+    assert.match(await token('a', 'GX attack').getAttribute('title'), /Once per game/);
     assert.match(await token('a', 'GX attack').textContent(), /ready/);
     assert.match(await token('a', 'VSTAR Power').textContent(), /ready/);
 
@@ -1185,7 +1268,7 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.matchScore.trainerAWins, 0);
   });
 
-  it('pauses the game with the button or Shift+P, and the button says what it does next', async () => {
+  it('pauses the game with the button or P, and the button says what it does next', async () => {
     const button = page.locator('.hype-block .btn.hype.amber');
     assert.match(await button.textContent(), /Pause game/);
     assert.equal(await button.getAttribute('aria-pressed'), 'false');
@@ -1197,14 +1280,15 @@ describe('control panel', { skip }, () => {
     assert.match(await page.locator('.feed').textContent(), /Game paused/);
 
     const resumed = producer.expect('announce', (announcement) => announcement.type === 'resume', 6000);
-    await press('Shift+P');
+    await press('p');
     await expectLive((state) => state.paused, false);
     assert.equal((await resumed).title, 'GAME RESUMED');
     await page.waitForFunction(() => /Pause game/.test(document.querySelector('.hype-block .btn.hype.amber').textContent));
 
-    // P alone is still the Pass Turn announcement
+    // there is no Pass turn button in the Hype box: Space passes the turn (and announces it)
+    assert.equal(await page.locator('.hype-grid button', { hasText: 'Pass turn' }).count(), 0);
     const passed = producer.expect('announce', (announcement) => announcement.type === 'passturn');
-    await press('p');
+    await press('Space');
     await passed;
     assert.equal((await live()).paused, false);
   });
@@ -1306,6 +1390,17 @@ describe('control panel', { skip }, () => {
       await page.waitForSelector('.modal .card-tile');
       assert.equal(await star('Pikachu ex').getAttribute('aria-pressed'), 'false');
       assert.ok(Number(await star('Pikachu ex').evaluate((node) => getComputedStyle(node).opacity)) > 0.4, 'it can be seen without pointing at the card');
+
+      // the star is drawn (it used to be an empty button), and a right click on the card does what a click on the star does
+      assert.ok(await star('Pikachu ex').locator('svg').count() > 0, 'the star has its icon');
+      const drawn = await star('Pikachu ex').boundingBox();
+      assert.ok(drawn.width >= 20 && drawn.height >= 20, `big enough to click: ${drawn.width} x ${drawn.height}`);
+      await page.locator('.modal .card-tile', { hasText: 'Pikachu ex' }).locator('.card-pick').click({ button: 'right' });
+      await expectLive((state) => state.favoriteCardIds, ['sv-1']);
+      await page.waitForFunction(() => document.querySelector('.modal .star-btn').classList.contains('on'));
+      await page.locator('.modal .card-tile', { hasText: 'Pikachu ex' }).locator('.card-pick').click({ button: 'right' });
+      await expectLive((state) => state.favoriteCardIds, []);
+      assert.equal(await page.locator('.modal').count(), 1, 'the picker stays open: a right click does not pick the card');
 
       await star('Pikachu ex').click();
       await expectLive((state) => state.favoriteCardIds, ['sv-1']);
@@ -1456,13 +1551,14 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.trainerB.active.hp.current, 90);
   });
 
-  it('fires the hype shortcuts T and P', async () => {
+  it('fires the hype shortcut T, and P pauses', async () => {
     const topdeck = producer.expect('announce', (announcement) => announcement.type === 'topdeck');
     await press('t');
     assert.equal((await topdeck).side, 'trainerA');
-    const passed = producer.expect('announce', (announcement) => announcement.type === 'passturn');
     await press('p');
-    await passed;
+    await expectLive((state) => state.paused, true);
+    await press('p');
+    await expectLive((state) => state.paused, false);
   });
 
   it('undoes with Ctrl+Z and redoes with Ctrl+Y', async () => {
@@ -1531,10 +1627,74 @@ describe('control panel', { skip }, () => {
 
     await page.locator('.draft-banner button', { hasText: 'Send to overlay' }).click();
     await expectLive((state) => state.trainerA.prizes.count, 4);
-    await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
     await page.waitForSelector('.toast-success');
     assert.match((await toasts()).join(' '), /Sent 2 changes to the overlay/);
     assert.match(await page.locator('.feed').textContent(), /Sent 2 changes/);
+
+    // draft mode does not turn off: the banner stays, empty, and the next change waits in it
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
+    assert.equal(await page.locator('.draft-banner').isVisible(), true);
+    assert.match(await page.locator('.draft-toggle').textContent(), /Draft mode: on/);
+    await press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change waiting'));
+    assert.equal((await live()).trainerA.prizes.count, 4, 'the overlay did not move');
+    assert.equal((await prizeNumber('a').textContent()).trim(), '3', 'the page shows the draft');
+  });
+
+  it('turns draft mode on and off with Shift+Enter, and asks what to do with changes that are waiting', async () => {
+    assert.equal(await page.locator('.draft-banner').isHidden(), true);
+    await press('Shift+Enter');
+    await page.waitForSelector('.draft-banner:not([hidden])');
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
+    assert.equal(await page.locator('.draft-banner button', { hasText: 'Send to overlay' }).isDisabled(), true, 'nothing to send yet');
+    assert.equal(await page.locator('.draft-banner button', { hasText: 'Throw changes away' }).isDisabled(), true);
+
+    // nothing waiting: leaves at once
+    await press('Shift+Enter');
+    await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+    assert.match(await page.locator('.draft-toggle').textContent(), /^\s*Draft mode\s*$/);
+
+    // with changes waiting it asks: stay, throw them away and leave, or send and leave
+    await press('Shift+Enter');
+    await page.waitForSelector('.draft-banner:not([hidden])');
+    await press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+    await press('Shift+Enter');
+    const ask = page.locator('.modal[aria-label="You are in draft mode"]');
+    await ask.waitFor();
+    await ask.getByRole('button', { name: 'Stay in draft mode' }).click();
+    await dialogClosed();
+    assert.equal(await page.locator('.draft-banner').isVisible(), true);
+
+    await press('Shift+Enter');
+    await ask.waitFor();
+    await ask.getByRole('button', { name: 'Throw them away and leave' }).click();
+    await dialogClosed();
+    await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+    assert.equal((await live()).trainerA.prizes.count, 6, 'nothing was sent');
+
+    await press('Shift+Enter');
+    await page.waitForSelector('.draft-banner:not([hidden])');
+    await press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
+    await press('Shift+Enter');
+    await ask.waitFor();
+    await ask.getByRole('button', { name: 'Send and leave' }).click();
+    await expectLive((state) => state.trainerA.prizes.count, 5);
+    await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+    assert.deepEqual(page.problems, []);
+  });
+
+  it('opens the overlay in the browser when Preview is clicked with Shift, and shows it in a window otherwise', async () => {
+    const popup = page.waitForEvent('popup');
+    await page.locator('.preview-btn').click({ modifiers: ['Shift'] });
+    const opened = await popup;
+    assert.match(opened.url(), /\/overlay$/);
+    assert.equal(await page.locator('.modal').count(), 0, 'no window of this page');
+    await opened.close();
+    await page.locator('.preview-btn').click();
+    await page.waitForSelector('.modal .preview-frame');
+    await press('Escape');
   });
 
   it('sends a draft with Ctrl+Enter', async () => {
@@ -1546,14 +1706,15 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.trainerA.prizes.count, 5);
   });
 
-  it('can throw a draft away', async () => {
+  it('can throw the changes of a draft away and stay in draft mode', async () => {
     await page.locator('.draft-toggle').click();
     await page.waitForSelector('.draft-banner:not([hidden])');
     await press('ArrowDown');
     await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
-    await page.locator('.draft-banner button', { hasText: 'Discard' }).click();
-    await page.locator('.modal button', { hasText: 'Discard' }).click();
-    await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+    await page.locator('.draft-banner button', { hasText: 'Throw changes away' }).click();
+    await page.locator('.modal button', { hasText: 'Throw away' }).click();
+    await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
+    assert.equal(await page.locator('.draft-banner').isVisible(), true, 'still in draft mode');
     assert.equal((await live()).trainerA.prizes.count, 6);
     await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '6');
   });
@@ -1573,8 +1734,8 @@ describe('control panel', { skip }, () => {
       await page.locator('.draft-toggle').click();
       await second.waitForSelector('.draft-banner:not([hidden])');
       await second.waitForSelector('.toast');
-      assert.match((await second.locator('.toast').allTextContents()).join(' '), new RegExp(`${await youAre(page)} started a draft`));
-      assert.match(await second.locator('.draft-toggle').textContent(), /Editing draft/);
+      assert.match((await second.locator('.toast').allTextContents()).join(' '), new RegExp(`${await youAre(page)} turned draft mode on`));
+      assert.match(await second.locator('.draft-toggle').textContent(), /Draft mode: on/);
       assert.match(await second.locator('.draft-title').textContent(), /shared with the other producers/);
 
       await press('ArrowDown'); // from this page
@@ -1591,8 +1752,10 @@ describe('control panel', { skip }, () => {
 
       await second.locator('.draft-banner button', { hasText: 'Send to overlay' }).click();
       await expectLive((state) => state.trainerA.prizes.count, 4);
-      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
-      await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      // (the draft is empty again, for everybody, and still open)
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
+      await second.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
+      assert.equal(await second.locator('.draft-banner').isVisible(), true);
       await page.waitForFunction((name) => [...document.querySelectorAll('.toast')].some((toast) => toast.textContent.includes(`${name} sent 2 changes to the overlay`)), theirs);
       assert.deepEqual(page.problems, []);
     });
@@ -1604,7 +1767,7 @@ describe('control panel', { skip }, () => {
       await second.locator('.draft-toggle').click(); // nothing in it yet, so no question
       await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
       await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
-      await page.waitForFunction((name) => [...document.querySelectorAll('.toast')].some((toast) => toast.textContent.includes(`${name} threw the draft away`)), await youAre(second));
+      await page.waitForFunction((name) => [...document.querySelectorAll('.toast')].some((toast) => toast.textContent.includes(`${name} left draft mode`)), await youAre(second));
       assert.equal((await live()).trainerA.prizes.count, 6);
     });
 
@@ -1627,7 +1790,7 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('2 changes'));
       await page.locator('.draft-banner button', { hasText: 'Send to overlay' }).click();
       await expectLive((state) => state.trainerA.prizes.count, 4);
-      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
 
       await press('Control+z');
       await expectLive((state) => state.trainerA.prizes.count, 6);
@@ -1645,7 +1808,7 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('3 changes'));
       await press('Control+Enter');
       await expectLive((state) => state.trainerA.prizes.count, 3);
-      await page.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
     });
 
     it('opens again for the other producers too', async () => {
@@ -1656,7 +1819,7 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('1 change'));
       await press('Control+Enter');
       await expectLive((state) => state.trainerA.prizes.count, 5);
-      await second.waitForFunction(() => document.querySelector('.draft-banner').hidden);
+      await second.waitForFunction(() => document.querySelector('.draft-count').textContent.includes('No changes waiting'));
       await press('Control+z');
       await expectLive((state) => state.trainerA.prizes.count, 6);
       await second.waitForFunction(() => document.querySelector('.trainer-panel.side-a .prize-number').textContent.trim() === '6');

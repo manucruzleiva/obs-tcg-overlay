@@ -105,6 +105,12 @@ export class Connection {
       this.emit('activity', this.activity);
     });
 
+    // the host removed this producer: the page is closed for them, and they cannot come back for a while
+    socket.on('kicked', (data) => { socket.disconnect(); this.emit('kicked', data); });
+    socket.on('connect_error', (error) => {
+      if (error && error.message === 'kicked') { socket.disconnect(); this.emit('kicked', {}); }
+    });
+
     socket.on('draft:state', (draft) => {
       this.draft = draft.active ? draft : { active: false };
       if (draft.ack !== undefined && this.pending.has(draft.ack)) this.settle(draft.ack, { ok: true });
@@ -112,6 +118,7 @@ export class Connection {
     });
     socket.on('draft:sent', (result) => this.emit('draft-sent', result));
     socket.on('draft:closed', (result) => this.emit('draft-closed', result));
+    socket.on('draft:cleared', (result) => this.emit('draft-cleared', result));
     socket.on('draft:conflicts', (data) => this.emit('draft-conflicts', data));
 
     socket.on('action:applied', (answer) => this.settle(answer.seq, { ok: true, applied: answer }));
@@ -164,12 +171,22 @@ export class Connection {
   redo() { return this.send('action:redo'); }
 
   startDraft() { this.socket.emit('draft:start'); }
-  discardDraft() { this.socket.emit('draft:discard'); }
+  discardDraft() { this.socket.emit('draft:discard'); } // leave draft mode (what is in the draft is thrown away)
+  clearDraft() { this.socket.emit('draft:clear'); } // throw the changes away and stay in draft mode
   sendDraft(mode) { this.socket.emit('draft:send', { mode }); }
 
-  rename(name) {
+  // Rename yourself, or (the host only) another producer
+  rename(name, clientId) {
+    if (clientId && clientId !== this.clientId) {
+      this.socket.emit('presence:rename', { name, clientId });
+      return;
+    }
     this.name = name;
     try { window.localStorage.setItem('oto-producer-name', name); } catch (error) { /* a private window cannot remember it */ }
     this.socket.emit('presence:rename', { name });
   }
+
+  // The host removes a producer (their pages close and they stay out for a while), or lets everybody who was removed back in
+  kick(clientId) { this.socket.emit('presence:kick', { clientId }); }
+  forgive() { this.socket.emit('presence:forgive'); }
 }

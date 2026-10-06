@@ -85,8 +85,8 @@ Set the trainers' names and nationalities, pick their Pokémon, and keep score a
 | `X` | Ability tokens: mark a Pokémon's ability used (once per turn, or once per game) |
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack (name and damage, and apply the damage if you like) |
-| `T` / `P` | Top Deck / Pass Turn announcements |
-| `Shift` + `P` | Pause the game (a banner, and the rest grayed out), or resume it |
+| `T` | Top Deck announcement |
+| `P` | Pause the game (a banner, and the rest grayed out), or resume it |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
 | `Ctrl` + `Enter` | Send your draft to the overlay (see [Producing together](#producing-together)) |
@@ -104,7 +104,7 @@ Shortcuts are ignored while you are typing in a text box.
 - **Set prizes:** the **Set prizes** button on a player's Prize cards opens a dialog with the six prize cards. Choose the card of each with the card search, then **Set prizes**: those cards show on that player's prize cards on the overlay, and the small prize pips in the control panel show them too. The prize cards start **face down** (hidden, with a question mark, and the English card back) at the beginning of each game; the **Hide prizes** switch turns them face up, and then the cards you set show in place of the card back, cropped as the design says. The **Hide prizes** switch turns them face down with a question mark; the prize cards that are taken fade out, from the right, with their card still on them. They start again for the next game.
 - **Penalties:** a penalty is set on the player who got it. That many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
 - **Victory by itself:** when a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and **that player gets a game win**. **Next game** (in the Match box) starts the next game: prizes and penalties start again and the GX and VSTAR markers come back, while the score and the names stay. **New match** starts over with the score at 0.
-- **Pause:** **Pause game** (or `Shift+P`) puts a PAUSED banner in the middle of the overlay and grays out everything else until you resume. Resuming shows a short "game resumed" banner.
+- **Pause:** **Pause game** (or `P`) puts a PAUSED banner in the middle of the overlay and grays out everything else until you resume. Resuming shows a short "game resumed" banner.
 - **Stadium:** putting a Stadium in play uses the Stadium play of the player who played it (the one whose turn it is, unless you pick the other). Turn the switch in the picker off for a correction, or a Stadium an effect put there.
 - **Bench size:** `Shift+B` (or **Reset to 5** next to Edit bench) puts the bench back to 5 slots when a Stadium that made it bigger is gone.
 - **The Pokémon cards and the Stadium in the control panel** show just the art of the card. Settings, then General, can show the whole card instead (this is only for your browser: the overlay has its own crop, set by a design).

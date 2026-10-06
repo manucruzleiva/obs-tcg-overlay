@@ -204,23 +204,28 @@ async function startMockScrydex({ cards = [], key = 'test-key-0123456789', team 
 }
 
 class Client {
-  constructor(base, { clientId, name, role = 'control', cookie } = {}) {
+  // `guest`: connect the way another device on the network does (to the computer's network address, not to a local one), so the page
+  // is not the host's
+  constructor(base, { clientId, name, role = 'control', cookie, guest = false } = {}) {
     this.seq = 0;
     this.state = null;
     this.events = {};
     this.watchers = new Set();
+    this.connectError = null;
 
+    const headers = { ...(cookie ? { cookie } : {}), ...(guest ? { Host: '192.168.1.50:6767' } : {}) };
     this.socket = io(base, {
       transports: ['websocket'],
       auth: { role, clientId, name },
-      extraHeaders: cookie ? { cookie } : undefined,
+      extraHeaders: Object.keys(headers).length ? headers : undefined,
       reconnection: false
     });
+    this.socket.on('connect_error', (error) => { this.connectError = error.message; });
 
     for (const event of [
       'state:full', 'state:update', 'action:applied', 'action:rejected', 'announce', 'presence', 'activity',
       'activity:history', 'you', 'draft:state', 'draft:sent', 'draft:closed', 'draft:conflicts', 'theme:changed',
-      'sfx', 'sounds:changed', 'catalog:progress'
+      'sfx', 'sounds:changed', 'catalog:progress', 'kicked'
     ]) {
       this.socket.on(event, (data) => this.record(event, data));
     }

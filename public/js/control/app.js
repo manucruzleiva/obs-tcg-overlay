@@ -57,12 +57,12 @@ export const KEYMAP = [
 
   { group: 'Hype', keys: ['C'], label: 'Announce an attack', test: plain('c'), run: (app) => app.openAttack() },
   { group: 'Hype', keys: ['T'], label: 'Announce a Top Deck', test: plain('t'), run: (app) => app.act('action:toast', { action: 'topDeck', target: app.focus }) },
-  { group: 'Hype', keys: ['P'], label: 'Announce a passed turn', test: plain('p'), run: (app) => app.act('action:toast', { action: 'passTurn' }) },
-  { group: 'Hype', keys: ['Shift', 'P'], label: 'Pause the game, or resume it (the overlay is grayed out while it is paused)', test: shifted('p'), run: (app) => app.togglePause() },
+  { group: 'Hype', keys: ['P'], label: 'Pause the game, or resume it (the overlay is grayed out while it is paused)', test: plain('p'), run: (app) => app.togglePause() },
 
   { group: 'History', keys: ['Ctrl', 'Z'], label: 'Undo', test: (e) => ctrl('z')(e) && !e.shiftKey, run: (app) => app.undo() },
   { group: 'History', keys: ['Ctrl', 'Y'], label: 'Redo (also Ctrl+Shift+Z)', test: (e) => ctrl('y')(e) || (ctrl('z')(e) && e.shiftKey), run: (app) => app.redo() },
-  { group: 'History', keys: ['Ctrl', 'Enter'], label: 'Send your draft to the overlay', test: (e) => ctrl('enter')(e), run: (app) => app.draftShortcut() },
+  { group: 'History', keys: ['Ctrl', 'Enter'], label: 'Send the draft to the overlay (draft mode goes on)', test: (e) => ctrl('enter')(e), run: (app) => app.draftShortcut() },
+  { group: 'History', keys: ['Shift', 'Enter'], label: 'Draft mode on or off: in draft mode changes wait until they are sent', test: (e) => noMods(e) && e.shiftKey && e.key === 'Enter', run: (app) => app.toggleDraft() },
 
   { group: 'Other', keys: ['?'], label: 'Show these shortcuts', test: (e) => e.key === '?', run: (app) => app.openHelp() },
   { group: 'Other', keys: ['Esc'], label: 'Close a dialog', test: () => false, run: () => {} }
@@ -166,7 +166,7 @@ class App {
     conn.on('draft', (draft) => {
       // somebody else started the draft: this page is in it too, so say so
       if (draft.active && !this.draftWasActive && draft.startedBy && conn.you && draft.startedBy.clientId !== conn.you.clientId) {
-        toast(`${draft.startedBy.name} started a draft. You all edit it together until it is sent or thrown away.`, 'info', 5000);
+        toast(`${draft.startedBy.name} turned draft mode on. Changes wait in the draft until somebody sends them; Shift+Enter leaves draft mode.`, 'info', 5000);
       }
       this.draftWasActive = draft.active;
       this.render();
@@ -178,6 +178,7 @@ class App {
       this.topbar.updateHistory(entries.length > 0);
     });
     conn.on('rejected', (rejected) => this.explainRejection(rejected));
+    conn.on('kicked', () => this.showKicked());
     conn.on('draft-conflicts', (data) => modals.openDraftConflicts(this, data));
     // A card library or picture download ended: say how it went, once per download
     conn.on('catalog:progress', ({ job }) => {
@@ -190,7 +191,10 @@ class App {
       toast(`${mine ? 'Sent' : `${by} sent`} ${applied} change${applied === 1 ? '' : 's'} to the overlay${skipped.length ? `, ${skipped.length} left out` : ''}.`, skipped.length ? 'warning' : 'success');
     });
     conn.on('draft-closed', ({ by, byClientId }) => {
-      if (conn.you && byClientId !== conn.you.clientId) toast(`${by} threw the draft away.`, 'info');
+      if (conn.you && byClientId !== conn.you.clientId) toast(`${by} left draft mode.`, 'info');
+    });
+    conn.on('draft-cleared', ({ count, by, byClientId }) => {
+      if (conn.you && byClientId !== conn.you.clientId && count > 0) toast(`${by} threw the ${count} change${count === 1 ? '' : 's'} of the draft away.`, 'info');
     });
   }
 
@@ -230,12 +234,33 @@ class App {
       case 'invalid': toast(rejected.message || 'That is not allowed.', 'error'); break;
       case 'offline': toast('Not connected to the server. Reconnecting…', 'error'); break;
       case 'timeout': toast('The server did not answer. Check the connection.', 'error'); break;
+      case 'forbidden': toast(rejected.message || 'Only the host can do that.', 'warning'); break;
       case 'read-only': toast('This screen is not signed in as a producer. Reload the page and sign in.', 'error'); break;
       case 'nothing-to-undo': toast('Nothing to undo.', 'info'); break;
       case 'nothing-to-redo': toast('Nothing to redo.', 'info'); break;
       case 'no-draft': toast('There is no draft open.', 'warning'); break;
       default: toast(rejected.message || 'That did not work.', 'error');
     }
+  }
+
+  // The host changed the name of a producer (or yours changed it yourself: the same call)
+  renameProducer(person, name) {
+    this.conn.rename(name, person.clientId);
+  }
+
+  // The host removes a producer: their pages close, and they cannot come back for an hour unless the host lets them
+  async kickProducer(person) {
+    if (!(await confirmDialog({ title: `Remove ${person.name}?`, message: `${person.name} is disconnected and cannot come back for an hour, unless you let the removed producers back in.`, confirmLabel: 'Remove', danger: true }))) return;
+    this.conn.kick(person.clientId);
+  }
+
+  // Shown to a producer the host removed: the page stops here
+  showKicked() {
+    closeAllModals();
+    const message = h('div', { class: 'kicked-screen', role: 'alert' },
+      h('h2', {}, 'You were removed from this session'),
+      h('p', {}, 'The host of this OTO removed you as a producer. Ask them if you should be let back in.'));
+    document.body.replaceChildren(message);
   }
 
   async undo() {
@@ -273,15 +298,16 @@ class App {
     this.openDraftChoice();
   }
 
+  // Leaving draft mode with changes in the draft: send them, throw them away, or stay
   openDraftChoice() {
     const count = this.conn.draft.changes.length;
     openModal({
-      title: 'You are editing a draft', size: 'sm', name: 'draft-choice',
+      title: 'You are in draft mode', size: 'sm', name: 'draft-choice',
       body: h('p', { class: 'confirm-text' }, `You have ${count} change${count === 1 ? '' : 's'} that are not on the overlay yet.`),
       footer: [
-        h('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Keep editing'),
-        h('button', { class: 'btn danger-text', type: 'button', onclick: () => { closeModal(); this.conn.discardDraft(); } }, 'Discard'),
-        h('button', { class: 'btn primary', type: 'button', 'data-autofocus': true, onclick: () => { closeModal(); this.sendDraft('safe'); } }, 'Send to overlay')
+        h('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Stay in draft mode'),
+        h('button', { class: 'btn danger-text', type: 'button', onclick: () => { closeModal(); this.conn.discardDraft(); } }, 'Throw them away and leave'),
+        h('button', { class: 'btn primary', type: 'button', 'data-autofocus': true, onclick: () => { closeModal(); this.sendAndLeave(); } }, 'Send and leave')
       ]
     });
   }
@@ -290,15 +316,26 @@ class App {
     this.conn.sendDraft(mode);
   }
 
-  async discardDraft() {
+  // Send what is in the draft, and leave draft mode once it is on the overlay (if there is a clash, the draft stays so it can be dealt with)
+  sendAndLeave() {
+    const offs = [];
+    const done = () => { for (const off of offs) off(); };
+    offs.push(this.conn.on('draft-sent', () => { done(); this.conn.discardDraft(); }));
+    offs.push(this.conn.on('draft-conflicts', done));
+    this.sendDraft('safe');
+  }
+
+  // Throw the changes of the draft away, and stay in draft mode
+  async clearDraft() {
     const count = (this.conn.draft.changes || []).length;
-    if (count > 0 && !(await confirmDialog({ title: 'Discard the draft?', message: `${count} change${count === 1 ? '' : 's'} will be thrown away. Nothing has been sent to the overlay.`, confirmLabel: 'Discard', danger: true }))) return;
-    this.conn.discardDraft();
+    if (count === 0) return;
+    if (!(await confirmDialog({ title: 'Throw the changes away?', message: `${count} change${count === 1 ? '' : 's'} will be thrown away. Nothing has been sent to the overlay, and draft mode goes on.`, confirmLabel: 'Throw away', danger: true }))) return;
+    this.conn.clearDraft();
   }
 
   draftShortcut() {
     if (this.conn.draft.active) this.sendDraft('safe');
-    else toast('Start a draft with "Edit & send" first.', 'info');
+    else toast('Turn draft mode on first (Shift+Enter, or "Draft mode" at the top).', 'info');
   }
 
   // ---- dialogs
@@ -313,7 +350,12 @@ class App {
   openAbilities(side) { modals.openAbilities(this, side); }
   openAttack() { modals.openAttack(this); }
   openHelp() { modals.openHelp(this); }
-  openPreview() { modals.openPreview(this); }
+  // The overlay as the audience sees it, in a window of this page; with Shift, the overlay itself in the browser (to look at it full size, or to
+  // put on another screen)
+  openPreview(inBrowser = false) {
+    if (inBrowser) window.open('/overlay', '_blank');
+    else modals.openPreview(this);
+  }
   openSettings(tab) { openSettings(this, tab); }
 
   // ---- misc

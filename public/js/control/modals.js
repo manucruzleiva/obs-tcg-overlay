@@ -159,21 +159,22 @@ export function openPicker(app, purpose) {
   const showStar = (button, on) => {
     button.classList.toggle('on', on);
     button.setAttribute('aria-pressed', String(on));
-    button.title = on ? 'A favorite: click to take the star off' : 'Mark as a favorite: it is listed first next time';
+    button.title = on ? 'A favorite: click (or right-click the card) to take the star off' : 'Mark as a favorite: it is listed first next time (right-click on the card does the same)';
   };
   const render = (cards) => {
     replace(results, cards.map((card) => {
-      const star = h('button', { class: 'star-btn', type: 'button', 'aria-label': `Favorite: ${card.name}`, dataset: { card: card.id } });
+      const star = h('button', { class: 'star-btn', type: 'button', 'aria-label': `Favorite: ${card.name}`, dataset: { card: card.id } }, icon('star', 16));
       showStar(star, isFavorite(card));
-      star.addEventListener('click', async () => {
+      const toggleStar = async () => {
         const was = isFavorite(card);
         const result = await app.act('action:card', { action: 'favorite', cardId: card.id });
         if (!result.ok) return;
         showStar(star, !was);
         // so the card can be listed with the favorites later, whatever the picture it was found with
         if (!was) fetch('/api/cards/known', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
-      });
-      return h('div', { class: 'card-tile' },
+      };
+      star.addEventListener('click', toggleStar);
+      return h('div', { class: 'card-tile', oncontextmenu: (event) => { event.preventDefault(); toggleStar(); } },
         h('button', { class: 'card-pick', type: 'button', onclick: () => pick(card), title: `${card.name} · ${card.setName} #${card.number}` },
           card.images && card.images.small ? h('img', { src: card.images.small, alt: card.name, loading: 'lazy' }) : h('span', { class: 'art-fallback' }, icon('star', 28)),
           h('span', { class: 'card-name' }, card.name),
