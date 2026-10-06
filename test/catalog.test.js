@@ -289,6 +289,173 @@ describe('card library', () => {
     });
   });
 
+  // An update asks each search of a library how many cards it has now, and downloads only what changed
+  describe('updating a library', () => {
+    const NEW_SET = { id: 'me2', name: 'Set me2', releaseDate: '2026/12/01' };
+    // the card API, giving the newest sets first when it is asked for that order
+    const ordered = (all) => (url) => {
+      const params = new URL(url, 'http://mock').searchParams;
+      let found = all.filter((item) => matches(item, params.get('q')));
+      if (params.get('orderBy') === '-set.releaseDate') found = [...found].sort((a, b) => (a.set.releaseDate < b.set.releaseDate ? 1 : a.set.releaseDate > b.set.releaseDate ? -1 : 0));
+      const page = Number(params.get('page') || 1);
+      const pageSize = Number(params.get('pageSize') || 20);
+      const data = found.slice((page - 1) * pageSize, page * pageSize);
+      return { data, page, pageSize, count: data.length, totalCount: found.length };
+    };
+    const saved = (id = 'standard') => JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8'));
+    const searchOf = (query, id = 'standard') => saved(id).queries.find((entry) => JSON.parse(entry.key) === query);
+
+    it('remembers each search of a library: how many cards it had, and which', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      assert.deepEqual(saved().queries.map((entry) => [JSON.parse(entry.key), entry.count]), [
+        ['regulationMark:H', 4], ['regulationMark:I', 3], ['regulationMark:J', 2], ['supertype:Energy subtypes:Basic', 2], [NO_MARK_QUERY, 1]
+      ]);
+      assert.deepEqual(searchOf('regulationMark:H').ids, ['sv4-1', 'sv4-2', 'sv5-3', 'sve-1']);
+      assert.deepEqual(searchOf('supertype:Energy subtypes:Basic').ids, ['sve-1', 'sve-2'], 'a card two searches find is in both');
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'standard.meta.json'), 'utf8')).tracked, true);
+      const standard = catalog.status().profiles[0];
+      assert.deepEqual([standard.updatable, standard.using], [true, 'pokemontcg']);
+    });
+
+    it('asks each search how many cards it has, and downloads nothing when nothing changed', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      api.requests.length = 0;
+      const seen = [];
+      catalog.on('progress', (status) => status.job && seen.push(status.job.phase));
+      const job = await run(catalog, 'standard');
+      assert.equal(job.phase, 'done', job.message);
+      assert.equal(job.message, 'Standard is up to date: 11 cards. Nothing new.');
+      assert.deepEqual([job.added, job.removed], [0, 0]);
+      assert.equal(counts(api).length, 5, 'one small question per search');
+      assert.equal(pages(api).length, 0, 'and not one card downloaded again');
+      assert.equal(catalog.status().profiles[0].count, 11);
+      assert.ok(seen.includes('counting') && !seen.includes('downloading'));
+      assert.equal(catalog.search('pikachu').source, 'library');
+    });
+
+    it('downloads only the new cards of a search that grew, newest first, and stops once they are in', async () => {
+      const OLD = Array.from({ length: 600 }, (_, i) => card(`old${Math.floor(i / 100) + 1}-${(i % 100) + 1}`, `Card ${i + 1}`, { regulationMark: 'J' }));
+      let pool = [...STANDARD_POOL, ...OLDER_POOL, ...OLD];
+      handler = (url) => ordered(pool)(url);
+      const catalog = open();
+      await run(catalog, 'standard');
+      assert.equal(catalog.status().profiles[0].count, 611);
+      assert.equal(searchOf('regulationMark:J').count, 602);
+
+      pool = [...pool, ...['Sprigatito', 'Floragato', 'Meowscarada'].map((name, i) => card(`me2-${i + 1}`, name, { regulationMark: 'J', set: NEW_SET }))];
+      api.requests.length = 0;
+      const job = await run(catalog, 'standard');
+      assert.equal(job.phase, 'done', job.message);
+      assert.equal(job.message, 'Standard is up to date: 614 cards. 3 new.');
+      assert.deepEqual([job.added, job.removed], [3, 0]);
+      const downloaded = pages(api);
+      assert.equal(downloaded.length, 1, 'one page of the three that search has');
+      assert.deepEqual([downloaded[0].get('q'), downloaded[0].get('orderBy'), downloaded[0].get('page')], ['regulationMark:J', '-set.releaseDate', '1']);
+      assert.deepEqual(catalog.search('meowscarada').cards.map((entry) => entry.id), ['me2-3']);
+      assert.equal(catalog.status().profiles[0].count, 614);
+      assert.deepEqual([searchOf('regulationMark:J').count, searchOf('regulationMark:J').ids.length], [605, 605]);
+
+      api.requests.length = 0;
+      assert.equal((await run(catalog, 'standard')).message, 'Standard is up to date: 614 cards. Nothing new.', 'and the next time there is nothing to bring');
+      assert.equal(pages(api).length, 0);
+    });
+
+    it('downloads a search whole when it has fewer cards than before, and keeps only what it has now', async () => {
+      let pool = [...STANDARD_POOL, ...OLDER_POOL];
+      handler = (url) => ordered(pool)(url);
+      const catalog = open();
+      await run(catalog, 'standard');
+      pool = pool.filter((item) => item.id !== 'sv8-5'); // Eevee is no longer an I card
+      api.requests.length = 0;
+      const job = await run(catalog, 'standard');
+      assert.equal(job.message, 'Standard is up to date: 10 cards. 1 no longer in it.');
+      assert.deepEqual(pages(api).map((params) => [params.get('q'), params.get('orderBy')]), [['regulationMark:I', null]]);
+      assert.equal(catalog.search('eevee').totalCount, 0);
+    });
+
+    it('takes away the cards of a search that is gone (a rotation), and downloads a new search whole', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      handler = cardApi([...STANDARD_POOL, ...OLDER_POOL, card('me3-1', 'Mew', { regulationMark: 'K', set: { id: 'me3', name: 'Set me3', releaseDate: '2027/03/01' } })]);
+      const original = PROFILES.standard.queries;
+      try {
+        PROFILES.standard.queries = [...original.filter((query) => query !== 'regulationMark:H'), 'regulationMark:K'];
+        api.requests.length = 0;
+        const job = await run(catalog, 'standard');
+        assert.equal(job.phase, 'done', job.message);
+        assert.equal(job.message, 'Standard is up to date: 9 cards. 1 new, 3 no longer in it.');
+        assert.deepEqual(pages(api).map((params) => [params.get('q'), params.get('orderBy')]), [['regulationMark:K', null]], 'only the new search is downloaded');
+        assert.equal(catalog.search('raichu').totalCount, 0, 'an H card went');
+        assert.equal(catalog.search('basic lightning').totalCount, 1, 'an H card that another search finds stays');
+        assert.deepEqual(catalog.search('mew').cards.map((entry) => entry.id), ['me3-1']);
+        assert.equal(saved().queries.some((entry) => JSON.parse(entry.key) === 'regulationMark:H'), false);
+      } finally {
+        PROFILES.standard.queries = original;
+      }
+    });
+
+    it('works out the searches of a library saved before they were kept, from its cards, and downloads only what it cannot', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      // as an earlier version saved it
+      const file = saved();
+      delete file.queries;
+      fs.writeFileSync(path.join(dir, 'standard.json'), JSON.stringify(file));
+      const metaFile = path.join(dir, 'standard.meta.json');
+      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+      delete meta.tracked;
+      delete meta.source;
+      fs.writeFileSync(metaFile, JSON.stringify(meta));
+
+      const reopened = open();
+      assert.equal(reopened.status().profiles[0].updatable, true, 'a Standard library can be worked out from its cards');
+      api.requests.length = 0;
+      const job = await run(reopened, 'standard');
+      assert.equal(job.message, 'Standard is up to date: 11 cards. Nothing new.');
+      assert.deepEqual(pages(api).map((params) => params.get('q')), [NO_MARK_QUERY], 'the cards with no mark are the only search the cards cannot tell');
+      assert.equal(saved().queries.length, 5, 'and now it knows them all');
+      assert.equal(JSON.parse(fs.readFileSync(metaFile, 'utf8')).tracked, true);
+    });
+
+    it('asks for a go-ahead for a big download only, not for an update that brings what is new', async () => {
+      const catalog = open();
+      assert.equal(catalog.status().profiles[2].updatable, false);
+      assert.throws(() => catalog.download('expanded'), (error) => error.extra && error.extra.needsConfirm === true);
+      await run(catalog, 'expanded', { confirm: true });
+      assert.equal(catalog.status().profiles[2].updatable, true);
+      assert.equal(catalog.status().profiles[1].updatable, true, 'Gym Leader Challenge is made from Expanded, with nothing to download');
+
+      api.requests.length = 0;
+      const job = await run(catalog, 'expanded');
+      assert.equal(job.message, 'Expanded is up to date: 14 cards. Nothing new.');
+      assert.equal(pages(api).length, 0);
+
+      // Gym Leader Challenge keeps the search it took from Expanded, so it can be brought up to date on its own later
+      assert.equal((await run(catalog, 'glc')).phase, 'done');
+      catalog.remove('expanded');
+      assert.equal(catalog.status().profiles[1].updatable, true);
+      api.requests.length = 0;
+      const glc = await run(catalog, 'glc');
+      assert.equal(glc.phase, 'done', glc.message);
+      assert.match(glc.message, /^Gym Leader Challenge is up to date: \d+ cards\. Nothing new\.$/);
+      assert.equal(pages(api).length, 0);
+    });
+
+    it('keeps the library as it was when the card service fails during an update', async () => {
+      const catalog = open();
+      await run(catalog, 'standard');
+      const before = fs.readFileSync(path.join(dir, 'standard.json'), 'utf8');
+      handler = cardApi([...STANDARD_POOL, ...OLDER_POOL], (params) => (params.get('pageSize') === '1' ? respond(503, {}) : null));
+      const job = await run(catalog, 'standard');
+      assert.equal(job.phase, 'error');
+      assert.equal(fs.readFileSync(path.join(dir, 'standard.json'), 'utf8'), before);
+      assert.equal(catalog.status().profiles[0].count, 11);
+      assert.equal(catalog.search('pikachu').source, 'library', 'and the searches still use it');
+    });
+  });
+
   describe('Gym Leader Challenge and Expanded', () => {
     it('Expanded is every Expanded-legal card', async () => {
       const catalog = open();

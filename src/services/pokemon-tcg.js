@@ -1,12 +1,22 @@
 /**
- * Pokémon TCG API Service - Integration with pokemontcg.io and Scrydex
+ * Card search and card details. Three card services answer: the Pokémon TCG API (English cards), TCGdex (many languages, see
+ * tcgdex.js) and Scrydex (an account with a key, see scrydex.js). Which one is asked is a setting: one of them, or
+ * "automatic", the Pokémon TCG API first and TCGdex when it does not answer. A service that failed a moment ago is asked
+ * last, so a search never waits for one that is down. The cards kept on this computer (the card library, see catalog.js)
+ * answer first, in English.
  */
 
 const { localImageUrl } = require('./images');
 const { attacksOf, retreatOf } = require('./attacks');
+const { TcgdexClient, LANGUAGE_CODES } = require('./tcgdex');
+const { ScrydexClient } = require('./scrydex');
 
 // A card lookup must never hang the control panel when the network is slow or down
 const REQUEST_TIMEOUT_MS = 8000;
+// With another service to fall back on, the first one is given less time
+const FALLBACK_TIMEOUT_MS = 5000;
+// How long a service that failed is asked last
+const FAILURE_MEMORY_MS = 2 * 60 * 1000;
 
 const RARITY_ORDER = [
   'Common', 'Uncommon', 'Rare', 'Rare Holo',
@@ -14,17 +24,18 @@ const RARITY_ORDER = [
 ];
 
 class PokemonTCGService {
-  constructor(cache) {
+  constructor(cache, { tcgdex = new TcgdexClient(), scrydex = new ScrydexClient() } = {}) {
     this.cache = cache;
+    this.tcgdex = tcgdex;
+    this.scrydex = scrydex;
+    this.source = 'auto'; // which services are asked: 'auto', 'pokemontcg', 'scrydex' or 'tcgdex'
+    this.language = 'en'; // the language of the cards TCGdex is asked for
+    this.failedAt = {}; // when each service last failed
     this.providers = {
       pokemontcg: {
         // POKEMONTCG_API_URL points the app at another server (the tests use a local mock)
         baseUrl: process.env.POKEMONTCG_API_URL || 'https://api.pokemontcg.io/v2',
         name: 'Pokémon TCG API'
-      },
-      scrydex: {
-        baseUrl: 'https://api.scrydex.com/v1',
-        name: 'Scrydex'
       }
     };
     this.currentProvider = 'pokemontcg';
@@ -46,15 +57,40 @@ class PokemonTCGService {
     return { ...result, cards: result.cards.map((card) => this.localize(card)) };
   }
 
-  setProvider(provider, apiKey = '') {
-    if (this.providers[provider]) {
-      this.currentProvider = provider;
-      this.apiKey = apiKey;
-    }
+  // Which services to ask ('auto', 'pokemontcg', 'scrydex' or 'tcgdex'), the key of the Pokémon TCG API and the language of the cards
+  setProvider(provider, apiKey = '', language = this.language) {
+    if (['auto', 'pokemontcg', 'scrydex', 'tcgdex'].includes(provider)) this.source = provider;
+    this.apiKey = apiKey;
+    this.language = LANGUAGE_CODES.includes(language) ? language : 'en';
+    this.tcgdex.setLanguage(this.language);
+  }
+
+  // The account on Scrydex: its API key and the ID of its team
+  setCredentials({ scrydexKey = '', scrydexTeam = '' } = {}) {
+    this.scrydex.setCredentials({ key: scrydexKey, team: scrydexTeam });
   }
 
   getProvider() {
-    return this.currentProvider;
+    return this.source;
+  }
+
+  // The services to ask, in order. One that failed a moment ago goes last.
+  order() {
+    if (this.source === 'pokemontcg') return ['pokemontcg'];
+    if (this.source === 'scrydex') return ['scrydex'];
+    if (this.source === 'tcgdex') return ['tcgdex'];
+    // the Pokémon TCG API has English cards only: another language is asked of TCGdex first
+    const usual = this.language === 'en' ? ['pokemontcg', 'tcgdex'] : ['tcgdex', 'pokemontcg'];
+    const down = (name) => Date.now() - (this.failedAt[name] || 0) < FAILURE_MEMORY_MS;
+    return [...usual.filter((name) => !down(name)), ...usual.filter(down)];
+  }
+
+  failed(name) {
+    this.failedAt[name] = Date.now();
+  }
+
+  worked(name) {
+    delete this.failedAt[name];
   }
 
   // What a person typed ("pikachu") becomes an API query (name:"pikachu*"); anything already in
@@ -71,24 +107,66 @@ class PokemonTCGService {
     return terms.join(' ');
   }
 
-  // Search for cards: the library on this computer first (instant, and needs no internet), then the web
+  // Search for cards: the library on this computer first (instant, needs no internet, English), then the card services
   async searchCards(query, page = 1, filters = {}) {
     const text = String(query || '').trim();
     // text in the API's own syntax (name:pika* set.id:sv1) can only be answered by the API
-    const library = this.catalog && !text.includes(':') ? this.catalog.search(text, page, filters) : null;
+    const library = this.language === 'en' && this.catalog && !text.includes(':') ? this.catalog.search(text, page, filters) : null;
     if (library && library.totalCount > 0) return library;
 
-    try {
-      return this.localizeResult(await this.searchOnline(text, page, filters));
-    } catch (error) {
-      // nothing in the library and no way to ask the web: say so, rather than fail
-      if (library) return { ...library, offline: true };
-      throw error;
+    const order = this.order();
+    let failure = null;
+    let empty = null; // an answer with no cards, kept in case the other service has none either
+    for (const name of order) {
+      if (name === 'tcgdex' && text.includes(':') && order.length > 1) continue;
+      try {
+        const result = name === 'tcgdex'
+          ? await this.searchTcgdex(text, page, filters)
+          : name === 'scrydex'
+            ? await this.searchScrydex(text, page, filters)
+            : this.localizeResult(await this.searchOnline(text, page, filters, { timeoutMs: order.length > 1 ? FALLBACK_TIMEOUT_MS : REQUEST_TIMEOUT_MS }));
+        this.worked(name);
+        // no cards on the first page: the other service may have them (a new set that one does not know yet)
+        if (result.cards.length === 0 && page === 1 && order.length > 1) {
+          empty = empty || result;
+          continue;
+        }
+        return result;
+      } catch (error) {
+        this.failed(name);
+        failure = failure || error;
+      }
     }
+    if (empty) return empty;
+    // nothing in the library and no way to ask the web: say so, rather than fail
+    if (library) return { ...library, offline: true };
+    throw failure || new Error('No card service is switched on');
+  }
+
+  // Search TCGdex, with caching; the cards come out in the shape of the other service's, with pictures kept on this computer
+  async searchTcgdex(text, page, filters) {
+    const provider = `tcgdex:${this.language}`;
+    const asked = `${text}\u0000${JSON.stringify(Object.entries(filters).sort())}`;
+    const cached = await this.cache.getSearch(provider, asked, page);
+    if (cached) return this.localizeResult(cached);
+    // "source" tells the page where the answer came from (it says so in the status line and knows there may be more pages)
+    const result = { ...(await this.tcgdex.search(text, page, filters, { attempts: 2 })), source: 'tcgdex' };
+    await this.cache.setSearch(provider, asked, page, result);
+    return this.localizeResult(result);
+  }
+
+  // Search Scrydex, with caching (the cache is for the account: another key may see other cards)
+  async searchScrydex(text, page, filters) {
+    const asked = `${text}\u0000${JSON.stringify(Object.entries(filters).sort())}`;
+    const cached = await this.cache.getSearch('scrydex', asked, page);
+    if (cached) return this.localizeResult(cached);
+    const result = { ...(await this.scrydex.search(text, page, filters, { attempts: 2 })), source: 'scrydex' };
+    await this.cache.setSearch('scrydex', asked, page, result);
+    return this.localizeResult(result);
   }
 
   // Search the card API, with caching
-  async searchOnline(query, page = 1, filters = {}) {
+  async searchOnline(query, page = 1, filters = {}, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
     // The cache is keyed on the full API query, so a search with filters never reuses one without
     const apiQuery = this.buildQuery(query, filters);
 
@@ -110,7 +188,7 @@ class PokemonTCGService {
     if (etag) headers['If-None-Match'] = etag;
 
     try {
-      const response = await fetch(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
 
       if (response.status === 304) {
         // Not modified, return cached
@@ -142,18 +220,57 @@ class PokemonTCGService {
     }
   }
 
-  // Get single card by ID: from the library on this computer when it is there, otherwise from the API
-  async getCard(cardId) {
+  // One card by id: from the library on this computer when it is there, otherwise from a card service. `hint` says which
+  // service the card came from ({ source: 'tcgdex', language: 'es' }): the ids of the two do not always agree.
+  async getCard(cardId, hint = {}) {
     const local = this.catalog && this.catalog.get(cardId);
     if (local && local.attacks !== undefined) return local;
     // A library saved before attacks and retreat costs were kept has none: ask the card service for them
-    try {
-      const online = this.localize(await this.fetchCard(cardId));
-      return local ? { ...local, attacks: online.attacks, retreat: online.retreat } : online;
-    } catch (error) {
-      if (local) return { ...local, attacks: [], retreat: 0 }; // no way to ask: the card is still usable, by hand
-      throw error;
+    const order = ['tcgdex', 'scrydex', 'pokemontcg'].includes(hint.source) ? [hint.source] : this.order();
+    let online = null;
+    let failure = null;
+    for (const name of order) {
+      try {
+        online = name === 'tcgdex' ? await this.fetchTcgdexCard(cardId, hint.language)
+          : name === 'scrydex' ? await this.fetchScrydexCard(cardId)
+            : this.localize(await this.fetchCard(cardId));
+        if (online) {
+          this.worked(name);
+          break;
+        }
+      } catch (error) {
+        failure = failure || error;
+        // a card the service does not have says nothing about whether the service is up
+        if (!/\b404\b/.test(error.message)) this.failed(name);
+      }
     }
+    if (online) return local ? { ...local, attacks: online.attacks, retreat: online.retreat } : online;
+    if (local) return { ...local, attacks: [], retreat: 0 }; // no way to ask: the card is still usable, by hand
+    if (failure) throw failure;
+    return null;
+  }
+
+  // A card of Scrydex, with caching
+  async fetchScrydexCard(cardId) {
+    const key = `scrydex:${cardId}`;
+    const cached = await this.cache.getCard(key);
+    if (cached) return this.localize(cached);
+    const card = await this.scrydex.getCard(cardId, { attempts: 2 });
+    if (!card) return null;
+    await this.cache.setCard(key, 'scrydex', card);
+    return this.localize(card);
+  }
+
+  // A card of TCGdex in the language it was found in, with caching
+  async fetchTcgdexCard(cardId, language) {
+    const client = this.tcgdex.withLanguage(language || this.language);
+    const key = `tcgdex:${client.language}:${cardId}`;
+    const cached = await this.cache.getCard(key);
+    if (cached) return this.localize(cached);
+    const card = await client.getCard(cardId, { attempts: 2 });
+    if (!card) return null;
+    await this.cache.setCard(key, 'tcgdex', card);
+    return this.localize(card);
   }
 
   async fetchCard(cardId) {

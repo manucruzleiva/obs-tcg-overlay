@@ -1,13 +1,14 @@
 /**
  * The design editor: the overlay on a canvas you can zoom and drag pieces around, a crop selector for the
- * Pokémon cards, and the design as code. It edits one design and saves it back, so the overlay (if this
- * design is on air) follows.
+ * Pokémon cards, where the parts of a Pokémon's tile go (and the picture on the prize cards), and the design as code. It edits one design and
+ * saves it back, so the overlay (if this design is on air) follows.
  */
 import { h, icon } from './dom.js';
 import { openModal, closeModal, confirmDialog } from './ui.js';
 import { EditorModel } from './editor-model.js';
 import { EditorCanvas } from './editor-canvas.js';
 import { CropSelector } from './editor-crop.js';
+import { TilePanel } from './editor-tile.js';
 import { CodePanel } from './editor-code.js';
 import { sampleState, cardArt, specialEnergyArt } from './editor-sample.js';
 
@@ -115,7 +116,11 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     state.settings.autoScale = false;
     return state;
   };
-  const sample = () => (matchMode === 'live' ? liveState() : sampleState(app.conn.live || app.state));
+  // the match drawn on the canvas: a made-up one, or the live one (none until the page has the game)
+  const sample = () => {
+    if (!(app.conn.live || app.state)) return null;
+    return matchMode === 'live' ? liveState() : sampleState(app.conn.live || app.state);
+  };
 
   // ---- the parts
   const toolbar = {};
@@ -140,6 +145,12 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
         }
         return cards;
       }
+      if (which === 'stadium') {
+        const cards = [{ label: 'A sample Stadium card', url: cardArt('Area Zero', 200, 'Stadium') }];
+        const stadium = live && live.stadium;
+        if (stadium && stadium.inPlay && stadium.image) cards.push({ label: `In play: ${stadium.name || 'the Stadium'}`, url: stadium.image });
+        return cards;
+      }
       const cards = [{ label: 'A sample card', url: cardArt('Sample', 50) }];
       for (const [side, trainer] of trainers) {
         if (trainer && trainer.active && trainer.active.image) cards.push({ label: `${trainer.name || side}: ${trainer.active.name}`, url: trainer.active.image });
@@ -147,6 +158,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
       return cards;
     }
   });
+  const tilePanel = new TilePanel({ model });
   const code = new CodePanel({ model });
 
   // ---- the toolbar above the canvas
@@ -173,8 +185,8 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));
 
   // ---- the side panel
-  const panels = { layout: layout.element, crop: cropSelector.element, code: code.element };
-  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['code', 'Code']];
+  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, code: code.element };
+  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['code', 'Code']];
   const tabButtons = new Map();
   const sideBody = h('div', { class: 'editor-side-body' });
   let current = 'layout';
@@ -219,7 +231,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     try {
       const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop })
+        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The design could not be saved');
@@ -251,7 +263,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     if (key === 'z' && !event.shiftKey) { model.undo(); event.preventDefault(); } else if (key === 'y' || (key === 'z' && event.shiftKey)) { model.redo(); event.preventDefault(); } else if (key === 's') { save(); event.preventDefault(); }
   };
 
-  const live = app.conn.on('state', () => { if (matchMode === 'live') canvas.draw(); });
+  const live = app.conn.on('state', () => { if (matchMode === 'live' || !canvas.hasState) canvas.draw(); });
 
   const body = h('div', { class: 'editor' }, bar, h('div', { class: 'editor-main' }, h('div', { class: 'editor-canvas' }, canvas.element), side));
   body.addEventListener('keydown', onKey);

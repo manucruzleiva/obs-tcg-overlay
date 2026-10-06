@@ -13,12 +13,16 @@
   const GAME = window.OTO_GAME;
   const DISPLAY = window.OTO_DISPLAY;
   const THEME = window.OTO_THEME;
+  const COUNTRIES = window.OTO_COUNTRIES;
+  const DECK = window.OTO_DECK;
 
   const STAGE_WIDTH = 1920;
   const STAGE_HEIGHT = 1080;
   const PRIZE_SLOTS = 6;
   const MAX_BENCH = 8;
   const MAX_ENERGY_SHOWN = 10;
+  const MAX_ENERGY_SHOWN_ON_BENCH = 6; // the picture of a bench Pokémon is small
+  const MAX_RETREAT_SHOWN = 6;
   const FADE_OUT_MS = 350;
 
   const SIDES = ['trainerA', 'trainerB'];
@@ -26,7 +30,10 @@
   const ENERGY_INDEX = {};
   GAME.ENERGY_KEYS.forEach((key, index) => { ENERGY_INDEX[key] = index; });
   const STATUS = {};
-  GAME.STATUS_CONDITIONS.forEach((condition) => { STATUS[condition.key] = condition; });
+  const STATUS_INDEX = {};
+  GAME.STATUS_CONDITIONS.forEach((condition, index) => { STATUS[condition.key] = condition; STATUS_INDEX[condition.key] = index; });
+  // the status icons whose picture could not be loaded (see checkStatusIcons): a colored disc with a letter is drawn instead
+  const MISSING_STATUS_ICON = {};
 
   // ------------------------------------------------------------------ helpers
 
@@ -70,6 +77,23 @@
     img.decoding = 'async';
     art.appendChild(img);
 
+    // The picture has a band at its top and one at its bottom, each with a place for the HP bar and for a part in each of its
+    // corners; placeParts puts the HP bar, the energy and the retreat cost where the design says (or below the picture)
+    const bands = {};
+    ['top', 'bottom'].forEach((edge) => {
+      const band = el('div', `band band-${edge}`);
+      const bar = el('div', 'band-bar');
+      const corners = el('div', 'band-corners');
+      const left = el('div', 'corner corner-left');
+      const right = el('div', 'corner corner-right');
+      corners.appendChild(left);
+      corners.appendChild(right);
+      band.appendChild(bar);
+      band.appendChild(corners);
+      art.appendChild(band);
+      bands[edge] = { bar, left, right };
+    });
+
     const details = el('div', 'details');
     const name = opt(el('div', 'mon-name'), 'pokemonNames');
     const hp = opt(el('div', 'hp'), 'hpBars');
@@ -80,14 +104,57 @@
     hp.appendChild(bar);
     hp.appendChild(hpText);
     const energies = opt(el('div', 'energies'), 'attachments');
+    const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
-    [name, hp, energies, abilities, statuses].forEach((node) => details.appendChild(node));
+    [name, hp, energies, retreat, abilities, statuses].forEach((node) => details.appendChild(node));
 
     root.appendChild(art);
     root.appendChild(details);
     root.hidden = true;
-    return { root, img, name, hp, fill, hpText, energies, abilities, statuses };
+    return { root, mini: Boolean(mini), bands, details, img, name, hp, fill, hpText, energies, retreat, abilities, statuses };
+  }
+
+  // Where the parts of a tile go: the usual places, with what a design says (a design is checked by the server, this only
+  // makes sure that nothing unknown gets through)
+  function tileOf(given) {
+    const tile = {};
+    THEME.TILE_KEYS.forEach((key) => {
+      tile[key] = Object.assign({}, THEME.TILE_DEFAULT);
+      const entry = given && given[key];
+      THEME.TILE_PARTS.forEach((part) => {
+        if (entry && part.places.indexOf(entry[part.key]) !== -1) tile[key][part.key] = entry[part.key];
+      });
+    });
+    return tile;
+  }
+
+  // Put the HP bar, the attached energy and the retreat cost on the picture (at its top or bottom, or in a corner) or below it
+  function placeParts(mon, tile) {
+    const bands = mon.bands;
+    [bands.top, bands.bottom].forEach((band) => [band.bar, band.left, band.right].forEach((slot) => { slot.textContent = ''; }));
+    const below = [];
+    const put = (part, node) => {
+      const place = tile[part];
+      if (place === 'top' || place === 'bottom') bands[place].bar.appendChild(node);
+      else if (place === 'below') below.push(node);
+      else {
+        const corner = place.split('-'); // 'bottom-left' is the bottom band's left corner
+        bands[corner[0]][corner[1]].appendChild(node);
+      }
+    };
+    put('hp', mon.hp);
+    put('energy', mon.energies);
+    put('retreat', mon.retreat);
+    // what stays under the picture keeps its order: the name, then whatever came down, then the abilities and the status icons
+    mon.details.appendChild(mon.name);
+    below.forEach((node) => mon.details.appendChild(node));
+    mon.details.appendChild(mon.abilities);
+    below.length = 0;
+    put('status', mon.statuses);
+    below.forEach((node) => mon.details.appendChild(node));
+    // on the picture the status icons are drawn as round icons alone; below it they are chips with their names
+    mon.statuses.classList.toggle('on-art', tile.status !== 'below');
   }
 
   function createToken(optionKey, label) {
@@ -101,17 +168,17 @@
     return { root, count };
   }
 
-  function renderEnergies(container, energies, specials) {
+  function renderEnergies(container, energies, specials, maxShown) {
     const list = energies || [];
     const cards = specials || [];
     container.textContent = '';
-    list.slice(0, MAX_ENERGY_SHOWN).forEach((type) => {
+    list.slice(0, maxShown).forEach((type) => {
       const icon = el('span', `energy energy-${type}`);
       icon.style.setProperty('--i', ENERGY_INDEX[type] === undefined ? ENERGY_INDEX.colorless : ENERGY_INDEX[type]);
       icon.title = type;
       container.appendChild(icon);
     });
-    if (list.length > MAX_ENERGY_SHOWN) container.appendChild(el('span', 'energy-more', `+${list.length - MAX_ENERGY_SHOWN}`));
+    if (list.length > maxShown) container.appendChild(el('span', 'energy-more', `+${list.length - maxShown}`));
 
     // A Special Energy card is a circle cut out of the card, so it can be told apart at a glance
     cards.forEach((card) => {
@@ -127,6 +194,20 @@
       container.appendChild(chip);
     });
     container.hidden = list.length === 0 && cards.length === 0;
+  }
+
+  // The retreat cost: that many colorless Energy, crossed out while the Pokémon cannot retreat. Nothing when it costs nothing.
+  function renderRetreat(container, cost, blocked) {
+    const count = Math.max(0, Math.min(MAX_RETREAT_SHOWN, Number(cost) || 0));
+    container.textContent = '';
+    for (let i = 0; i < count; i++) {
+      const icon = el('span', 'energy energy-colorless');
+      icon.style.setProperty('--i', ENERGY_INDEX.colorless);
+      container.appendChild(icon);
+    }
+    container.title = blocked ? "Can't retreat" : `Retreat cost ${count}`;
+    container.classList.toggle('blocked', Boolean(blocked) && count > 0);
+    container.hidden = count === 0;
   }
 
   function renderAbilities(container, abilities) {
@@ -158,19 +239,29 @@
     mon.fill.style.width = `${percent}%`;
     mon.hpText.textContent = max ? `${current}/${max}` : '';
 
-    renderEnergies(mon.energies, pokemon.energies, pokemon.specialEnergies);
+    const status = pokemon.status || [];
+    renderEnergies(mon.energies, pokemon.energies, pokemon.specialEnergies, mon.mini ? MAX_ENERGY_SHOWN_ON_BENCH : MAX_ENERGY_SHOWN);
+    renderRetreat(mon.retreat, pokemon.retreat, status.indexOf('trapped') !== -1);
     renderAbilities(mon.abilities, pokemon.abilities);
 
-    const status = pokemon.status || [];
     mon.statuses.textContent = '';
     status.forEach((key) => {
       const known = STATUS[key];
-      const chip = el('span', 'status-chip', known ? known.label : String(key));
+      const chip = el('span', 'status-chip');
       chip.dataset.status = String(key);
+      // the icon of the status (a design can bring its own strip), then its name
+      const icon = el('span', MISSING_STATUS_ICON[key] ? 'status-icon no-icon' : 'status-icon');
+      chip.appendChild(icon);
+      chip.appendChild(el('span', 'status-label', known ? known.label : String(key)));
       if (known) {
         chip.style.setProperty('--c', known.color);
         chip.style.setProperty('--ink', known.ink);
-        if (known.hint) chip.title = known.hint;
+        chip.title = known.hint ? `${known.label}: ${known.hint}` : known.label;
+        icon.style.setProperty('--s', String(STATUS_INDEX[key]));
+        icon.style.setProperty('--icon', cssUrl(known.icon));
+        icon.dataset.glyph = known.glyph;
+      } else {
+        icon.hidden = true;
       }
       mon.statuses.appendChild(chip);
     });
@@ -194,8 +285,11 @@
       this.editor = params.has('editor');
 
       this.build();
+      this.tile = tileOf(null);
+      this.placeAll();
       this.fit();
       this.checkEnergyIcons();
+      this.checkStatusIcons();
       window.addEventListener('resize', () => this.fit());
       if (this.editor) {
         this.listenToEditor();
@@ -220,6 +314,18 @@
         this.socket.on('sounds:changed', () => this.loadSounds());
         this.loadSounds();
       }
+    }
+
+    // The status icons are files in the assets folder too. One that is not there is drawn as a colored disc with a letter.
+    checkStatusIcons() {
+      GAME.STATUS_CONDITIONS.forEach((condition) => {
+        const probe = new Image();
+        probe.onerror = () => {
+          MISSING_STATUS_ICON[condition.key] = true;
+          if (this.state) this.update(this.state);
+        };
+        probe.src = condition.icon;
+      });
     }
 
     // The energy icons are files in the assets folder. If they are not there (it can be deleted), draw plain colored discs.
@@ -260,6 +366,14 @@
       stage.appendChild(this.toasts);
       stage.appendChild(this.fx);
 
+      // the banner of a paused game: it stays for as long as the game is paused (see update)
+      this.pauseBanner = el('div', 'pause-banner');
+      this.pauseBanner.hidden = true;
+      this.pauseBanner.appendChild(el('div', 'pause-icon'));
+      this.pauseBanner.appendChild(el('div', 'pause-title', 'GAME PAUSED'));
+      this.pauseBanner.appendChild(el('div', 'pause-sub', 'Play will resume shortly'));
+      stage.appendChild(this.pauseBanner);
+
       // a design can move and resize these pieces (see public/js/theme-options.js)
       THEME.BLOCKS.forEach((block) => {
         stage.querySelectorAll(block.selector).forEach((node) => node.setAttribute('data-block', block.key));
@@ -279,13 +393,25 @@
         const meta = el('div', 'sb-meta');
         const nationality = opt(el('span', 'sb-nat'), 'nationality');
         const record = opt(el('span', 'sb-record'), 'record');
+        // the deck: its text, with a picture in front of it when it names a Pokémon or an energy type (that picture can be switched off on its own)
+        const deck = opt(el('span', 'sb-deck'), 'deckType');
+        const deckIcon = opt(el('img', 'sb-deck-icon'), 'deckIcon');
+        deckIcon.alt = '';
+        deckIcon.hidden = true;
+        // a picture that cannot be had (no internet for a Pokémon that has not been shown before) leaves the text alone
+        deckIcon.addEventListener('error', () => { deckIcon.hidden = true; });
+        const deckText = el('span', 'sb-deck-text');
+        deck.appendChild(deckIcon);
+        deck.appendChild(deckText);
+        deck.hidden = true;
         meta.appendChild(nationality);
         meta.appendChild(record);
+        meta.appendChild(deck);
         who.appendChild(name);
         who.appendChild(meta);
         const wins = opt(el('div', 'sb-wins'), 'matchScore');
         [avatar, who, wins].forEach((node) => root.appendChild(node));
-        this.board.sides[side] = { root, name, nationality, record, wins };
+        this.board.sides[side] = { root, name, nationality, record, deck, deckIcon, deckText, wins };
       });
 
       const center = el('div', 'sb-center');
@@ -350,11 +476,14 @@
     buildCenter() {
       const center = el('div', 'center');
       this.featureBox = opt(el('div', 'features'), 'featureCards');
+      // the Stadium: the part of its card that the crop says (the picture, unless a design says otherwise) and its name below
       this.stadiumBox = opt(el('figure', 'stadium'), 'stadium');
+      this.stadiumArt = el('div', 'stadium-art');
       this.stadiumImg = el('img', 'stadium-img');
       this.stadiumImg.decoding = 'async';
+      this.stadiumArt.appendChild(this.stadiumImg);
       this.stadiumName = el('figcaption', 'stadium-name');
-      this.stadiumBox.appendChild(this.stadiumImg);
+      this.stadiumBox.appendChild(this.stadiumArt);
       this.stadiumBox.appendChild(this.stadiumName);
       center.appendChild(this.featureBox);
       center.appendChild(this.stadiumBox);
@@ -382,9 +511,15 @@
       this.stage.style.opacity = String(Math.max(0, Math.min(100, state.settings.overlayOpacity)) / 100);
       if (!previous || previous.settings.autoScale !== state.settings.autoScale) this.fit();
 
-      this.renderScoreboard(state);
+      this.renderScoreboard(state, display);
       SIDES.forEach((side) => this.renderTrainer(side, state, display));
       this.renderCenter(state);
+
+      // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed. Banners can
+      // be switched off (Settings, Overlay), and then the game is not shown as paused.
+      const paused = state.paused === true && state.settings.enablePauseToast !== false && display.toasts !== false;
+      this.stage.classList.toggle('is-paused', paused);
+      this.pauseBanner.hidden = !paused;
 
       // Switch elements off last, so everything that exists is covered
       this.stage.querySelectorAll('[data-opt]').forEach((node) => {
@@ -392,20 +527,50 @@
       });
     }
 
-    renderScoreboard(state) {
+    renderScoreboard(state, display) {
       SIDES.forEach((side) => {
         const trainer = state[side];
         const refs = this.board.sides[side];
         refs.name.textContent = trainer.name;
-        refs.nationality.textContent = trainer.nationality;
+        // the nationality as typed, or as a flag when the overlay is set to show flags and it names a country (the text stays as the title)
+        const flag = display.nationalityFlag === true ? COUNTRIES.flagOf(trainer.nationality) : '';
+        refs.nationality.textContent = flag || trainer.nationality;
+        refs.nationality.classList.toggle('is-flag', Boolean(flag));
+        if (flag) refs.nationality.title = trainer.nationality;
+        else refs.nationality.removeAttribute('title');
         refs.nationality.hidden = !trainer.nationality;
         const record = trainer.record || { wins: 0, losses: 0, ties: 0 };
         refs.record.textContent = `${record.wins}-${record.losses}-${record.ties}`;
+        this.renderDeck(refs, trainer, display);
         refs.wins.textContent = String(state.matchScore[`${side}Wins`]);
       });
       this.board.round.textContent = (state.matchInfo && state.matchInfo.round) || '';
       this.board.round.hidden = !(state.matchInfo && state.matchInfo.round);
       this.board.bestOf.textContent = state.matchScore.bestOf === 1 ? 'SINGLE GAME' : `BEST OF ${state.matchScore.bestOf}`;
+    }
+
+    // The deck of a trainer: its text, and the picture it names (a Pokémon or an energy type), unless the picture box says there is none
+    renderDeck(refs, trainer, display) {
+      const deck = trainer.deck || '';
+      const picture = display.deckIcon === false ? null : DECK.pictureFor(deck, trainer.deckIcon);
+      refs.deck.hidden = !deck && !picture;
+      refs.deck.classList.toggle('has-icon', Boolean(picture));
+      refs.deck.classList.toggle('no-text', !deck);
+      refs.deckText.textContent = deck;
+      refs.deckText.hidden = !deck;
+      if (picture) {
+        // only touched when the address changed, so the picture does not flash on every update (or come back after it failed to load)
+        if (refs.deckIcon.getAttribute('src') !== picture.src) {
+          refs.deckIcon.hidden = false;
+          refs.deckIcon.setAttribute('src', picture.src);
+        }
+        refs.deckIcon.dataset.kind = picture.kind;
+        refs.deckIcon.title = picture.name;
+      } else {
+        refs.deckIcon.hidden = true;
+        refs.deckIcon.removeAttribute('src');
+        refs.deckIcon.removeAttribute('title');
+      }
     }
 
     renderTrainer(side, state, display) {
@@ -417,11 +582,19 @@
       refs.root.classList.toggle('is-turn', hasTurn);
       refs.turnTag.hidden = !hasTurn;
 
-      // prizes: the ones taken fade out, and a penalty marks that many of the ones still there in red
-      const penalty = Math.min(Number(trainer.prizes.penalty) || 0, trainer.prizes.count);
+      // prizes: the ones taken fade out. The OTHER trainer's penalty is that many prize cards this one counts as already taken, so that many
+      // of the ones still there are marked red
+      const opponent = state[side === 'trainerA' ? 'trainerB' : 'trainerA'];
+      const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
+      // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden)
+      const faces = trainer.prizes.cards || [];
       refs.prizeNodes.forEach((node, index) => {
         node.classList.toggle('taken', index >= trainer.prizes.count);
         node.classList.toggle('penalty', index < penalty);
+        const face = faces[index] && faces[index].image;
+        node.classList.toggle('has-face', Boolean(face));
+        if (face) node.style.setProperty('--prize-face', cssUrl(face));
+        else node.style.removeProperty('--prize-face');
       });
       refs.prizes.classList.toggle('is-hidden', Boolean(trainer.prizes.hidden));
       refs.prizes.classList.toggle('pulse', penalty > 0 && state.settings.showPenaltyAnimation !== false);
@@ -465,7 +638,6 @@
         figure.appendChild(img);
         const caption = el('figcaption', 'feature-caption');
         caption.appendChild(el('div', 'feature-name', card.name));
-        if (card.note) caption.appendChild(el('div', 'feature-note', card.note));
         figure.appendChild(caption);
         this.featureBox.appendChild(figure);
       });
@@ -574,6 +746,16 @@
       else this.clearAnnouncements(this.toasts);
     }
 
+    // Put the parts of every Pokémon's tile where the design says (see placeParts)
+    placeAll() {
+      SIDES.forEach((side) => {
+        const refs = this.trainers[side];
+        if (!refs) return;
+        placeParts(refs.activeMon, this.tile.active);
+        refs.benchMons.forEach((mon) => placeParts(mon, this.tile.bench));
+      });
+    }
+
     // Where each piece of the stage is right now, in stage pixels (the editor draws its handles there).
     // A piece that is not showing (switched off, or empty) is null.
     blockRects() {
@@ -610,7 +792,8 @@
       this.themeProps.forEach((name) => root.style.removeProperty(name));
       this.themeProps = [];
 
-      const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-backdrop', 'has-crop-active', 'has-crop-bench'];
+      const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-status-sprite', 'has-backdrop']
+        .concat(THEME.PRIZE_KEYS.map((key) => `prize-${key}`));
       rootClasses.forEach((name) => root.classList.remove(name));
 
       // pieces the last design moved go back to where they belong
@@ -624,6 +807,10 @@
         document.fonts.delete(this.themeFont);
         this.themeFont = null;
       }
+
+      // where the HP bar, the attached energy and the retreat cost go (the usual places when there is no design)
+      this.tile = tileOf(theme && theme.tile);
+      this.placeAll();
       if (!theme) return;
 
       const set = (name, value) => {
@@ -649,13 +836,12 @@
         });
       });
 
-      // crop: show only part of the card for the Active Pokémon (ca) and the bench (cb)
+      // crop: the part of the card that shows for the Active Pokémon (ca), the bench (cb) and the Stadium (sa); the artwork unless the design says
       const crop = theme.crop || {};
-      [['active', 'ca'], ['bench', 'cb']].forEach(([which, prefix]) => {
+      [['active', 'ca'], ['bench', 'cb'], ['stadium', 'sa']].forEach(([which, prefix]) => {
         const rect = crop[which];
         if (!rect) return;
         ['x', 'y', 'w', 'h'].forEach((side) => set(`--${prefix}-${side}`, String(rect[side])));
-        root.classList.add(`has-crop-${which}`);
       });
       // the circle cut out of a Special Energy card: where its middle is on the card, and how wide it is
       if (crop.energy) {
@@ -668,7 +854,10 @@
       if (images.trainerAAvatar) root.classList.add('has-avatar-a');
       if (images.trainerBAvatar) root.classList.add('has-avatar-b');
       if (images.energySymbols) root.classList.add('has-energy-sprite');
+      if (images.statusSymbols) root.classList.add('has-status-sprite');
       if (images.backgroundImage) root.classList.add('has-backdrop');
+      // the picture on the prize cards: a card back or a ball when the design asks for one (the CSS draws it), its own look otherwise
+      if (THEME.PRIZE_KEYS.includes(theme.prizeStyle) && theme.prizeStyle !== THEME.PRIZE_DEFAULT) root.classList.add(`prize-${theme.prizeStyle}`);
 
       if (theme.font) {
         const face = new window.FontFace('OTO Theme', cssUrl(theme.font));

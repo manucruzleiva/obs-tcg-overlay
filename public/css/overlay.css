@@ -136,7 +136,41 @@ html, body {
   text-transform: uppercase;
   color: var(--fg-primary);
 }
+/* A flag instead of the letters: bigger, with no letter spacing, drawn with the flag font where the system has no flags */
+.sb-nat.is-flag {
+  padding: 0 10px;
+  font-family: var(--font-flags);
+  font-size: 1.5em;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
 .sb-record { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* the deck: a pill with its text and, in front of it, the energy icon or the Pokémon it names */
+.sb-deck {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 340px;
+  padding: 1px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: var(--fg-primary);
+}
+.sb-deck.has-icon { padding-left: 5px; }
+.sb-deck.no-text { padding-right: 5px; }
+.sb-deck-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -3px 0;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px var(--shadow));
+}
+.sb-deck-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .sb-wins {
   margin-left: auto;
@@ -235,6 +269,29 @@ html, body {
   transition: opacity 0.4s ease, transform 0.4s ease, filter 0.4s ease;
 }
 .prize.taken { opacity: 0.14; transform: scale(0.88); filter: grayscale(1); }
+
+/* The picture on the prize cards when a design asks for one (its "prizeStyle"): the file of the assets folder, or a plain drawing when
+   the file is not there (a layer that does not load is simply not painted). The cards stay cards: taken ones go gray, as always. */
+:root {
+  --prize-english-drawn: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2040%2056%22%20preserveAspectRatio%3D%22none%22%3E%0A%20%20%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2250%25%22%20cy%3D%2240%25%22%20r%3D%2275%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%234a7fe0%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%230c2461%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%0A%20%20%3Crect%20width%3D%2240%22%20height%3D%2256%22%20fill%3D%22url(%23g)%22%2F%3E%0A%20%20%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2236%22%20height%3D%2252%22%20rx%3D%222.5%22%20fill%3D%22none%22%20stroke%3D%22%23f2c94c%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%2210%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M10%2028a10%2010%200%200%201%2020%200z%22%20fill%3D%22%23e03a3a%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Crect%20x%3D%2210%22%20y%3D%2227%22%20width%3D%2220%22%20height%3D%222%22%20fill%3D%22%231d1d1d%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%223.2%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%3C%2Fsvg%3E");
+  --prize-japanese-drawn: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2040%2056%22%20preserveAspectRatio%3D%22none%22%3E%0A%20%20%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2250%25%22%20cy%3D%2240%25%22%20r%3D%2275%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23c8333c%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%234a0d12%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%0A%20%20%3Crect%20width%3D%2240%22%20height%3D%2256%22%20fill%3D%22url(%23g)%22%2F%3E%0A%20%20%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2236%22%20height%3D%2252%22%20rx%3D%222.5%22%20fill%3D%22none%22%20stroke%3D%22%23f0d78c%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M20%205%20L33%2028%20L20%2051%20L7%2028z%22%20fill%3D%22none%22%20stroke%3D%22%23f0d78c%22%20stroke-opacity%3D%220.55%22%20stroke-width%3D%220.8%22%2F%3E%0A%20%20%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%229%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M11%2028a9%209%200%200%201%2018%200z%22%20fill%3D%22%23f5f0e6%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Crect%20x%3D%2211%22%20y%3D%2227%22%20width%3D%2218%22%20height%3D%222%22%20fill%3D%22%231d1d1d%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%222.88%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%3C%2Fsvg%3E");
+  --prize-pokeball-drawn: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2040%2056%22%20preserveAspectRatio%3D%22none%22%3E%0A%20%20%3Crect%20width%3D%2240%22%20height%3D%2256%22%20fill%3D%22%23f1f1ef%22%2F%3E%0A%20%20%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%2237%22%20height%3D%2253%22%20rx%3D%222.5%22%20fill%3D%22none%22%20stroke%3D%22%23c9c9c4%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%2214%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M6%2028a14%2014%200%200%201%2028%200z%22%20fill%3D%22%23e03a3a%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%0A%20%20%3Crect%20x%3D%226%22%20y%3D%2227%22%20width%3D%2228%22%20height%3D%222%22%20fill%3D%22%231d1d1d%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2220%22%20cy%3D%2228%22%20r%3D%224.48%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%231d1d1d%22%20stroke-width%3D%221.3%22%2F%3E%3C%2Fsvg%3E");
+}
+.prize-english .prize { background: url("/assets/cardbacks/english") center / cover no-repeat, var(--prize-english-drawn) center / cover no-repeat; }
+.prize-japanese .prize { background: url("/assets/cardbacks/japanese") center / cover no-repeat, var(--prize-japanese-drawn) center / cover no-repeat; }
+.prize-pokeball .prize { background: url("/assets/cardbacks/pokeball") center / cover no-repeat, var(--prize-pokeball-drawn) center / cover no-repeat; }
+
+/* a prize card that has a card chosen for it shows that card on its front, over its back (hidden prizes keep their back and the question mark) */
+.prizes:not(.is-hidden) .prize.has-face::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--prize-face) center / cover no-repeat;
+}
 .prizes.is-hidden .prize::after {
   content: "?";
   display: flex;
@@ -249,6 +306,7 @@ html, body {
 .prize.penalty { border-color: var(--danger); box-shadow: 0 0 14px var(--danger); }
 .prize.penalty::before {
   content: "";
+  z-index: 1;
   position: absolute;
   left: 0;
   top: 0;
@@ -320,6 +378,13 @@ html, body {
   box-shadow: 0 0 0 4px var(--side-color), 0 0 40px var(--side-color), 0 24px 50px var(--shadow);
 }
 
+/* The part of the card picture that shows, as fractions of the picture (x, y, w, h): --ca-* for the Active Pokémon and --cb-*
+   for the bench. Unless a design says otherwise it is the artwork. The box takes the shape of that part. */
+:root {
+  --ca-x: 0.07; --ca-y: 0.115; --ca-w: 0.86; --ca-h: 0.385;
+  --cb-x: 0.07; --cb-y: 0.115; --cb-w: 0.86; --cb-h: 0.385;
+}
+
 .mon { display: flex; }
 .mon .art {
   position: relative;
@@ -333,7 +398,7 @@ html, body {
 
 .active .mon { gap: 24px; flex: 1; min-width: 0; align-items: flex-start; }
 .trainer-b .active .mon { flex-direction: row-reverse; }
-.active .mon .art { width: 300px; height: 418px; border-radius: 16px; }
+.active .mon .art { width: 300px; height: calc(300px * 1.393333 * var(--ca-h) / var(--ca-w)); border-radius: 16px; }
 .active .details { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
 .trainer-b .active .details { align-items: flex-end; }
 
@@ -414,7 +479,7 @@ html, body {
   max-width: none;
   width: calc(100% / var(--ed, 0.536));
   left: calc(100% * (0.5 - var(--ex, 0.5) / var(--ed, 0.536)));
-  top: calc(100% * (0.5 - var(--ey, 0.3075) * 1.3933 / var(--ed, 0.536)));
+  top: calc(100% * (0.5 - var(--ey, 0.3075) * 1.393333 / var(--ed, 0.536)));
 }
 
 /* An uploaded icon strip (11 equal squares in the order Grass, Fire, Water, Lightning, Psychic,
@@ -468,7 +533,10 @@ html, body {
 .statuses { display: flex; flex-wrap: wrap; gap: 6px; }
 /* --c and --ink are the color of the condition (see STATUS_CONDITIONS in game-data.js) */
 .status-chip {
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 4px;
   border-radius: 999px;
   background: var(--c, var(--warning));
   color: var(--ink, #1d1402);
@@ -483,12 +551,9 @@ html, body {
 .trainer-b .bench { justify-content: flex-end; }
 
 .mon.mini { width: 104px; flex-direction: column; gap: 7px; }
-.mon.mini .art { width: 104px; height: 145px; border-radius: 9px; box-shadow: 0 10px 24px var(--shadow); }
+.mon.mini .art { width: 104px; height: calc(104px * 1.393333 * var(--cb-h) / var(--cb-w)); border-radius: 9px; box-shadow: 0 10px 24px var(--shadow); }
 
-/* A design may show only part of the card picture: --ca-* (Active Pokémon) and --cb-* (bench) are the part
-   to show, as fractions of the picture (x, y, w, h). The box takes the shape of that part. */
-.has-crop-active .active .mon .art { height: calc(300px * 1.3933 * var(--ca-h) / var(--ca-w)); }
-.has-crop-active .active .mon .art-img {
+.active .mon .art-img {
   position: absolute;
   max-width: none;
   object-fit: fill;
@@ -497,8 +562,7 @@ html, body {
   left: calc(-100% * var(--ca-x) / var(--ca-w));
   top: calc(-100% * var(--ca-y) / var(--ca-h));
 }
-.has-crop-bench .mon.mini .art { height: calc(104px * 1.3933 * var(--cb-h) / var(--cb-w)); }
-.has-crop-bench .mon.mini .art-img {
+.mon.mini .art-img {
   position: absolute;
   max-width: none;
   object-fit: fill;
@@ -524,7 +588,127 @@ html, body {
 .mon.mini .ability::before { width: 6px; height: 6px; }
 .mon.mini .ability-state { padding: 1px 4px; font-size: 9px; }
 .mon.mini .statuses { justify-content: center; }
-.mon.mini .status-chip { font-size: 10px; padding: 1px 6px; }
+.mon.mini .status-chip { font-size: 10px; padding: 1px 6px 1px 2px; }
+.mon.mini .status-icon { width: 15px; height: 15px; }
+
+/* ------------------------------------------------------------ a Pokémon's tile
+   The picture of the card (cropped to the part a design chooses) has a band at its top and one at its bottom. Each band can
+   hold the HP bar and, in its left and right corners, the energy attached and the retreat cost. overlay.js puts each part in
+   the place the design says (see placeParts), or below the picture, in .details, which is how it looked before. */
+
+.band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  pointer-events: none;
+}
+.band-top { top: 0; }
+.band-bottom { bottom: 0; flex-direction: column-reverse; } /* the corners above, the bar at the very bottom */
+.band-bar:empty, .corner:empty { display: none; }
+.band-corners { display: flex; justify-content: space-between; gap: 8px; }
+.band-top .band-corners { align-items: flex-start; }
+.band-bottom .band-corners { align-items: flex-end; }
+.corner { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.corner-left { align-items: flex-start; max-width: 62%; }
+.corner-right { align-items: flex-end; max-width: 38%; margin-left: auto; }
+.corner-left .energies, .corner-left .retreat { justify-content: flex-start; }
+.corner-right .energies, .corner-right .retreat { justify-content: flex-end; }
+
+/* the HP bar on the picture: the numbers are on the bar */
+.mon .art .hp { position: relative; width: 100%; }
+.mon .art .hp-bar { height: 26px; background: rgba(0, 0, 0, 0.6); border-color: rgba(255, 255, 255, 0.28); }
+.mon .art .hp-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 17px/1 var(--font-display);
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+.mon.mini .art .hp-bar { height: 15px; }
+.mon.mini .art .hp-text { font-size: 11px; }
+.mon.mini .band { padding: 4px; gap: 3px; }
+.mon.mini .corner { gap: 2px; }
+.mon.mini .corner-left { max-width: 60%; }
+.mon.mini .corner-right { max-width: 40%; }
+
+/* attached energy and the retreat cost on the picture stand out from the card behind them */
+.mon .art .energy { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9)); }
+.mon .art .energies, .mon .art .retreat { gap: 4px; }
+.mon.mini .art .energies, .mon.mini .art .retreat { gap: 2px; }
+
+/* the retreat cost: that many colorless Energy; crossed out while the Pokémon cannot retreat (Trapped) */
+.retreat { position: relative; display: flex; flex-wrap: wrap; gap: 6px; }
+.trainer-b .retreat { justify-content: flex-end; }
+.retreat.blocked { opacity: 0.85; }
+.retreat.blocked::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--shadow);
+  transform: rotate(-12deg);
+}
+.mon.mini .retreat .energy { width: 15px; height: 15px; border-width: 1px; }
+
+/* ------------------------------------------------------------ the status icons
+   Round, like the energy icons. The picture is the one in assets/status, or the strip a design brings (6 equal squares in the
+   order of STATUS_CONDITIONS in game-data.js; --s is the place of this one in it). Where there is no picture the disc has the
+   color of the status and a letter. On the picture of a Pokémon only the icon is drawn; below it, a chip with the name too. */
+.status-icon {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--c) var(--icon) center / cover no-repeat;
+  filter: drop-shadow(0 2px 4px var(--shadow));
+}
+/* Trapped is a drawing on white: it sits inside the disc */
+.status-chip[data-status="trapped"] .status-icon { background-color: #fff; background-size: 78%; }
+.has-status-sprite .status-chip .status-icon {
+  background-image: var(--statusSymbols);
+  background-size: 600% 100%;
+  background-position: calc(var(--s) * 20%) 0;
+  background-color: transparent;
+}
+.status-icon.no-icon { background-image: none; }
+.status-icon.no-icon::after {
+  content: attr(data-glyph);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font: 800 13px/1 var(--font-display);
+  color: var(--ink);
+}
+.has-status-sprite .status-icon.no-icon { background-image: var(--statusSymbols); }
+.has-status-sprite .status-icon.no-icon::after { content: none; }
+
+.statuses.on-art { gap: 4px; }
+.statuses.on-art .status-chip { padding: 0; background: none; box-shadow: none; gap: 0; }
+.statuses.on-art .status-label { display: none; }
+.corner-left .statuses { justify-content: flex-start; }
+.corner-right .statuses { justify-content: flex-end; }
+.mon.mini .art .statuses { gap: 2px; }
+.mon.mini .status-icon.no-icon::after { font-size: 8px; }
 
 /* ---------------------------------------------------------------- center: feature cards and stadium */
 
@@ -561,17 +745,31 @@ html, body {
   text-align: center;
 }
 .feature-name { font: 700 17px/1.15 var(--font-display); text-transform: uppercase; }
-.feature-note { margin-top: 4px; font-size: 15px; color: var(--fg-secondary); line-height: 1.25; }
 
 .stadium { margin: 0 0 0 0; margin-top: auto; text-align: center; }
-.stadium-img {
+/* The part of the Stadium's card that shows (--sa-*, as fractions of the card: x, y, w, h): the picture unless a design says otherwise.
+   The box takes the shape of that part, as the Pokémon's do. */
+:root { --sa-x: 0.082; --sa-y: 0.145; --sa-w: 0.836; --sa-h: 0.37; }
+.stadium-art {
+  position: relative;
   display: block;
-  width: 230px;
-  height: 321px;
-  object-fit: cover;
+  margin: 0 auto;
+  width: 300px;
+  height: calc(300px * 1.393333 * var(--sa-h) / var(--sa-w));
+  overflow: hidden;
   border-radius: 12px;
   box-shadow: 0 18px 40px var(--shadow);
   background: var(--bg-card);
+}
+.stadium-img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  object-fit: fill;
+  width: calc(100% / var(--sa-w));
+  height: calc(100% / var(--sa-h));
+  left: calc(-100% * var(--sa-x) / var(--sa-w));
+  top: calc(-100% * var(--sa-y) / var(--sa-h));
 }
 .stadium-name {
   margin-top: 10px;
@@ -584,6 +782,33 @@ html, body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* ---------------------------------------------------------------- a paused game */
+
+/* A banner in the middle that stays until the game is resumed, and everything else grayed out (the banners and effects stay as they are) */
+#stage.is-paused > :not(.pause-banner):not(.toasts):not(.fx-layer) { filter: grayscale(1) brightness(0.45); }
+.pause-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 25;
+  transform: translate(-50%, -50%);
+  min-width: 760px;
+  padding: 30px 64px 34px;
+  border-radius: 22px;
+  text-align: center;
+  background: var(--bg-panel);
+  border: 3px solid var(--warning);
+  box-shadow: 0 0 70px rgba(251, 191, 36, 0.35), 0 30px 80px var(--shadow);
+  animation: pause-pulse 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.pause-banner[hidden] { display: none; }
+.pause-icon { display: inline-flex; gap: 14px; margin-bottom: 10px; }
+.pause-icon::before, .pause-icon::after { content: ""; width: 16px; height: 54px; border-radius: 4px; background: var(--warning); }
+.pause-title { font: 800 88px/1 var(--font-display); letter-spacing: 0.12em; color: var(--warning); text-shadow: 0 4px 24px var(--shadow); }
+.pause-sub { margin-top: 12px; font: 600 26px/1.2 var(--font-body); letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-secondary); }
+@keyframes pause-pulse { 50% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.2), 0 30px 80px var(--shadow); } }
 
 /* ---------------------------------------------------------------- toasts */
 

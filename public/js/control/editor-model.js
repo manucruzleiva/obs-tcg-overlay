@@ -1,6 +1,6 @@
 /**
- * What the design editor is editing: a draft of one design (its author, description, colors, layout and
- * crop), the design as last saved, and an undo history. The canvas, the code view and the crop selector
+ * What the design editor is editing: a draft of one design (its author, description, colors, layout,
+ * crop, tile and the picture on the prize cards), the design as last saved, and an undo history. The canvas, the code view and the crop selector
  * all read and change this one thing, and tell each other through it.
  */
 
@@ -23,7 +23,9 @@ function editable(design) {
     description: design.description || '',
     colors: clone(design.colors || {}),
     layout: clone(design.layout || {}),
-    crop: clone(design.crop || {})
+    crop: clone(design.crop || {}),
+    tile: clone(design.tile || {}),
+    prizeStyle: design.prizeStyle || '' // the picture on the prize cards; empty for the usual one
   };
 }
 
@@ -129,34 +131,68 @@ export class EditorModel {
 
   // ---- the crop
 
-  // What shows for the Active Pokémon, the bench ("active", "bench": the whole card unless set) and Special Energy
-  // ("energy": a circle in the middle of the picture window unless set)
+  // What shows for the Active Pokémon, the bench and the Stadium ("active", "bench", "stadium": the picture of the card unless set) and
+  // Special Energy ("energy": a circle in the middle of the picture window unless set)
   cropOf(which) {
     if (this.draft.crop[which]) return { ...this.draft.crop[which] };
-    return which === 'energy' ? { ...window.OTO_THEME.ENERGY_CIRCLE } : { x: 0, y: 0, w: 1, h: 1 };
+    return which === 'energy' ? { ...window.OTO_THEME.ENERGY_CIRCLE } : { ...this.usualCrop(which) };
+  }
+
+  // The picture window a kind of card shows when the design says nothing: the Stadium has its own, as its card is laid out differently
+  usualCrop(which) {
+    return which === 'stadium' ? window.OTO_THEME.STADIUM_CROP_DEFAULT : window.OTO_THEME.CROP_DEFAULT;
   }
 
   setCrop(which, rect, options) {
     const crop = clone(this.draft.crop);
     const usual = window.OTO_THEME_RULES;
-    const isDefault = rect && (which === 'energy' ? usual.isUsualCircle(rect) : rect.x === 0 && rect.y === 0 && rect.w === 1 && rect.h === 1);
+    const isDefault = rect && (which === 'energy' ? usual.isUsualCircle(rect) : usual.isUsualCrop(rect, this.usualCrop(which)));
     if (!rect || isDefault) delete crop[which];
     else crop[which] = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     this.update({ crop }, options);
+  }
+
+  // ---- the tile
+
+  // Where the HP bar, the energy and the retreat cost go for "active" or "bench" (the usual places unless set)
+  tileOf(kind) {
+    return { ...window.OTO_THEME.TILE_DEFAULT, ...(this.draft.tile[kind] || {}) };
+  }
+
+  setTile(kind, part, place, options) {
+    const tile = clone(this.draft.tile);
+    const entry = { ...(tile[kind] || {}), [part]: place };
+    if (place === window.OTO_THEME.TILE_DEFAULT[part]) delete entry[part];
+    if (Object.keys(entry).length) tile[kind] = entry;
+    else delete tile[kind];
+    this.update({ tile }, options);
+  }
+
+  // ---- the prize cards
+
+  // The picture on the prize cards: "current" (what the design has) or one of the others
+  prizeOf() {
+    return this.draft.prizeStyle || window.OTO_THEME.PRIZE_DEFAULT;
+  }
+
+  setPrize(style, options) {
+    this.update({ prizeStyle: style === window.OTO_THEME.PRIZE_DEFAULT ? '' : style }, options);
   }
 
   // What the overlay needs to draw this draft: addresses for the pictures the design holds
   theme(designAssetUrl) {
     const images = {};
     for (const [key, ref] of Object.entries(this.files.images)) images[key] = designAssetUrl(ref);
-    const theme = { name: this.name, colors: this.draft.colors, images, layout: this.draft.layout, crop: this.draft.crop };
+    const theme = { name: this.name, colors: this.draft.colors, images, layout: this.draft.layout, crop: this.draft.crop, tile: this.draft.tile };
+    if (this.draft.prizeStyle) theme.prizeStyle = this.draft.prizeStyle;
     if (this.files.font) theme.font = designAssetUrl(this.files.font);
     return theme;
   }
 
   // The design as it is written in the code view (and in design.json), without the pictures
   toCode() {
-    const code = { author: this.draft.author, description: this.draft.description, colors: this.draft.colors, layout: this.draft.layout, crop: this.draft.crop };
+    const code = { author: this.draft.author, description: this.draft.description, colors: this.draft.colors, layout: this.draft.layout, crop: this.draft.crop, tile: this.draft.tile };
+    if (this.draft.prizeStyle) code.prizeStyle = this.draft.prizeStyle;
     return JSON.stringify(code, null, 2);
   }
 }

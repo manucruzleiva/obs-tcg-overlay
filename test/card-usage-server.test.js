@@ -47,7 +47,7 @@ describe('the cards to start from, through the server', () => {
   it('has nothing to offer on a computer that has seen no cards', async () => {
     const response = await popular();
     assert.equal(response.status, 200, 'and "popular" is not taken for a card id');
-    assert.deepEqual(response.json, { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', used: 0 });
+    assert.deepEqual(response.json, { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', favorites: 0, used: 0, saved: 0 });
   });
 
   it('offers the cards a search already saved, before any was used', async () => {
@@ -100,7 +100,47 @@ describe('the cards to start from, through the server', () => {
 
     assert.deepEqual((await call('DELETE', '/api/cards/used')).json, { ok: true });
     response = await popular();
-    assert.deepEqual(response.json, { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', used: 0 });
+    assert.deepEqual(response.json, { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', favorites: 0, used: 0, saved: 0 });
+  });
+
+  it('lists the cards with a star first, remembers how a card with a star looks, and keeps those when the uses are forgotten', async () => {
+    const producer = server.client({ clientId: 'usage-star-producer', name: 'Maya' });
+    await producer.ready();
+    await call('DELETE', '/api/cards/used');
+    const raichu = { id: 'sv-3', name: 'Raichu', setName: 'Set sv', setId: 'sv', number: '3', rarity: 'Common', types: 'Lightning', hp: '70', supertype: 'Pokémon', subtypes: 'Basic', images: { small: 'https://images.test/sv/3.png', large: 'https://images.test/sv/3_hires.png' } };
+    const eevee = { ...raichu, id: 'sv-6', name: 'Eevee', number: '6' };
+
+    // a card is starred somewhere that does not remember its look: it cannot be listed yet
+    await producer.act('action:card', { action: 'favorite', cardId: 'sv-6' });
+    assert.equal(names(await popular()).includes('Eevee'), false);
+    // the page says how it looks, without counting a use
+    assert.deepEqual((await call('POST', '/api/cards/known', eevee)).json, { ok: true });
+    let response = await popular();
+    assert.equal(names(response)[0], 'Eevee', 'now it is the first');
+    assert.deepEqual([response.json.favorites, response.json.used], [1, 0]);
+
+    // used cards come after the stars
+    await call('POST', '/api/cards/used', raichu);
+    await call('POST', '/api/cards/used', raichu);
+    response = await popular();
+    assert.deepEqual(names(response).slice(0, 2), ['Eevee', 'Raichu']);
+    assert.deepEqual([response.json.favorites, response.json.used], [1, 1]);
+
+    // taking the star off puts it with the others
+    await producer.act('action:card', { action: 'favorite', cardId: 'sv-6' });
+    response = await popular();
+    assert.equal(names(response).includes('Eevee'), false, 'a card that was only starred is not offered once the star is off');
+    assert.equal(names(response)[0], 'Raichu');
+
+    // forgetting what was used keeps the cards that still have a star
+    await producer.act('action:card', { action: 'favorite', cardId: 'sv-3' });
+    await call('DELETE', '/api/cards/used');
+    response = await popular();
+    assert.deepEqual(names(response).slice(0, 1), ['Raichu']);
+    assert.deepEqual([response.json.favorites, response.json.used], [1, 0]);
+    assert.equal((await call('POST', '/api/cards/known', { id: 'x y' })).status, 400);
+    await producer.act('action:card', { action: 'favorite', cardId: 'sv-3' });
+    producer.close();
   });
 
   it('keeps the list and the counting behind the password', async () => {
@@ -109,6 +149,7 @@ describe('the cards to start from, through the server', () => {
       const ask = (method, path, body) => fetch(`${locked.base}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
       assert.equal((await ask('GET', '/api/cards/popular')).status, 401);
       assert.equal((await ask('POST', '/api/cards/used', { id: 'sv-1', name: 'Pikachu' })).status, 401);
+      assert.equal((await ask('POST', '/api/cards/known', { id: 'sv-1', name: 'Pikachu' })).status, 401);
       assert.equal((await ask('DELETE', '/api/cards/used')).status, 401);
     } finally {
       await locked.stop();

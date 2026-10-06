@@ -163,6 +163,10 @@
 .crop-rect.circle .crop-handle.se { left: 85.36%; top: 85.36%; }
 .crop-panel [hidden] { display: none !important; }
 .crop-card-field { margin-top: 6px; }
+.tile-panel .option-group, .tile-group { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.tile-group legend { padding: 0 6px; font: 700 12px var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-secondary); }
+.tile-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0; font-size: 13px; color: var(--fg-secondary); }
+.tile-field select { flex: none; width: 15em; max-width: 60%; }
 .crop-summary { margin: 8px 0 0; font-size: 13px; color: var(--fg-secondary); }
 .crop-panel .btn[aria-pressed="true"] { border-color: var(--accent); background: rgba(124, 140, 255, 0.18); }
 

@@ -41,7 +41,9 @@ export class CenterView {
       h('div', { class: 'score-row' }, this.wins.trainerA.node, this.wins.trainerB.node),
       h('div', { class: 'match-meta' }, this.bestOf, this.round),
       h('div', { class: 'button-row' },
-        h('button', { class: 'btn', type: 'button', onclick: () => match('startGame') }, 'New game'),
+        // the next game of this match: prizes, penalties and the once-per-game markers start again; the score and names stay
+        h('button', { class: 'btn primary', type: 'button', title: 'Prize cards and penalties start again, and the GX and VSTAR markers come back. The score and the names stay.', onclick: () => match('nextGame') }, 'Next game'),
+        h('button', { class: 'btn', type: 'button', title: 'A whole new match: the score goes back to 0 too', onclick: () => match('startGame') }, 'New match'),
         h('button', { class: 'btn', type: 'button', onclick: () => match('resetMatchScore') }, 'Reset score')));
 
     // ---- turn
@@ -52,6 +54,9 @@ export class CenterView {
 
     // ---- hype
     const hype = (label, key, run, cls = '') => h('button', { class: `btn hype ${cls}`, type: 'button', onclick: run }, label, key && h('kbd', {}, key));
+    // The pause is a switch: its label says what pressing it does, and it is lit while the game is paused
+    this.pauseButton = h('button', { class: 'btn hype amber', type: 'button', 'aria-pressed': 'false', title: 'The overlay shows a PAUSED banner, grayed out, until you resume', onclick: () => app.togglePause() },
+      h('span', { class: 'pause-label' }, 'Pause game'), h('kbd', {}, 'Shift+P'));
     const hypeBlock = h('section', { class: 'block hype-block' },
       h('div', { class: 'block-title' }, 'Hype', h('span', { class: 'hint' }, 'Shown on the overlay')),
       h('div', { class: 'hype-grid' },
@@ -59,7 +64,8 @@ export class CenterView {
         hype('Attack', 'C', () => app.openAttack(), 'red'),
         hype('Knock out', 'K', () => app.openKO(app.focus), 'red'),
         hype('Pass turn', 'P', () => app.act('action:toast', { action: 'passTurn' }), 'blue'),
-        hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), '')));
+        hype('Game start', '', () => app.act('action:toast', { action: 'startGame' }), ''),
+        this.pauseButton));
 
     // ---- table
     this.stadiumArt = h('div', { class: 'stadium-art' });
@@ -93,6 +99,10 @@ export class CenterView {
     }
     this.bestOf.value = String(state.matchScore.bestOf);
 
+    this.pauseButton.classList.toggle('on', state.paused === true);
+    this.pauseButton.setAttribute('aria-pressed', String(state.paused === true));
+    this.pauseButton.querySelector('.pause-label').textContent = state.paused === true ? 'Resume game' : 'Pause game';
+
     const round = (state.matchInfo && state.matchInfo.round) || '';
     this.round.dataset.shown = round;
     if (document.activeElement !== this.round) this.round.value = round;
@@ -112,7 +122,7 @@ export class CenterView {
       ? h('p', { class: 'empty' }, 'Nothing featured. Add a card to show it to the audience.')
       : state.featureCards.map((card) => h('div', { class: 'feature-item' },
         h('img', { src: card.image, alt: '', loading: 'lazy' }),
-        h('div', { class: 'feature-text' }, h('strong', {}, card.name), card.note && h('span', {}, card.note)),
+        h('div', { class: 'feature-text' }, h('strong', {}, card.name)),
         h('button', { class: 'round-btn small', type: 'button', 'aria-label': `Remove ${card.name}`, onclick: () => app.act('action:card', { action: 'removeFeatureCard', id: card.id }) }, icon('close', 14)))));
   }
 

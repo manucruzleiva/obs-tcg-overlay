@@ -5,6 +5,8 @@
  * the server uses DEFAULTS as the starting settings, the control panel builds its
  * "Overlay visibility" switches from GROUPS, and the overlay maps each key to a CSS class.
  * Everything shows by default except the options marked `off: true`.
+ * An option marked `style: true` is not a piece of the overlay but a way to draw one (the nationality as a flag): "Show everything"
+ * and "Minimal" leave it as it is, and the design editor draws it the way the live overlay does.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -28,6 +30,9 @@
       options: [
         { key: 'trainerName', label: 'Names' },
         { key: 'nationality', label: 'Nationality' },
+        { key: 'nationalityFlag', label: 'Nationality as a flag emoji instead of text (when it is a country)', off: true, style: true },
+        { key: 'deckType', label: 'Deck or GLC type' },
+        { key: 'deckIcon', label: 'Picture next to the deck (an energy icon, or the Pokémon)' },
         { key: 'record', label: 'Tournament record (W/L/T)' },
         { key: 'prizes', label: 'Prize cards' },
         { key: 'energyCounter', label: 'Energy attachment counter' },
@@ -47,6 +52,7 @@
         { key: 'pokemonNames', label: 'Pokémon names' },
         { key: 'hpBars', label: 'HP bars and numbers' },
         { key: 'attachments', label: 'Attached energy and tools' },
+        { key: 'retreatCost', label: 'Retreat cost' },
         { key: 'abilityTokens', label: 'Ability tokens (ready / used)' },
         { key: 'statusConditions', label: 'Status conditions' }
       ]
@@ -70,7 +76,8 @@
   ];
 
   const KEYS = GROUPS.flatMap((group) => group.options.map((option) => option.key));
+  const STYLE_KEYS = GROUPS.flatMap((group) => group.options).filter((option) => option.style).map((option) => option.key);
   const DEFAULTS = Object.fromEntries(GROUPS.flatMap((group) => group.options).map((option) => [option.key, !option.off]));
 
-  return { GROUPS, KEYS, DEFAULTS };
+  return { GROUPS, KEYS, STYLE_KEYS, DEFAULTS };
 }));

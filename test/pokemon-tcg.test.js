@@ -72,6 +72,7 @@ describe('PokemonTCGService', () => {
       }
     };
     service = new PokemonTCGService(new CacheService(fakeDb()));
+    service.setProvider('pokemontcg'); // these tests are about the Pokémon TCG API alone (see card-sources.test.js for the two together)
     service.providers.pokemontcg.baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 

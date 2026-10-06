@@ -7,15 +7,19 @@
  * carry anything but a color or a length is refused).
  * Layout: where each piece of the overlay is moved to and how big it is.
  *   { "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } }
- * Crop: which part of the card picture shows for the Active Pokémon and the bench, as fractions of the card, and which
- * circle of a Special Energy card shows on the Pokémon it is attached to.
- *   { "active": { "x": 0.07, "y": 0.115, "w": 0.86, "h": 0.385 }, "energy": { "x": 0.3, "y": 0.2, "w": 0.4 } }
+ * Crop: which part of the card picture shows for the Active Pokémon, the bench and the Stadium, as fractions of the card (the picture of
+ * the card unless the design says otherwise), and which circle of a Special Energy card shows on the Pokémon it is attached to.
+ *   { "active": { "x": 0, "y": 0, "w": 1, "h": 1 }, "energy": { "x": 0.3, "y": 0.2, "w": 0.4 } }
+ * Tile: where the HP bar, the attached energy and the retreat cost go on a Pokémon's picture (or below it).
+ *   { "active": { "hp": "bottom", "retreat": "top-right" } }
+ * Prize style: the picture on the prize cards: "current" (usual), "english" or "japanese" card back, or a "pokeball".
+ *   "pokeball"
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./theme-options'));
   else root.OTO_THEME_RULES = factory(root.OTO_THEME);
 }(typeof self !== 'undefined' ? self : this, function (THEME) {
-  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE } = THEME;
+  const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, TILE_PARTS, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT } = THEME;
   const MAX_COLOR_LENGTH = 200;
 
   // A complaint that can be shown to a person as it is
@@ -90,8 +94,11 @@
     return rect;
   }
   const isUsualCircle = (rect) => ['x', 'y', 'w', 'h'].every((side) => Math.abs(rect[side] - ENERGY_CIRCLE[side]) < 0.0015);
+  // What a Pokémon shows when its design says nothing: the picture of the card (`usual` is the picture window of another kind of card:
+  // the Stadium's)
+  const isUsualCrop = (rect, usual = CROP_DEFAULT) => ['x', 'y', 'w', 'h'].every((side) => Math.abs(rect[side] - usual[side]) < 0.0015);
 
-  // Which part of the card shows for the Active Pokémon and the bench
+  // Which part of the card shows for the Active Pokémon, the bench and the Stadium
   function sanitizeCrop(input, { strict = false } = {}) {
     const crop = {};
     if (input === undefined || input === null) return crop;
@@ -101,7 +108,7 @@
     }
     for (const [key, value] of Object.entries(input)) {
       if (!CROP_KEYS.includes(key)) {
-        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active" or "bench")`);
+        if (strict) throw new RuleError(`There is no crop called "${key}" (use "active", "bench", "stadium" or "energy")`);
         continue;
       }
       const circle = key === 'energy';
@@ -114,11 +121,56 @@
         }
         continue;
       }
-      // the whole card (and, for energy, the usual circle) is the default and is not listed
-      if (circle ? !isUsualCircle(rect) : !isWholeCard(rect)) crop[key] = rect;
+      // what is usual (the picture of the card, the Stadium's own picture window, and for energy the usual circle) is not listed; the whole card is
+      if (circle ? !isUsualCircle(rect) : !isUsualCrop(rect, key === 'stadium' ? STADIUM_CROP_DEFAULT : CROP_DEFAULT)) crop[key] = rect;
     }
     return crop;
   }
 
-  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, cleanRect, cleanCircle, isWholeCard, isUsualCircle, MAX_COLOR_LENGTH };
+  // Where the parts of a Pokémon's tile go, for the Active Pokémon and for the bench. Only what differs from the usual is kept.
+  function sanitizeTile(input, { strict = false } = {}) {
+    const tile = {};
+    if (input === undefined || input === null) return tile;
+    if (!isObject(input)) {
+      if (strict) throw new RuleError('The tile must be an object');
+      return tile;
+    }
+    for (const [key, value] of Object.entries(input)) {
+      if (!TILE_KEYS.includes(key)) {
+        if (strict) throw new RuleError(`There is no tile called "${key}" (use "active" or "bench")`);
+        continue;
+      }
+      if (!isObject(value)) {
+        if (strict) throw new RuleError(`The tile for "${key}" must be an object such as { "hp": "bottom" }`);
+        continue;
+      }
+      const entry = {};
+      for (const [part, place] of Object.entries(value)) {
+        const known = TILE_PARTS.find((item) => item.key === part);
+        if (!known) {
+          if (strict) throw new RuleError(`There is no part of a tile called "${part}" (use ${TILE_PARTS.map((item) => `"${item.key}"`).join(', ')})`);
+          continue;
+        }
+        if (!known.places.includes(place)) {
+          if (strict) throw new RuleError(`"${part}" can go in one of these places: ${known.places.join(', ')}`);
+          continue;
+        }
+        if (place !== TILE_DEFAULT[part]) entry[part] = place;
+      }
+      if (Object.keys(entry).length) tile[key] = entry;
+    }
+    return tile;
+  }
+
+  // The picture on the prize cards: one of PRIZE_KEYS. What is usual ("current") is not listed: the result is an empty string for it.
+  function sanitizePrize(input, { strict = false } = {}) {
+    if (input === undefined || input === null || input === '') return '';
+    if (typeof input !== 'string' || !PRIZE_KEYS.includes(input)) {
+      if (strict) throw new RuleError(`The prize cards can show: ${PRIZE_KEYS.map((key) => `"${key}"`).join(', ')}`);
+      return '';
+    }
+    return input === PRIZE_DEFAULT ? '' : input;
+  }
+
+  return { RuleError, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, cleanRect, cleanCircle, isWholeCard, isUsualCrop, isUsualCircle, MAX_COLOR_LENGTH };
 }));

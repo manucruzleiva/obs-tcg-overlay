@@ -1,9 +1,9 @@
 /**
  * The cards producers use most, so the card picker has something to show before anything is typed.
  *
- * Every card picked in the picker is counted. When the search box is empty the picker lists the most used cards
- * first and, after them, the cards already saved on this computer by earlier lookups and searches (the lookup cache),
- * so it is not empty on the first day either. All of it is local: nothing here asks the internet.
+ * Every card picked in the picker is counted. When the search box is empty the picker lists the cards with a star first,
+ * then the most used ones and, after them, the cards already saved on this computer by earlier lookups and searches (the
+ * lookup cache), so it is not empty on the first day either. All of it is local: nothing here asks the internet.
  */
 
 const PAGE_SIZE = 20;
@@ -63,39 +63,82 @@ class CardUsage {
     return true;
   }
 
-  // One page of cards to start from: { cards, totalCount, page, pageSize, source, used }.
-  // `source` says what the list is made of: 'used' (cards that were used), 'mixed' (those, then saved lookups) or 'cache'.
-  popular({ supertype = '', subtype = '', page = 1 } = {}) {
-    const wanted = { supertype, subtype };
-    const used = this.db.usedCards()
-      .map((entry) => summaryOf(entry.card))
-      .filter((card) => card && matches(card, wanted));
-    const seen = new Set(used.map((card) => card.id));
+  // Remember how a card looks without counting a use of it: a card with a star is listed from this later
+  remember(card) {
+    const summary = summaryOf(card);
+    if (!summary) return false;
+    this.db.rememberCard(summary.id, summary);
+    return true;
+  }
 
-    const saved = [];
+  // The cards the lookup cache holds, as the picker shows them (a card once; none that cannot be read)
+  saved() {
+    const found = [];
+    const seen = new Set();
     for (const raw of this.db.cachedCards()) {
       let card = null;
       try { card = summaryOf(this.localize(raw)); } catch { /* an entry that cannot be read is no card */ }
-      if (!card || seen.has(card.id) || !matches(card, wanted)) continue;
+      if (!card || seen.has(card.id)) continue;
+      seen.add(card.id);
+      found.push(card);
+    }
+    return found;
+  }
+
+  // One page of cards to start from: { cards, totalCount, page, pageSize, source, favorites, used, saved }.
+  // The cards with a star come first (`favorites` are their ids, the latest star first), then the most used, then the ones
+  // saved by earlier lookups. `source` says what the list is made of: 'used' (the person's own cards: stars and uses),
+  // 'mixed' (those, then saved lookups) or 'cache' (saved lookups alone).
+  popular({ supertype = '', subtype = '', page = 1, favorites = [] } = {}) {
+    const wanted = { supertype, subtype };
+    const known = this.db.usedCards()
+      .map((entry) => ({ card: summaryOf(entry.card), uses: entry.uses }))
+      .filter((entry) => entry.card);
+    const byId = new Map(known.map((entry) => [entry.card.id, entry.card]));
+
+    // the latest star first; a star for a card this computer has no picture of is looked for among the saved lookups
+    const starred = [];
+    const seen = new Set();
+    let savedById = null;
+    for (const id of [...(Array.isArray(favorites) ? favorites : [])].reverse()) {
+      if (typeof id !== 'string' || seen.has(id)) continue;
+      seen.add(id);
+      let card = byId.get(id);
+      if (!card) {
+        savedById = savedById || new Map(this.saved().map((entry) => [entry.id, entry]));
+        card = savedById.get(id);
+      }
+      if (card && matches(card, wanted)) starred.push(card);
+    }
+
+    const used = known.filter((entry) => entry.uses > 0 && !seen.has(entry.card.id) && matches(entry.card, wanted)).map((entry) => entry.card);
+    for (const card of used) seen.add(card.id);
+
+    const saved = [];
+    for (const card of this.saved()) {
+      if (seen.has(card.id) || !matches(card, wanted)) continue;
       seen.add(card.id);
       saved.push(card);
       if (saved.length >= MAX_FROM_CACHE) break;
     }
 
-    const list = [...used, ...saved];
+    const list = [...starred, ...used, ...saved];
     const start = (Math.max(1, page) - 1) * PAGE_SIZE;
     return {
       cards: list.slice(start, start + PAGE_SIZE),
       totalCount: list.length,
       page,
       pageSize: PAGE_SIZE,
-      source: used.length === 0 ? 'cache' : saved.length === 0 ? 'used' : 'mixed',
-      used: used.length
+      source: starred.length + used.length === 0 ? 'cache' : saved.length === 0 ? 'used' : 'mixed',
+      favorites: starred.length,
+      used: used.length,
+      saved: saved.length
     };
   }
 
-  clear() {
-    this.db.clearCardUsage();
+  // Forget what was used. The cards with a star (`keep`) are still listed, as the stars say.
+  clear(keep = []) {
+    this.db.clearCardUsage((Array.isArray(keep) ? keep : []).filter((id) => typeof id === 'string'));
   }
 }
 

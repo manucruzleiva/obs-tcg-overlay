@@ -138,7 +138,73 @@ describe('card usage', () => {
   });
 
   it('is empty when there is nothing', () => {
-    assert.deepEqual(usage.popular(), { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', used: 0 });
+    assert.deepEqual(usage.popular(), { cards: [], totalCount: 0, page: 1, pageSize: 20, source: 'cache', favorites: 0, used: 0, saved: 0 });
+  });
+
+  describe('favorites', () => {
+    const star = (...ids) => ids; // the ids of the cards with a star, the latest last
+
+    it('lists the cards with a star first, the latest star first, then the used ones, then the saved ones', async () => {
+      const cache = new CacheService(db);
+      await cache.setSearch('pokemontcg', 'q', 1, { cards: [card('base1-9', 'Only Saved')] });
+      usage.record(card('base1-1', 'Used Often'));
+      usage.record(card('base1-1', 'Used Often'));
+      usage.record(card('base1-2', 'Starred Old'));
+      usage.record(card('base1-3', 'Starred New'));
+
+      const found = usage.popular({ favorites: star('base1-2', 'base1-3') });
+      assert.deepEqual(found.cards.map((entry) => entry.name), ['Starred New', 'Starred Old', 'Used Often', 'Only Saved']);
+      assert.deepEqual([found.favorites, found.used, found.saved, found.totalCount, found.source], [2, 1, 1, 4, 'mixed']);
+    });
+
+    it('does not count a use when a card is only remembered, so it is listed with the stars and nowhere else', () => {
+      assert.equal(usage.remember(card('base1-5', 'Just Starred')), true);
+      assert.equal(usage.remember({ id: '../x', name: 'x' }), false);
+      assert.equal(db.usedCards()[0].uses, 0);
+
+      assert.deepEqual(usage.popular({ favorites: star() }).cards, [], 'without a star it is not offered');
+      const found = usage.popular({ favorites: star('base1-5') });
+      assert.deepEqual(found.cards.map((entry) => entry.name), ['Just Starred']);
+      assert.deepEqual([found.favorites, found.used], [1, 0], 'a star is not a use');
+      assert.equal(found.source, 'used');
+
+      usage.record(card('base1-5', 'Just Starred'));
+      assert.equal(db.usedCards()[0].uses, 1, 'using it counts from there');
+      assert.deepEqual(usage.popular({ favorites: star('base1-5') }).cards.length, 1, 'and it is still listed once');
+    });
+
+    it('finds the picture of a starred card among the saved lookups, and leaves out a star it knows nothing about', async () => {
+      const cache = new CacheService(db);
+      await cache.setSearch('pokemontcg', 'q', 1, { cards: [card('base1-7', 'Seen Before')] });
+      const found = usage.popular({ favorites: star('base1-7', 'nowhere-1', 5, null) });
+      assert.deepEqual(found.cards.map((entry) => entry.name), ['Seen Before']);
+      assert.deepEqual([found.favorites, found.saved], [1, 0], 'it is a favorite, not one of the others');
+    });
+
+    it('narrows the cards with a star like the others', () => {
+      usage.record(card('base1-1', 'Pikachu'));
+      usage.record(card('base1-2', 'Area Zero', { supertype: 'Trainer', subtypes: 'Stadium' }));
+      const stadiums = usage.popular({ supertype: 'Trainer', subtype: 'Stadium', favorites: star('base1-1', 'base1-2') });
+      assert.deepEqual(stadiums.cards.map((entry) => entry.name), ['Area Zero']);
+      assert.equal(stadiums.favorites, 1);
+    });
+
+    it('keeps the cards with a star when what was used is forgotten, and forgets the rest', () => {
+      usage.record(card('base1-1', 'Used'));
+      usage.record(card('base1-2', 'Starred'));
+      usage.remember(card('base1-3', 'Starred Too'));
+      usage.clear(star('base1-2', 'base1-3'));
+      const found = usage.popular({ favorites: star('base1-2', 'base1-3') });
+      assert.deepEqual(found.cards.map((entry) => entry.name), ['Starred Too', 'Starred']);
+      assert.deepEqual([found.favorites, found.used], [2, 0], 'used no times any more');
+      usage.clear();
+      assert.deepEqual(usage.popular({ favorites: star('base1-2') }).cards, [], 'with no star to keep, nothing is kept');
+    });
+
+    it('is not fooled by a list that is not a list', () => {
+      usage.record(card('base1-1', 'Pikachu'));
+      for (const favorites of [undefined, null, 'base1-1', 7, {}]) assert.deepEqual(usage.popular({ favorites }).cards.map((entry) => entry.name), ['Pikachu']);
+    });
   });
 
   it('forgets what was used, and clearing the lookup cache leaves the usage alone', async () => {

@@ -62,6 +62,146 @@ async function startMockCardApi(routes = {}) {
   };
 }
 
+// A stand-in for TCGdex. `cards` are cards in TCGdex's own words ({ id, localId, name, category, image, hp, types, stage,
+// suffix, evolveFrom, rarity, set: { id, name }, trainerType, energyType, attacks, abilities, retreat... }). It answers
+// the GraphQL search (English) and the list of sets (`sets`: { id, releaseDate }), the list and the details of a card for each
+// language, and records what was asked. `behave(request)` may return respond(...) to answer differently (an error), or { hang: true }.
+async function startMockTcgdex({ cards = [], sets = [], behave = () => null } = {}) {
+  const requests = [];
+  const bodies = [];
+  const lower = (text) => String(text || '').toLowerCase();
+  const matches = (card, filters = {}) => {
+    if (filters.name && !lower(card.name).includes(lower(filters.name))) return false;
+    if (filters.regulationMark && card.regulationMark !== filters.regulationMark) return false;
+    if (filters.category && card.category !== filters.category) return false;
+    if (filters.trainerType && card.trainerType !== filters.trainerType) return false;
+    if (filters.energyType && card.energyType !== filters.energyType) return false;
+    if (filters.stage && card.stage !== filters.stage) return false;
+    if (filters.suffix && card.suffix !== filters.suffix) return false;
+    if (filters.evolveFrom && card.evolveFrom !== filters.evolveFrom) return false;
+    if (filters.rarity && card.rarity !== filters.rarity) return false;
+    return true;
+  };
+  const send = (res, status, body) => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(body));
+  };
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      requests.push(`${req.method} ${req.url}`);
+      let body = null;
+      try { body = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
+      bodies.push(body);
+      const special = behave({ method: req.method, url: req.url, body });
+      if (special && special.hang) return; // never answers
+      if (special && special.__response) return send(res, special.status, special.body);
+
+      const url = new URL(req.url, 'http://mock');
+      const parts = url.pathname.split('/').filter(Boolean); // v2, graphql | <lang>, cards, <id>
+      if (req.method === 'POST' && parts[1] === 'graphql') {
+        if (body && /\bsets\b/.test(String(body.query)) && !/\bcards\b/.test(String(body.query))) return send(res, 200, { data: { sets } });
+        const { filters = {}, pagination = {} } = (body && body.variables) || {};
+        const page = pagination.page || 1;
+        const size = pagination.itemsPerPage || 20;
+        const found = cards.filter((card) => matches(card, filters));
+        return send(res, 200, { data: { cards: found.slice((page - 1) * size, page * size) } });
+      }
+      if (req.method === 'GET' && parts[2] === 'cards' && parts.length === 3) {
+        const filters = Object.fromEntries([...url.searchParams.entries()]);
+        const page = Number(filters['pagination:page'] || 1);
+        const size = Number(filters['pagination:itemsPerPage'] || 20);
+        const found = cards.filter((card) => matches(card, filters) && (!filters['set.id'] || card.set.id === filters['set.id']));
+        return send(res, 200, found.slice((page - 1) * size, page * size).map((card) => ({ id: card.id, localId: card.localId, name: card.name, ...(card.image ? { image: card.image } : {}) })));
+      }
+      if (req.method === 'GET' && parts[2] === 'cards' && parts.length === 4) {
+        const card = cards.find((item) => item.id === decodeURIComponent(parts[3]));
+        return card ? send(res, 200, card) : send(res, 404, { error: 'not found' });
+      }
+      return send(res, 404, { error: 'not found' });
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/v2`,
+    requests,
+    bodies,
+    cards,
+    close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); })
+  };
+}
+
+// A stand-in for Scrydex, made from its documentation: GET /pokemon/v1/cards (q, page, page_size, casing) and
+// GET /pokemon/v1/cards/<id>, answered only to the right API key and team ID, as the real one does. `cards` are cards as it gives
+// them with casing=camel ({ id, name, supertype, subtypes, hp, types, number, rarity, expansion: { id, name, releaseDate },
+// images: [{ type, small, medium, large }], evolvesFrom: [], regulationMark, attacks, abilities, convertedRetreatCost... }).
+// It records the URLs (`requests`) and the headers (`headers`). `behave(request)` may return respond(...) or { hang: true }.
+async function startMockScrydex({ cards = [], key = 'test-key-0123456789', team = 'test-team-0123', behave = () => null } = {}) {
+  const requests = [];
+  const headers = [];
+  const lower = (text) => String(text || '').toLowerCase();
+  const send = (res, status, body) => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(body));
+  };
+  // the part of the query language the app uses: name:word, name:word*, field:"phrase", field:word
+  const matches = (card, q) => {
+    const terms = String(q || '').match(/[\w.]+:"[^"]*"|[\w.]+:\S+/g) || [];
+    return terms.every((term) => {
+      const [name, ...rest] = term.split(':');
+      const value = rest.join(':').replace(/"/g, '');
+      switch (name) {
+        // a name is words, the way a search engine reads it: "Mr. Mime" is "mr" and "mime"
+        case 'name': {
+          const nameWords = lower(card.name).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+          return value.endsWith('*') ? nameWords.some((word) => word.startsWith(lower(value.slice(0, -1)))) : nameWords.includes(lower(value));
+        }
+        case 'supertype': return card.supertype === value;
+        case 'subtypes': return (card.subtypes || []).includes(value);
+        case 'rarity': return card.rarity === value;
+        case 'expansion.id': return card.expansion && card.expansion.id === value;
+        case 'evolves_from': return (card.evolvesFrom || []).includes(value);
+        case 'regulation_mark': return card.regulationMark === value;
+        default: throw new Error(`the mock does not understand ${term}`);
+      }
+    });
+  };
+  const server = http.createServer((req, res) => {
+    requests.push(req.url);
+    headers.push(req.headers);
+    const special = behave({ method: req.method, url: req.url });
+    if (special && special.hang) return;
+    if (special && special.__response) return send(res, special.status, special.body);
+    if (req.headers['x-api-key'] !== key || req.headers['x-team-id'] !== team) return send(res, 401, { error: 'Unauthorized' });
+
+    const url = new URL(req.url, 'http://mock');
+    const parts = url.pathname.split('/').filter(Boolean); // pokemon, v1, cards, <id>
+    if (parts[0] !== 'pokemon' || parts[1] !== 'v1' || parts[2] !== 'cards') return send(res, 404, { error: 'not found' });
+    if (parts.length === 3) {
+      const page = Number(url.searchParams.get('page') || 1);
+      const pageSize = Number(url.searchParams.get('page_size') || 100);
+      const found = cards.filter((card) => matches(card, url.searchParams.get('q')));
+      const data = found.slice((page - 1) * pageSize, page * pageSize);
+      return send(res, 200, { data, page, pageSize, count: data.length, totalCount: found.length });
+    }
+    const card = cards.find((item) => item.id === decodeURIComponent(parts[3]));
+    return card ? send(res, 200, { data: card }) : send(res, 404, { error: 'not found' });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/pokemon/v1`,
+    requests,
+    headers,
+    cards,
+    key,
+    team,
+    close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); })
+  };
+}
+
 class Client {
   constructor(base, { clientId, name, role = 'control', cookie } = {}) {
     this.seq = 0;
@@ -194,9 +334,18 @@ async function startServer({ env = {}, label = 'srv', prepare } = {}) {
       HOST: '127.0.0.1',
       DB_PATH: path.join(dir, 'overlay.sqlite'),
       LOG_DIR: path.join(dir, 'logs'),
-      // Never reach the real card API from a test (a refused connection fails fast)
+      // Never reach the real card services from a test (a refused connection fails fast)
       POKEMONTCG_API_URL: 'http://127.0.0.1:9',
+      OTO_TCGDEX_URL: 'http://127.0.0.1:9/v2',
+      OTO_TCGDEX_ASSETS: 'http://127.0.0.1:9',
+      OTO_SPRITE_BASE: 'http://127.0.0.1:9',
+      OTO_TCGDEX_RETRY_MS: '1',
+      OTO_SCRYDEX_API_URL: 'http://127.0.0.1:9/pokemon/v1',
+      OTO_SCRYDEX_RETRY_MS: '1',
       OTO_PASSWORD: '',
+      // A machine busy with several servers and browsers at once can leave a socket unanswered for longer than the usual 5 seconds, and a
+      // test client does not reconnect: give it room, so a slow moment does not turn into a cascade of "no answer" failures
+      OTO_PING_TIMEOUT_MS: '60000',
       ...env
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -267,4 +416,4 @@ async function startMockImageHost(behave = () => null) {
   };
 }
 
-module.exports = { startServer, startMockCardApi, startMockImageHost, respond, wait, ROOT };
+module.exports = { startServer, startMockCardApi, startMockTcgdex, startMockScrydex, startMockImageHost, respond, wait, ROOT };

@@ -1,10 +1,10 @@
 /**
- * The crop selector: pick which part of the card shows for the Active Pokémon and the bench, and which circle of a
+ * The crop selector: pick which part of the card shows for the Active Pokémon, the bench and the Stadium, and which circle of a
  * Special Energy card shows on the Pokémon it is attached to. A card is drawn with a rectangle (or circle) on it
  * that can be moved, resized by its corners and edges, or drawn anew; there are presets for the usual choices
  * and exact numbers for the rest.
  */
-import { h } from './dom.js';
+import { h, replace } from './dom.js';
 
 const THEME = window.OTO_THEME;
 const RULES = window.OTO_THEME_RULES;
@@ -17,7 +17,7 @@ const sameRect = (a, b) => near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) &&
 const percent = (fraction) => String(Math.round(fraction * 1000) / 10);
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const LABELS = { active: 'Active Pokémon', bench: 'Bench', energy: 'Special energy' };
+const LABELS = { active: 'Active Pokémon', bench: 'Bench', stadium: 'Stadium', energy: 'Special energy' };
 const CARD_ASPECT = THEME.CARD_ASPECT;
 
 export class CropSelector {
@@ -36,6 +36,25 @@ export class CropSelector {
   // The Special Energy tab is about a circle, the others about a rectangle
   get circle() {
     return this.which === 'energy';
+  }
+
+  // The Active Pokémon and the bench can share one crop; the Stadium and the Special Energy are cards of their own
+  get paired() {
+    return this.which === 'active' || this.which === 'bench';
+  }
+
+  // The quick choices of the tab being edited: the Stadium has its own picture window, so its "Art only" is another rectangle
+  presetsOf(which) {
+    return which === 'stadium' ? THEME.STADIUM_PRESETS : THEME.CROP_PRESETS;
+  }
+
+  drawPresets() {
+    this.presetsFor = this.which;
+    this.presets = this.presetsOf(this.which).map((preset) => h('button', {
+      class: 'btn tiny', type: 'button', title: preset.help, dataset: { preset: preset.key },
+      onclick: () => this.write({ ...preset.rect }, { commit: true })
+    }, preset.label));
+    replace(this.presetRow, this.presets);
   }
 
   sameNow() {
@@ -58,10 +77,8 @@ export class CropSelector {
     });
     this.sameSwitch = h('label', { class: 'switch' }, this.sameInput, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, 'Same crop for the bench'));
 
-    this.presets = THEME.CROP_PRESETS.map((preset) => h('button', {
-      class: 'btn tiny', type: 'button', title: preset.help, dataset: { preset: preset.key },
-      onclick: () => this.write({ ...preset.rect }, { commit: true })
-    }, preset.label));
+    this.presetRow = h('div', { class: 'button-row crop-presets' });
+    this.drawPresets();
 
     // for Special Energy the choice is a circle: one preset, put back to the usual
     this.circlePresets = [h('button', {
@@ -94,11 +111,11 @@ export class CropSelector {
     this.rect.addEventListener('keydown', (event) => this.onKeyDown(event));
 
     this.element = h('div', { class: 'crop-panel' },
-      h('p', { class: 'settings-note' }, 'Show only part of the card for the Pokémon on the table, for example just the picture. The overlay uses this part and takes its shape.'),
-      h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Which Pokémon' }, this.tabs),
+      h('p', { class: 'settings-note' }, 'Which part of the card shows for the Pokémon on the table and for the Stadium. It is the picture of the card unless you choose another part (the whole card, or the name and the picture, for instance). The overlay uses this part and takes its shape.'),
+      h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Which card' }, this.tabs),
       this.sameSwitch,
       h('div', { class: 'section-label' }, 'Quick choices'),
-      h('div', { class: 'button-row crop-presets' }, this.presets),
+      this.presetRow,
       h('div', { class: 'button-row crop-circle-presets' }, this.circlePresets),
       this.stage,
       h('label', { class: 'field crop-card-field' }, h('span', {}, 'Show it on'), this.cardSelect),
@@ -117,7 +134,7 @@ export class CropSelector {
     const options2 = { source: 'crop', ...options };
     const clean = (this.circle ? RULES.cleanCircle(rect) : RULES.cleanRect(rect)) || this.current();
     this.model.setCrop(this.which, clean, { ...options2, commit: false });
-    if (this.same && !this.circle) this.model.setCrop(this.which === 'active' ? 'bench' : 'active', clean, { ...options2, commit: false });
+    if (this.same && this.paired) this.model.setCrop(this.which === 'active' ? 'bench' : 'active', clean, { ...options2, commit: false });
     if (options && options.commit) this.model.commit('crop');
   }
 
@@ -128,9 +145,10 @@ export class CropSelector {
       tab.setAttribute('aria-selected', String(tab.dataset.which === this.which));
     }
     if (document.activeElement !== this.sameInput) this.sameInput.checked = this.same;
+    if (this.presetsFor !== this.which) this.drawPresets();
 
     this.rect.classList.toggle('circle', this.circle);
-    this.sameSwitch.hidden = this.circle;
+    this.sameSwitch.hidden = !this.paired;
     this.element.querySelector('.crop-presets').hidden = this.circle;
     this.element.querySelector('.crop-circle-presets').hidden = !this.circle;
     this.fieldNodes.h.hidden = this.circle;
@@ -142,7 +160,7 @@ export class CropSelector {
     this.rect.style.height = `${rect.h * 100}%`;
     for (const key of ['x', 'y', 'w', 'h']) if (document.activeElement !== this.fields[key]) this.fields[key].value = percent(rect[key]);
     for (const button of this.presets) {
-      const preset = THEME.CROP_PRESETS.find((entry) => entry.key === button.dataset.preset);
+      const preset = this.presetsOf(this.which).find((entry) => entry.key === button.dataset.preset);
       button.setAttribute('aria-pressed', String(sameRect(rect, preset.rect)));
     }
     const whole = sameRect(rect, WHOLE);

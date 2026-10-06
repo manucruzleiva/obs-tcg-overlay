@@ -324,7 +324,17 @@ class DatabaseService {
     stmt.free();
   }
 
-  // The cards used, the most used first (and among those the latest): [{ card, uses, lastUsed }]
+  // Remember how a card looks without counting a use of it (a card with a star, so it can be listed later)
+  rememberCard(cardId, card, now = Date.now()) {
+    const stmt = this.db.prepare(
+      `INSERT INTO card_usage (card_id, data_json, uses, last_used) VALUES (?, ?, 0, ?)
+       ON CONFLICT(card_id) DO UPDATE SET data_json = excluded.data_json`
+    );
+    stmt.run([cardId, JSON.stringify(card), now]);
+    stmt.free();
+  }
+
+  // The cards used and the ones only remembered, the most used first (and among those the latest): [{ card, uses, lastUsed }]
   usedCards(limit = 500) {
     const stmt = this.db.prepare('SELECT data_json, uses, last_used FROM card_usage ORDER BY uses DESC, last_used DESC LIMIT ?');
     stmt.bind([limit]);
@@ -337,8 +347,12 @@ class DatabaseService {
     return used;
   }
 
-  clearCardUsage() {
-    this.db.run('DELETE FROM card_usage');
+  // Forget how often cards were used, and the cards: all of them except `keep` (the cards with a star), which stay as they
+  // look, used no times
+  clearCardUsage(keep = []) {
+    this.db.run('UPDATE card_usage SET uses = 0');
+    if (keep.length === 0) this.db.run('DELETE FROM card_usage');
+    else this.db.run(`DELETE FROM card_usage WHERE card_id NOT IN (${keep.map(() => '?').join(', ')})`, keep);
   }
 
   // Favorites

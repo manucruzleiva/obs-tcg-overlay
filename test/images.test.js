@@ -198,3 +198,63 @@ describe('card pictures from Scrydex', () => {
     assert.equal(scrydex.requests.length, 2);
   });
 });
+
+describe('the pictures of Pokémon kept on this computer (next to a deck on the overlay)', () => {
+  let host;
+  let dir;
+  let cache;
+
+  before(async () => {
+    host = await startMockImageHost((url) => (url === '/404.png' ? respond(404, 'no such picture', { 'Content-Type': 'text/plain' }) : null));
+  });
+  after(() => host.close());
+
+  beforeEach(() => {
+    host.requests.length = 0;
+    fs.mkdirSync(path.join(ROOT, '.local', 'test'), { recursive: true });
+    dir = fs.mkdtempSync(path.join(ROOT, '.local', 'test', 'sprites-'));
+    cache = new ImageCache({ dir, base: 'http://127.0.0.1:9', spriteBase: host.url });
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('saves the picture of a Pokémon, by its Pokédex number, the first time it is needed, and serves it from disk after that', async () => {
+    const file = await cache.ensure('sprite', '6.png');
+    assert.equal(file, path.join(dir, 'sprite', '6.png'));
+    assert.deepEqual(fs.readFileSync(file), host.png);
+    assert.deepEqual(host.requests, ['/6.png'], 'the picture of that number, from the sprites host');
+
+    assert.equal(await cache.ensure('sprite', '6.png'), file);
+    assert.equal(host.requests.length, 1, 'no second request');
+    assert.equal(cache.has('sprite', '6.png'), true);
+    assert.ok(await cache.ensure('sprite', '1025.png'), 'the last one there is');
+    assert.equal(cache.stats().count, 2);
+  });
+
+  it('asks nothing of anyone for a number that is not a Pokémon, or a name that is not a number', async () => {
+    for (const name of ['0.png', '1026.png', '9999.png', '06.png', '-1.png', '1.5.png', 'x.png', '6.jpg', '6.webp', '6', '.png', '6.png.png', '12345.png', '../6.png']) {
+      assert.equal(ImageCache.isValid('sprite', name), false, name);
+      assert.equal(await cache.ensure('sprite', name), null, name);
+    }
+    assert.equal(ImageCache.isValid('sprite', '25.png'), true);
+    assert.equal(cache.sourceOf('sprite', '25.png'), `${host.url}/25.png`);
+    assert.equal(cache.sourceOf('sprite', '2500.png'), null);
+    assert.equal(host.requests.length, 0, 'nothing was requested');
+    assert.deepEqual(fs.readdirSync(dir), []);
+  });
+
+  it('keeps nothing when the host does not have the picture, and the other kinds of picture are as they were', async () => {
+    assert.equal(await cache.ensure('sprite', '404.png'), null, 'a Pokémon whose picture the host does not have');
+    const gone = new ImageCache({ dir, base: 'http://127.0.0.1:9', spriteBase: 'http://127.0.0.1:9', timeoutMs: 500 });
+    assert.equal(await gone.ensure('sprite', '25.png'), null, 'a host that cannot be reached');
+    assert.deepEqual(fs.readdirSync(dir), []);
+    assert.equal(ImageCache.isValid('sv1', '25.png'), true);
+    assert.equal(ImageCache.isValid('sv1', '2500.png'), true, 'a card picture can have any number');
+    assert.equal(ImageCache.isValid('tcgdex', '25.png'), false);
+  });
+
+  it('has a host of its own, which can be changed with OTO_SPRITE_BASE, and is the PokeAPI sprites repository without it', () => {
+    const { SPRITE_BASE } = require('../src/services/images');
+    assert.match(SPRITE_BASE, /^https?:\/\//);
+    assert.ok(SPRITE_BASE === 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork' || process.env.OTO_SPRITE_BASE, SPRITE_BASE);
+  });
+});

@@ -225,6 +225,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .identity input:focus, .field input:focus, .inline-form input:focus, .add-token input:focus, select:focus, .record input:focus, .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.25); }
 .identity > label:first-child { font-weight: 600; }
 .identity > label:first-child input { font-size: 17px; font-weight: 700; }
+/* the flag of the country that is typed, inside the nationality box (nothing shows when the country is not known) */
+.nat-field { position: relative; display: flex; align-items: center; }
+.nat-field input.has-flag { padding-right: 36px; }
+.nat-flag { position: absolute; right: 9px; font: 18px/1 var(--font-flags); pointer-events: none; }
+/* the picture that goes with the deck: the same kind of box as the flag, with a little picture where the flag is */
+.deck-preview { position: absolute; right: 5px; width: 26px; height: 26px; object-fit: contain; pointer-events: none; }
+.deck-hint { grid-column: 1 / -1; min-height: 1.2em; margin: -4px 0 0; font-size: 12px; color: var(--fg-muted); }
+.deck-hint:empty { display: none; }
+.deck-hint.warn { color: var(--warning); }
 .record { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--fg-muted); }
 .record label { flex-direction: row; align-items: center; gap: 6px; }
 .record input { width: 62px; text-align: center; }
@@ -232,11 +241,29 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .prize-row { display: flex; align-items: center; gap: 12px; }
 .prize-number { min-width: 44px; text-align: center; font: 800 38px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .pips { display: flex; gap: 5px; margin-left: auto; }
-.pip { width: 22px; height: 30px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: transparent; transition: background var(--transition), transform var(--transition); }
+.pip { position: relative; overflow: hidden; width: 22px; height: 30px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: transparent; transition: background var(--transition), transform var(--transition); }
 .pip.on { background: linear-gradient(145deg, var(--side), var(--bg-tertiary) 80%); border-color: rgba(255, 255, 255, 0.4); }
 .pip:hover { transform: translateY(-2px); }
 .pip.penalty { background: linear-gradient(145deg, var(--danger), #3a0a0a 85%); border-color: var(--danger); }
-.toggle-row { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
+/* a prize card with a card chosen for it: the picture of that card (grayed out when taken, red under a penalty) */
+.pip-face { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pip.has-card, .pip.has-card.penalty { background: var(--bg-tertiary); border-color: rgba(255, 255, 255, 0.4); }
+.pip.has-card:not(.on) { opacity: 0.4; filter: grayscale(1); }
+.pip.has-card.penalty { border-color: var(--danger); }
+.pip.has-card.penalty::after { content: ""; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--danger); opacity: 0.55; }
+.toggle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 12px; }
+.set-prizes { margin-left: auto; }
+
+/* the dialog that chooses the cards of the prizes */
+.prize-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 14px 0 10px; }
+.prize-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.prize-pick { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 5 / 7; padding: 0; overflow: hidden; border-radius: 8px; border: 1px dashed var(--border); background: var(--bg-tertiary); color: var(--fg-muted); transition: transform var(--transition), border-color var(--transition); }
+.prize-pick:hover { transform: translateY(-2px); border-color: var(--fg-muted); }
+.prize-pick img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.prize-slot.filled .prize-pick { border-style: solid; border-color: rgba(255, 255, 255, 0.4); }
+.prize-slot.taken .prize-pick { opacity: 0.45; filter: grayscale(1); }
+.prize-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-muted); }
+.prize-slot-gap { display: block; height: 22px; }
 .penalty-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .penalty-label { display: flex; flex-direction: column; margin-right: auto; font-size: 13px; color: var(--fg-primary); }
 .penalty-label small { font-size: 11px; color: var(--fg-muted); }
@@ -267,12 +294,29 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .empty-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 120px; border-radius: var(--radius-sm); border: 2px dashed var(--border); background: transparent; color: var(--fg-secondary); font-weight: 600; transition: border-color var(--transition), color var(--transition); }
 .empty-slot:hover { border-color: var(--side); color: var(--fg-primary); }
 .empty-slot.compact { min-height: 78px; font-size: 13px; }
+/* Dragging a Pokémon to another slot: the card that moves fades, and the slot it would go to is outlined */
+.mon-card[draggable="true"] { cursor: grab; }
+.mon-card.dragging { opacity: 0.4; }
+.mon-card.drop-target, .empty-slot.drop-target { outline: 2px dashed var(--accent); outline-offset: 2px; background: rgba(124, 140, 255, 0.14); }
 
 .mon-card { display: flex; gap: 12px; padding: 10px; border-radius: var(--radius-sm); background: var(--bg-tertiary); border: 1px solid var(--border); }
 .mon-art { flex: none; display: flex; align-items: center; justify-content: center; width: 92px; height: 128px; border-radius: 8px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
 .mon-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .art-fallback { color: var(--fg-muted); }
 .mon-card.compact .mon-art { width: 56px; height: 78px; }
+/* Art only (the usual): just the picture of the card, the part the overlay shows too, so the box is wide instead of tall */
+:root { --art-x: 0.07; --art-y: 0.115; --art-w: 0.86; --art-h: 0.385; }
+.mon-art.cropped { position: relative; width: 128px; height: calc(128px * 1.393333 * var(--art-h) / var(--art-w)); }
+.mon-card.compact .mon-art.cropped { width: 76px; height: calc(76px * 1.393333 * var(--art-h) / var(--art-w)); }
+.mon-art.cropped img {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+  width: calc(100% / var(--art-w));
+  height: calc(100% / var(--art-h));
+  left: calc(-100% * var(--art-x) / var(--art-w));
+  top: calc(-100% * var(--art-y) / var(--art-h));
+}
 .mon-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .mon-name { font: 700 17px/1.15 var(--font-display); }
 .mon-card.compact .mon-name { font-size: 14px; }
@@ -298,10 +342,14 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .ability-chip.used .diamond { background: transparent; border: 2px solid var(--fg-muted); }
 /* special conditions: a dim chip when off, the color of the condition when on */
 .conditions { gap: 4px; }
-.condition-chip { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
+.condition-icon { display: inline-block; flex: none; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; vertical-align: -3px; background: var(--c) var(--icon) center / cover no-repeat; }
+.condition-chip[data-condition="trapped"] .condition-icon { background-color: #fff; background-size: 78%; }
+.condition-chip { padding: 2px 9px 2px 4px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
 .condition-chip:hover { border-color: var(--c); color: var(--fg-primary); }
 .condition-chip.on { border-color: var(--c); background: var(--c); color: var(--ink, #fff); }
 .used-tag { padding: 0 6px; border-radius: 4px; background: var(--danger); color: #1a0505; font-size: 10px; letter-spacing: 0.1em; text-decoration: none; display: inline-block; }
+.retreat-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+.retreat-number { min-width: 1.4em; text-align: center; font-weight: 700; color: var(--fg-primary); }
 .mon-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .mini-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); font-size: 12px; font-weight: 600; color: var(--fg-secondary); }
 .mini-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--fg-primary); }
@@ -338,6 +386,9 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .btn.hype.red { border-left-color: var(--danger); }
 .btn.hype.blue { border-left-color: var(--info); }
 .btn.hype.green { border-left-color: var(--success); }
+/* the pause is a switch: while the game is paused the button is lit */
+.btn.hype.amber { border-left-color: var(--warning); }
+.btn.hype.amber.on { background: rgba(251, 191, 36, 0.22); border-color: var(--warning); color: var(--fg-primary); }
 
 .stadium-row { display: flex; gap: 12px; align-items: center; }
 .stadium-art { flex: none; display: flex; align-items: center; justify-content: center; width: 64px; height: 90px; border-radius: 6px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
@@ -348,7 +399,6 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .feature-item { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: var(--radius-sm); background: var(--bg-tertiary); }
 .feature-item img { width: 40px; height: 56px; border-radius: 4px; object-fit: cover; }
 .feature-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
-.feature-text span { color: var(--fg-muted); }
 
 .feed { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
 .feed-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 13px; }
@@ -402,6 +452,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .amount-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .amount-input { width: 120px; font: 800 28px var(--font-display); text-align: center; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--accent); background: var(--bg-primary); color: var(--fg-primary); outline: none; }
 .btn.quick { padding: 7px 12px; }
+/* the damage of an attack: less, the number, more, and back to the card's damage. A box inside a field would take the whole width. */
+.field .amount-row .amount-input { width: 120px; flex: none; }
 .preview-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .preview-row { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg-tertiary); font-variant-numeric: tabular-nums; }
 
@@ -411,6 +463,7 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .no-energy-icons .energy-pick .energy-dot { border: 2px solid rgba(255, 255, 255, 0.8); background: var(--c); }
 .energy-pick.on { border-color: var(--accent); background: rgba(124, 140, 255, 0.16); }
 .energy-count { margin-left: auto; color: var(--accent-hover); font-weight: 800; }
+.stadium-play { margin-bottom: 14px; }
 .hint-line { margin-top: 6px; font-size: 13px; color: var(--fg-muted); }
 .hint-line.warn { color: var(--warning); }
 
@@ -449,8 +502,6 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .filter-chips { display: flex; gap: 6px; margin-top: 10px; }
 .chip { padding: 5px 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 13px; font-weight: 600; color: var(--fg-secondary); }
 .chip.on { background: var(--accent); color: #0a0d14; border-color: transparent; }
-.note-row { margin-top: 10px; }
-.note-row input { width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--fg-primary); }
 .picker-status { margin: 10px 0 8px; font-size: 13px; color: var(--fg-muted); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 12px; }
 .card-tile { position: relative; }
@@ -459,9 +510,11 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .card-pick img { width: 100%; aspect-ratio: 5 / 7; border-radius: 6px; object-fit: cover; background: rgba(0, 0, 0, 0.3); }
 .card-name { font-weight: 700; font-size: 13px; }
 .card-meta { font-size: 11px; color: var(--fg-muted); }
-.star-btn { position: absolute; top: 8px; right: 8px; display: flex; padding: 4px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity var(--transition); }
+/* the star of a card is always there (a screen that cannot hover needs it too), brighter when the card is a favorite */
+.star-btn { position: absolute; top: 8px; right: 8px; display: flex; padding: 4px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0.55; transition: opacity var(--transition); }
 .card-tile:hover .star-btn, .star-btn.on, .star-btn:focus-visible { opacity: 1; }
 .star-btn.on { color: var(--warning); }
+.star-btn.on svg { fill: currentColor; }
 .from-bench { margin-bottom: 8px; }
 
 .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; }
@@ -493,6 +546,9 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .grid-table th[scope="row"], .grid-table thead th:first-child { text-align: left; font-weight: 600; }
 .grid-table thead th { font-size: 12px; color: var(--fg-muted); font-weight: 600; }
 .grid-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+/* the All column switches a row, the All moments row a column */
+.grid-table .all-cell, .grid-table thead th:last-child { border-left: 1px solid var(--border); }
+.grid-table .all-row th, .grid-table .all-row td { background: rgba(124, 140, 255, 0.08); border-bottom-width: 2px; }
 .slider-stack { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
 .slider { display: grid; grid-template-columns: 160px 1fr 56px; align-items: center; gap: 12px; padding: 4px 0; }
 .slider-label { font-size: 14px; }
@@ -504,6 +560,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .cue-actions { display: flex; gap: 6px; }
 .custom-badge { padding: 1px 8px; border-radius: 999px; background: rgba(124, 140, 255, 0.2); color: var(--accent-hover); font-size: 11px; font-weight: 700; }
 .inline-form { display: flex; gap: 8px; align-items: center; max-width: 560px; }
+.service-block { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-tertiary); }
+.service-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.service-head a { font-size: 12px; color: var(--fg-muted); }
+.service-block .settings-note { margin: 4px 0 8px; }
+.credential-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.credential-label { flex: none; width: 5.5em; font-size: 13px; color: var(--fg-secondary); }
+.credential-label small { color: var(--fg-muted); }
+.credential-row input { flex: 1; min-width: 0; }
+.secret-mask { flex: 1; min-width: 0; padding: 5px 9px; border-radius: 6px; background: var(--bg-primary); border: 1px solid var(--border); font: 600 13px var(--font-mono, ui-monospace, Consolas, monospace); letter-spacing: 0.04em; }
 .link-list { display: flex; flex-direction: column; gap: 8px; }
 .link-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg-tertiary); }
 .link-row small { display: block; }
@@ -517,6 +582,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .library-text p { margin: 2px 0 6px; color: var(--fg-muted); font-size: 13px; max-width: 70ch; }
 .library-state { display: block; color: var(--fg-secondary); font-size: 13px; }
 .library-new { color: var(--warning); }
+.library-note { font-size: 12px; color: var(--fg-muted); font-style: italic; }
+.library-done { font-size: 12px; color: var(--success); }
 .library-error { color: var(--danger) !important; }
 .library-actions { display: flex; gap: 6px; align-items: center; }
 .progress { height: 8px; margin: 8px 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }

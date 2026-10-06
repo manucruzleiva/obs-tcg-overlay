@@ -11,6 +11,7 @@
  */
 
 const actions = require('./actions');
+const GAME = require('../public/js/game-data');
 const { Collab, Presence } = require('./services/collab');
 
 const ACTION_EVENTS = [
@@ -22,10 +23,16 @@ const ACTION_EVENTS = [
 const PRODUCERS = 'producers';
 const clientRoom = (clientId) => `client:${clientId}`;
 
-// The state as clients see it: the API key is a secret and never leaves the server
+// The state as clients see it: the keys of the card services are secrets and never leave the server. A page is told which
+// ones are saved, and how each looks masked (its first three characters, ***, its last four).
 function publicState(state) {
-  const { apiKey, ...settings } = state.settings;
-  return { ...state, settings: { ...settings, apiKeySet: Boolean(apiKey) } };
+  const settings = { ...state.settings };
+  const keys = {};
+  for (const name of GAME.SECRET_SETTINGS) {
+    keys[name] = GAME.maskSecret(settings[name]);
+    delete settings[name];
+  }
+  return { ...state, settings: { ...settings, apiKeySet: Boolean(state.settings.apiKey), keys } };
 }
 
 class Session {

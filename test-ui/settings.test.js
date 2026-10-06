@@ -462,6 +462,125 @@ describe('settings', { skip }, () => {
     });
   });
 
+  // Waits until reading the live game gives what is expected, and fails showing what it gave
+  const until = async (read, expected) => {
+    for (let waited = 0; waited < 80; waited++) {
+      if (JSON.stringify(await read()) === JSON.stringify(expected)) return;
+      await wait(50);
+    }
+    assert.deepEqual(await read(), expected);
+  };
+
+  describe('the flag for a nationality', () => {
+    it('is an option that is off to begin with, and "Show everything" and "Minimal" leave it as it is', async () => {
+      await openSettings('Overlay');
+      const flag = page.locator('.option-group label.switch', { hasText: 'Nationality as a flag emoji' });
+      assert.equal(await flag.locator('input').isChecked(), false);
+
+      await flag.click();
+      await until(async () => (await live()).settings.display.nationalityFlag, true);
+      await page.getByRole('button', { name: /^Minimal/ }).click();
+      await until(async () => (await live()).settings.display.nationality, false);
+      assert.equal((await live()).settings.display.nationalityFlag, true, 'a way of drawing the nationality is not a piece that Minimal hides');
+
+      await page.getByRole('button', { name: 'Show everything' }).click();
+      await until(async () => (await live()).settings.display.nationality, true);
+      assert.equal((await live()).settings.display.nationalityFlag, true, 'and Show everything does not choose it either');
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the announcements table', () => {
+    const box = (label) => page.getByRole('checkbox', { name: label, exact: true });
+    const flags = async () => Object.fromEntries(Object.entries((await live()).settings).filter(([key]) => /^enable[A-Za-z_]*(Toast|Animation)$/.test(key)));
+    const banners = async () => Object.entries(await flags()).filter(([key]) => /Toast$/.test(key));
+    // (the effect for a bench KO is a column of its own)
+    const effects = async () => Object.entries(await flags()).filter(([key]) => /Animation$/.test(key) && !/_OOC_/.test(key));
+    const mixed = (label) => box(label).evaluate((input) => input.indeterminate);
+
+    beforeEach(async () => {
+      await openSettings('Overlay');
+      await page.waitForSelector('.grid-table');
+    });
+
+    it('has an All column, a row that switches a whole column, and a row for the game pause that only has a banner', async () => {
+      assert.deepEqual(await page.locator('.grid-table thead th').allTextContents(), ['Moment', 'Banner', 'Effect', 'Effect for a bench KO', 'All']);
+      assert.equal(await page.locator('.grid-table tbody tr').first().locator('th').textContent(), 'All moments');
+      const pause = page.locator('.grid-table tbody tr', { hasText: 'Game pause' });
+      assert.equal(await pause.locator('input[type="checkbox"]').count(), 2, 'its banner, and the All of its row');
+      assert.equal(await box('Game pause: banner').isChecked(), true);
+      assert.equal(await box('Game pause: everything').isChecked(), true);
+      assert.equal(await box('All: everything').isChecked(), true);
+      assert.equal(await mixed('All: everything'), false);
+    });
+
+    it('switches every banner at once, and every effect at once, with the row of all moments', async () => {
+      await box('All: banner').click();
+      await until(async () => (await banners()).every(([, shown]) => shown === false), true);
+      assert.ok((await banners()).length >= 9, 'all of them, the pause one too');
+      assert.equal((await effects()).every(([, shown]) => shown === true), true, 'the effects are as they were');
+      assert.equal(await box('All: banner').isChecked(), false);
+      assert.equal(await box('Top Deck: banner').isChecked(), false);
+      assert.equal(await box('Top Deck: effect').isChecked(), true);
+      assert.equal(await mixed('All: everything'), true, 'some are on, some are off');
+      assert.equal(await mixed('Top Deck: everything'), true);
+
+      await box('All: effect').click();
+      await until(async () => (await effects()).every(([, shown]) => shown === false), true);
+      assert.equal(await box('All: everything').isChecked(), false);
+      assert.equal(await mixed('All: everything'), true, 'the effects for a bench KO are a column of their own, and are still on');
+
+      await box('All: effect for a bench ko').click();
+      await until(async () => (await live()).settings.enableTrainerAKO_OOC_Animation, false);
+      assert.equal(await mixed('All: everything'), false, 'nothing is on now');
+      assert.equal(await box('All: everything').isChecked(), false);
+
+      await box('All: banner').click();
+      await until(async () => (await banners()).every(([, shown]) => shown === true), true);
+      assert.equal((await effects()).every(([, shown]) => shown === false), true);
+    });
+
+    it('switches a whole moment with the All of its row, bench effect included', async () => {
+      await box('Knock out · Trainer A: everything').click();
+      await until(async () => (await live()).settings.enableTrainerAKOToast, false);
+      const settings = (await live()).settings;
+      assert.deepEqual([settings.enableTrainerAKOToast, settings.enableTrainerAKOAnimation, settings.enableTrainerAKO_OOC_Animation], [false, false, false]);
+      assert.equal(settings.enableTrainerBKOToast, true, 'the other moments are as they were');
+      assert.equal(await box('Knock out · Trainer A: effect for a bench ko').isChecked(), false);
+      assert.equal(await mixed('All: banner'), true, 'one banner is off, the others are on');
+
+      await box('Knock out · Trainer A: everything').click();
+      await until(async () => (await live()).settings.enableTrainerAKO_OOC_Animation, true);
+      assert.equal(await box('All: banner').isChecked(), true);
+    });
+
+    it('turns a row, a column or everything on from the dash that says some are off', async () => {
+      await box('Top Deck: banner').click();
+      await until(async () => (await live()).settings.enableTopDeckToast, false);
+      assert.equal(await mixed('Top Deck: everything'), true);
+      await box('Top Deck: everything').click();
+      await until(async () => (await live()).settings.enableTopDeckToast, true);
+      assert.equal(await mixed('Top Deck: everything'), false);
+      assert.equal(await box('Top Deck: everything').isChecked(), true);
+
+      await box('All: everything').click();
+      await until(async () => Object.values(await flags()).every((shown) => shown === false), true);
+      await box('All: everything').click();
+      await until(async () => Object.values(await flags()).every((shown) => shown === true), true);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('keeps what was chosen when the settings are opened again', async () => {
+      await box('Pass turn: everything').click();
+      await until(async () => (await live()).settings.enablePassTurnToast, false);
+      await page.keyboard.press('Escape');
+      await openSettings('Overlay');
+      assert.equal(await box('Pass turn: banner').isChecked(), false);
+      assert.equal(await box('Pass turn: effect').isChecked(), false);
+      assert.equal(await box('Pass turn: everything').isChecked(), false);
+    });
+  });
+
   describe('what the card picker remembers', () => {
     const listed = async () => (await call('GET', '/api/cards/popular')).json;
 
@@ -493,6 +612,48 @@ describe('settings', { skip }, () => {
       await page.locator('.modal[aria-label="Forget the most used cards?"]').getByRole('button', { name: 'Cancel' }).click();
       await wait(200);
       assert.equal((await listed()).used, 1);
+    });
+  });
+
+  describe('the keys of the card services', () => {
+    const row = (setting) => page.locator(`.credential-row[data-setting="${setting}"]`);
+    const KEY = '3f9a1c52-8d44-4e07-9b6e-0a1d2c3b4e5f';
+
+    it('saves a key, shows only its ends, and changes or removes it', async () => {
+      await openSettings('Cards');
+      await row('apiKey').locator('input[type="password"]').fill(KEY);
+      await row('apiKey').getByRole('button', { name: 'Save', exact: true }).click();
+      await row('apiKey').locator('.secret-mask').waitFor();
+      assert.equal(await row('apiKey').locator('.secret-mask').textContent(), '3f9***4e5f');
+      assert.equal((await page.content()).includes(KEY), false, 'the key is nowhere on the page');
+
+      await row('apiKey').getByRole('button', { name: /^Change the / }).click();
+      assert.equal(await row('apiKey').locator('input[type="password"]').count(), 1);
+      await row('apiKey').getByRole('button', { name: 'Cancel', exact: true }).click();
+      assert.equal(await row('apiKey').locator('.secret-mask').textContent(), '3f9***4e5f', 'nothing changed');
+
+      await row('apiKey').getByRole('button', { name: /^Remove the / }).click();
+      await row('apiKey').locator('input[type="password"]').waitFor();
+      assert.equal((await call('GET', '/api/settings')).json.keys.apiKey, '');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('refuses what cannot be a key, and says why', async () => {
+      await openSettings('Cards');
+      await row('apiKey').locator('input[type="password"]').fill('has a space');
+      await row('apiKey').getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForSelector('.toast-error');
+      assert.match(await page.locator('.toast-error').first().textContent(), /does not look like a key/);
+      assert.equal(await row('apiKey').locator('.secret-mask').count(), 0);
+      assert.equal((await call('GET', '/api/settings')).json.keys.apiKey, '');
+    });
+
+    it('cannot build the libraries from Scrydex until its key and team are saved', async () => {
+      await openSettings('Cards');
+      const option = page.locator('select[aria-label="Build the libraries from"] option[value="scrydex"]');
+      assert.equal(await option.evaluate((node) => node.disabled), true);
+      assert.match(await option.textContent(), /needs its key/);
+      assert.equal(await page.locator('select[aria-label="Build the libraries from"] option[value="tcgdex"]').evaluate((node) => node.disabled), false, 'TCGdex needs none');
     });
   });
 
@@ -537,6 +698,32 @@ describe('settings', { skip }, () => {
       await page.locator('.modal[aria-label="Download the Expanded library?"] button', { hasText: 'Download' }).click();
       await libraryReady('Expanded');
       assert.match(await library('Expanded').textContent(), /4 cards/);
+    });
+
+    it('updates a library without asking first, bringing only what is new, and says how it went', async () => {
+      await call('POST', '/api/catalog/expanded/download', { confirm: true });
+      await openSettings('Cards');
+      await libraryReady('Expanded');
+      assert.match(await library('Expanded').textContent(), /saved .* · from Pokémon TCG API/);
+      const update = library('Expanded').locator('button', { hasText: 'Update' });
+      assert.equal(await update.getAttribute('title'), 'Brings only the cards that are new');
+      await update.click();
+      await library('Expanded').locator('.library-done').waitFor();
+      assert.equal(await library('Expanded').locator('.library-done').textContent(), 'Expanded is up to date: 4 cards. Nothing new.');
+      assert.equal(await page.locator('.modal[aria-label="Download the Expanded library?"]').count(), 0, 'no question: it is not a big download');
+    });
+
+    it('says when Update will download a library again from another service, and which libraries only the Pokémon TCG API builds', async () => {
+      await call('POST', '/api/catalog/standard/download', {});
+      await openSettings('Cards');
+      await libraryReady('Standard');
+      assert.equal(await library('Expanded').locator('.library-note').count(), 0, 'nothing to say while the Pokémon TCG API is chosen');
+      await page.locator('select[aria-label="Build the libraries from"]').selectOption('tcgdex');
+      await library('Standard').locator('.library-new', { hasText: 'Update downloads it again from TCGdex' }).waitFor();
+      assert.equal(await library('Standard').locator('button', { hasText: 'Update' }).getAttribute('title'), 'Downloads the whole library again from TCGdex');
+      assert.match(await library('Expanded').locator('.library-note').textContent(), /Built from Pokémon TCG API: it is the only service that says what is legal in Expanded/);
+      assert.equal(await library('Standard').locator('.library-note').count(), 0, 'Standard can come from TCGdex');
+      assert.deepEqual(page.problems, []);
     });
 
     it('switches between a library and the online search, and removes a library', async () => {

@@ -92,7 +92,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   allowRequest: (req, callback) => callback(null, isSameOrigin(req)),
   pingInterval: 10000,
-  pingTimeout: 5000
+  // (the tests raise it: with a few browsers and servers running at once, a page can miss an answer for longer than a viewer ever would)
+  pingTimeout: Number(process.env.OTO_PING_TIMEOUT_MS) || 5000
 });
 
 const PORT = process.env.PORT || DEFAULT_PORT;
@@ -159,7 +160,8 @@ let session = null;
 
 // The card API key is a setting; keep the API client in step with it
 function applyApiSettings(state) {
-  pokemonTCG.setProvider('pokemontcg', state.settings.apiKey || '');
+  pokemonTCG.setProvider(state.settings.apiProvider, state.settings.apiKey || '', state.settings.cardLanguage);
+  pokemonTCG.setCredentials({ scrydexKey: state.settings.scrydexKey, scrydexTeam: state.settings.scrydexTeam });
 }
 
 async function initialize() {
@@ -191,7 +193,11 @@ async function initialize() {
     dir: path.join(dataDir, 'catalog'),
     db,
     images,
-    baseUrl: () => pokemonTCG.providers[pokemonTCG.currentProvider].baseUrl,
+    // the Pokémon TCG API, and the other services a library can be built from (the one chosen in the settings builds it)
+    baseUrl: () => pokemonTCG.providers.pokemontcg.baseUrl,
+    scrydex: pokemonTCG.scrydex,
+    tcgdex: pokemonTCG.tcgdex,
+    librarySource: () => gameState.state.settings.librarySource,
     apiKey: () => pokemonTCG.apiKey,
     // the tests make downloads quick
     paceMs: process.env.OTO_CATALOG_PACE_MS === undefined ? undefined : Number(process.env.OTO_CATALOG_PACE_MS),
@@ -232,13 +238,36 @@ async function initialize() {
   // redirect: false so /overlay and /login are served directly rather than bounced to a trailing slash
   app.use(express.static(PUBLIC_DIR, { index: false, redirect: false }));
 
-  // The project logo and the energy icons live in the assets folder at the project root
+  // The project logo, the energy icons and the status icons live in the assets folder at the project root
   // (the logo is also the README picture). The tab icon is asked for by every page, and browsers
   // ask for /favicon.ico by themselves.
-  const ASSETS_DIR = path.join(__dirname, '..', 'assets');
+  // (OTO_ASSETS_DIR is for the tests: a folder with some of the pictures missing)
+  const ASSETS_DIR = process.env.OTO_ASSETS_DIR || path.join(__dirname, '..', 'assets');
   app.get('/logo.gif', (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.gif')));
   app.get(['/logo.ico', '/favicon.ico'], (req, res) => res.sendFile(path.join(ASSETS_DIR, 'logo.ico')));
-  app.use('/assets/energy', express.static(path.join(ASSETS_DIR, 'energy'), { index: false }));
+  // The icons of the energy types and of the special conditions are files that may not be there: the folders can be deleted, and an icon
+  // may not be made yet (Confused). The pages draw a plain disc for one that is missing. For the name of an icon that is known but has no
+  // file the answer is 204 (nothing here), which tells them just the same without an error in the browser's console and a warning in the
+  // log on every page load, as a 404 would. Anything else that is not in the folder is a 404.
+  const GAME = require('../public/js/game-data');
+  const THEME_OPTIONS = require('../public/js/theme-options');
+  const iconFolder = (route, folder, icons) => {
+    app.use(route, express.static(path.join(ASSETS_DIR, folder), { index: false }));
+    const known = new Set(icons.map((icon) => path.basename(icon)));
+    app.get(`${route}/:file`, (req, res, next) => (known.has(req.params.file) ? res.status(204).end() : next()));
+  };
+  iconFolder('/assets/energy', 'energy', GAME.ENERGY_TYPES.map((type) => type.icon));
+  iconFolder('/assets/status', 'status', GAME.STATUS_CONDITIONS.map((condition) => condition.icon));
+  // The prize card backs (English, Japanese, a Poké Ball) are put there by the maintainer, as whatever kind of picture they have (a PNG, a JPG or
+  // a WebP): they are asked for by name alone, and the file that is there is sent. With none the answer is 204 like for the icons, and the
+  // overlay draws a card back of its own.
+  const CARD_BACKS = new Set(THEME_OPTIONS.PRIZE_STYLES.filter((style) => style.picture).map((style) => style.key));
+  app.get('/assets/cardbacks/:name', (req, res, next) => {
+    if (!CARD_BACKS.has(req.params.name)) return next();
+    const file = THEME_OPTIONS.PRIZE_PICTURE_TYPES.map((type) => path.join(ASSETS_DIR, 'cardbacks', `${req.params.name}.${type}`)).find((found) => fs.existsSync(found));
+    return file ? res.sendFile(file) : res.status(204).end();
+  });
+  app.use('/assets/fonts', express.static(path.join(ASSETS_DIR, 'fonts'), { index: false }));
 
   // Card pictures: saved on this computer the first time they are needed, then served from disk.
   // Open like the overlay itself, since OBS loads them without signing in.

@@ -304,6 +304,296 @@ describe('server', () => {
     assert.equal(wins(), after, 'zero stays zero: nothing to announce');
   });
 
+  describe('winning a game', () => {
+    const score = async () => (await fetch(`${server.base}/api/state`).then((r) => r.json())).matchScore;
+    const win = () => producer.expect('announce', (announcement) => announcement.type === 'win', 6000);
+
+    beforeEach(async () => {
+      await producer.act('action:match', { action: 'resetMatchScore' });
+      for (const side of ['trainerA', 'trainerB']) {
+        await trainer(side, { action: 'prizeReset' });
+        await trainer(side, { action: 'prizePenaltySet', count: 0 });
+      }
+      await producer.act('action:match', { action: 'resetMatchScore' });
+    });
+
+    it('adds a game to the score of whoever takes the last prize card, in the same step as the toast, and an undo takes both back', async () => {
+      for (let i = 0; i < 5; i++) await trainer('trainerA', { action: 'prizeMinus' });
+      assert.deepEqual([(await score()).trainerAWins, (await score()).trainerBWins], [0, 0], 'five of six is no game won');
+
+      const announced = win();
+      const last = await trainer('trainerA', { action: 'prizeMinus' });
+      assert.equal(last.ok, true);
+      const victory = await announced;
+      assert.equal(victory.side, 'trainerA');
+      assert.equal(victory.subtitle, 'Trainer A wins the game (1–0)');
+      assert.equal(last.state.matchScore.trainerAWins, 1, 'the score goes up with the toast');
+      assert.equal(last.state.matchScore.trainerBWins, 0);
+      const feed = await new Promise((resolve) => setTimeout(resolve, 100)).then(() => (producer.events.activity || []).filter((entry) => /won the game/.test(entry.label)));
+      assert.match(feed[feed.length - 1].label, /Trainer A won the game \(1–0\)/);
+
+      // once only: nothing more to take, nothing more to add
+      await trainer('trainerA', { action: 'prizeMinus' });
+      assert.equal((await score()).trainerAWins, 1);
+
+      // (the extra minus at zero changed nothing, so it is not a step of its own)
+      const undone = await producer.act('action:undo', {});
+      assert.equal(undone.ok, true);
+      const back = await fetch(`${server.base}/api/state`).then((r) => r.json());
+      assert.deepEqual([back.trainerA.prizes.count, back.matchScore.trainerAWins], [1, 0], 'the last prize card and the game won go back together');
+    });
+
+    it('says match, not game, when it was the game that decided a best-of-three', async () => {
+      await producer.act('action:match', { action: 'trainerBMatchWinPlus' });
+      await trainer('trainerB', { action: 'prizeSet', count: 1 });
+      const announced = win();
+      await trainer('trainerB', { action: 'prizeMinus' });
+      assert.equal((await announced).subtitle, 'Trainer B wins the match (2–0)');
+      assert.equal((await score()).trainerBWins, 2);
+    });
+
+    it('counts the penalty of the opponent as prize cards already taken', async () => {
+      await trainer('trainerA', { action: 'prizePenaltySet', count: 2 }); // Trainer A did something wrong: Trainer B needs two fewer
+      for (let i = 0; i < 3; i++) await trainer('trainerB', { action: 'prizeMinus' });
+      assert.equal((await score()).trainerBWins, 0, 'three taken and a penalty of two: three left, not enough yet');
+
+      const announced = win();
+      await trainer('trainerB', { action: 'prizeMinus' }); // two left, and the penalty is two
+      const victory = await announced;
+      assert.equal(victory.side, 'trainerB');
+      assert.equal((await fetch(`${server.base}/api/state`).then((r) => r.json())).trainerB.prizes.count, 2, 'it did not need to take the last two');
+      assert.equal((await score()).trainerBWins, 1);
+      assert.equal((await score()).trainerAWins, 0, 'a penalty is no win for whoever has it');
+    });
+
+    it('announces the victory when the penalty is what makes the last prize cards unnecessary', async () => {
+      await trainer('trainerB', { action: 'prizeSet', count: 2 });
+      assert.equal((await score()).trainerBWins, 0);
+      const announced = win();
+      await trainer('trainerA', { action: 'prizePenaltySet', count: 2 });
+      assert.equal((await announced).side, 'trainerB');
+      assert.equal((await score()).trainerBWins, 1);
+
+      // more of the same penalty while it has been won is not another game
+      await trainer('trainerA', { action: 'prizePenaltyPlus' });
+      assert.equal((await score()).trainerBWins, 1);
+    });
+  });
+
+  describe('playing a Stadium', () => {
+    const stadium = (extra = {}) => producer.act('action:card', { action: 'setStadium', cardId: 's-1', name: 'Area Zero', image: IMG, ...extra });
+    const used = (result) => [result.state.trainerA.resources.stadiumPerTurn.used, result.state.trainerB.resources.stadiumPerTurn.used];
+
+    it('uses the Stadium play of the player whose turn it is, unless it is said not to', async () => {
+      await trainer('trainerB', { action: 'setTurn', isTurn: true });
+      const played = await stadium();
+      assert.equal(played.ok, true);
+      assert.equal(played.state.stadium.name, 'Area Zero');
+      assert.deepEqual(used(played), [0, 1], "Trainer B had the turn: it is Trainer B's Stadium play");
+      const feed = (producer.events.activity || []).filter((entry) => /Area Zero/.test(entry.label));
+      assert.match(feed[feed.length - 1].label, /Stadium → Area Zero · Trainer B used the Stadium play/);
+
+      // not for a correction, or a Stadium an effect put there
+      await producer.act('action:reset', { action: 'full', confirm: 'FULL_RESET' });
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      const free = await stadium({ consume: false });
+      assert.deepEqual(used(free), [0, 0]);
+      assert.equal(free.state.stadium.name, 'Area Zero');
+    });
+
+    it('uses the one of the player it says played it, whoever has the turn', async () => {
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      assert.deepEqual(used(await stadium({ playedBy: 'trainerB' })), [0, 1]);
+      await producer.act('action:reset', { action: 'full', confirm: 'FULL_RESET' });
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      assert.deepEqual(used(await stadium({ playedBy: 'nobody' })), [1, 0], 'something that is not a player is the turn holder');
+    });
+
+    it('uses nothing when nobody has the turn, when there is nothing in its place, or when the play was used already', async () => {
+      assert.deepEqual(used(await stadium()), [0, 0], 'nobody has the turn yet');
+      assert.deepEqual(used(await producer.act('action:card', { action: 'setStadium', cardId: '', name: '', image: '' })), [0, 0], 'taking it away');
+
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      assert.deepEqual(used(await stadium({ cardId: 's-2', name: 'Artazon' })), [1, 0]);
+      const again = await stadium({ cardId: 's-3', name: 'Mesagoza' });
+      assert.deepEqual(used(again), [1, 0], 'there is one Stadium play a turn: it stays used');
+      assert.equal(again.state.stadium.name, 'Mesagoza', 'and the Stadium is put there all the same');
+      const feed = (producer.events.activity || []).filter((entry) => /Mesagoza/.test(entry.label));
+      assert.doesNotMatch(feed[feed.length - 1].label, /used the Stadium play/, 'it does not say it used what was used');
+    });
+
+    it('takes a Stadium chosen from the picker the same way, and an undo gives back the Stadium and its play', async () => {
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      const picked = await producer.act('action:card', {
+        action: 'select', target: 'stadium', cardId: 's-9', playedBy: 'trainerA',
+        cardData: { id: 's-9', name: 'Training Court', hp: '', images: { small: IMG, large: IMG } }
+      });
+      assert.equal(picked.ok, true, JSON.stringify(picked.rejected));
+      assert.equal(picked.state.stadium.name, 'Training Court');
+      assert.deepEqual(used(picked), [1, 0]);
+
+      const undone = await producer.act('action:undo', {});
+      assert.equal(undone.state.stadium.name, '');
+      assert.deepEqual(used(undone), [0, 0]);
+    });
+
+    it('is refused by a producer who changed the same Stadium play a moment before', async () => {
+      await trainer('trainerA', { action: 'setTurn', isTurn: true });
+      const other = server.client({ clientId: 'stadium-other-producer', name: 'Noa' });
+      await other.ready();
+      const seen = other.state.revision;
+      await trainer('trainerA', { action: 'stadiumPlus' }); // somebody marks the Stadium play used first
+      const late = await other.act('action:card', { action: 'setStadium', cardId: 's-5', name: 'Gym', image: IMG, playedBy: 'trainerA' }, { baseRevision: seen });
+      assert.equal(late.ok, false);
+      assert.equal(late.rejected.reason, 'conflict');
+      other.close();
+    });
+  });
+
+  describe('the cards on the prizes', () => {
+    const prizeCard = (n) => ({ cardId: `sv1-${n}`, name: `Card ${n}`, image: `/img/sv1/${n}.png` });
+    const NONE = [null, null, null, null, null, null];
+    const stateNow = () => fetch(`${server.base}/api/state`).then((r) => r.json());
+    const choose = (side, cards, options) => producer.act(`action:${side}`, { action: 'prizeCardsSet', cards }, options);
+
+    it('puts the chosen cards on the prize cards of that trainer for everybody, says so in the feed, and an undo and a redo take them away and bring them back', async () => {
+      await trainer('trainerA', { action: 'setName', name: 'Ash' });
+      const set = await choose('trainerA', [prizeCard(1), prizeCard(2), null, prizeCard(4)]);
+      assert.equal(set.ok, true, JSON.stringify(set.rejected));
+      assert.deepEqual(set.state.trainerA.prizes.cards, [prizeCard(1), prizeCard(2), null, prizeCard(4), null, null]);
+      assert.deepEqual(set.state.trainerB.prizes.cards, NONE, 'the other trainer has none');
+      assert.equal(set.state.trainerA.prizes.count, 6, 'which ones are taken is still the count');
+      assert.deepEqual((await stateNow()).trainerA.prizes.cards, set.state.trainerA.prizes.cards, 'the same for anybody who asks');
+      const feed = (producer.events.activity || []).filter((entry) => /prize cards set/.test(entry.label));
+      assert.match(feed[feed.length - 1].label, /Ash prize cards set \(3\)/);
+
+      const undone = await producer.act('action:undo', {});
+      assert.deepEqual(undone.state.trainerA.prizes.cards, NONE, 'one step');
+      const redone = await producer.act('action:redo', {});
+      assert.deepEqual(redone.state.trainerA.prizes.cards, [prizeCard(1), prizeCard(2), null, prizeCard(4), null, null]);
+
+      const cleared = await choose('trainerA', []);
+      assert.deepEqual(cleared.state.trainerA.prizes.cards, NONE);
+      assert.match((producer.events.activity || []).filter((entry) => /prize cards cleared/.test(entry.label)).pop().label, /Ash prize cards cleared/);
+    });
+
+    it('is not a step when it changes nothing, and does not change the prizes that are left, the penalty or the hidden prizes', async () => {
+      await trainer('trainerA', { action: 'prizePenaltySet', count: 1 });
+      await trainer('trainerB', { action: 'prizeSet', count: 4 });
+      await trainer('trainerB', { action: 'togglePrizeHidden', enabled: true });
+      const set = await choose('trainerB', [prizeCard(1)]);
+      assert.deepEqual([set.state.trainerB.prizes.count, set.state.trainerB.prizes.hidden, set.state.trainerA.prizes.penalty], [4, true, 1]);
+      const same = await choose('trainerB', [prizeCard(1)]);
+      assert.equal(same.ok, true);
+      assert.deepEqual(same.state.trainerB.prizes.cards, set.state.trainerB.prizes.cards, 'the same cards again: nothing happened');
+      const undone = await producer.act('action:undo', {});
+      assert.deepEqual(undone.state.trainerB.prizes.cards, NONE, 'so the undo is for the cards, not for the nothing after them');
+      assert.equal(undone.state.trainerB.prizes.hidden, true);
+    });
+
+    it('refuses a list that is not one, one with too many cards, and a card that is none, and changes nothing', async () => {
+      await choose('trainerA', [prizeCard(1)]);
+      for (const cards of [undefined, 'cards', {}, [1, 2, 3, 4, 5, 6, 7].map(prizeCard), ['Pikachu'], [{}], [{ name: 'x', image: 'ftp://x' }], [{ name: 5 }]]) {
+        const refused = await choose('trainerA', cards);
+        assert.equal(refused.ok, false, JSON.stringify(cards));
+        assert.equal(refused.rejected.reason, 'invalid', JSON.stringify(cards));
+      }
+      assert.deepEqual((await stateNow()).trainerA.prizes.cards, [prizeCard(1), null, null, null, null, null]);
+    });
+
+    it('is refused by a producer who set the same cards a moment before, but not because a prize card was taken in the meantime', async () => {
+      const other = server.client({ clientId: 'prize-cards-other-producer', name: 'Noa' });
+      await other.ready();
+      const seen = other.state.revision;
+      await trainer('trainerA', { action: 'prizeMinus' }); // somebody takes a prize card
+      const fine = await other.act('action:trainerA', { action: 'prizeCardsSet', cards: [prizeCard(1)] }, { baseRevision: seen });
+      assert.equal(fine.ok, true, 'the count and the cards are not the same thing');
+      assert.equal(fine.state.trainerA.prizes.count, 5);
+
+      const seenAgain = other.state.revision;
+      await choose('trainerA', [prizeCard(2), prizeCard(3)]); // and somebody else chooses the cards
+      const late = await other.act('action:trainerA', { action: 'prizeCardsSet', cards: [prizeCard(5)] }, { baseRevision: seenAgain });
+      assert.equal(late.ok, false);
+      assert.equal(late.rejected.reason, 'conflict');
+      assert.deepEqual((await stateNow()).trainerA.prizes.cards, [prizeCard(2), prizeCard(3), null, null, null, null]);
+
+      // the other trainer's cards are another matter
+      const aside = await other.act('action:trainerB', { action: 'prizeCardsSet', cards: [prizeCard(6)] }, { baseRevision: seenAgain });
+      assert.equal(aside.ok, true);
+      other.close();
+    });
+
+    it('are not chosen yet for the next game, but stay when a game is won', async () => {
+      await choose('trainerA', [prizeCard(1), prizeCard(2)]);
+      await choose('trainerB', [prizeCard(3)]);
+      for (const side of ['trainerA', 'trainerB']) await trainer(side, { action: 'prizePenaltySet', count: 0 });
+      await trainer('trainerA', { action: 'prizeSet', count: 1 });
+      const won = await trainer('trainerA', { action: 'prizeMinus' });
+      assert.equal(won.state.matchScore.trainerAWins, 1, 'a game was won');
+      assert.deepEqual(won.state.trainerA.prizes.cards, [prizeCard(1), prizeCard(2), null, null, null, null], 'the table is as it was');
+
+      const next = await producer.act('action:match', { action: 'nextGame' });
+      assert.equal(next.ok, true, JSON.stringify(next.rejected));
+      assert.deepEqual([next.state.trainerA.prizes.cards, next.state.trainerB.prizes.cards], [NONE, NONE]);
+      assert.equal(next.state.trainerA.prizes.count, 6);
+      const back = await producer.act('action:undo', {});
+      assert.deepEqual(back.state.trainerA.prizes.cards, [prizeCard(1), prizeCard(2), null, null, null, null], 'and the next game can be undone with its cards');
+    });
+
+    it('has a state from before the cards existed, which the page and the overlay can read all the same', async () => {
+      const state = await stateNow();
+      for (const side of ['trainerA', 'trainerB']) assert.equal(Array.isArray(state[side].prizes.cards), true, `${side} lists its prize cards`);
+    });
+  });
+
+  describe('pausing the game', () => {
+    const paused = async () => (await fetch(`${server.base}/api/state`).then((r) => r.json())).paused;
+
+    it('keeps the game paused, with no announcement, until it is resumed with a short toast', async () => {
+      assert.equal(await paused(), false);
+      const before = (producer.events.announce || []).length;
+      const pause = await producer.act('action:match', { action: 'togglePause', enabled: true });
+      assert.equal(pause.ok, true);
+      assert.equal(pause.state.paused, true);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal((producer.events.announce || []).length, before, 'pausing is no toast: its banner stays on the overlay');
+      assert.equal(await paused(), true);
+
+      // pressing it again with the same wish changes nothing (two producers agree)
+      assert.equal((await producer.act('action:match', { action: 'togglePause', enabled: true })).state.paused, true);
+
+      const resumed = producer.expect('announce', (announcement) => announcement.type === 'resume', 6000);
+      const resume = await producer.act('action:match', { action: 'togglePause', enabled: false });
+      assert.equal(resume.state.paused, false);
+      const toast = await resumed;
+      assert.deepEqual([toast.title, toast.toast, toast.animation], ['GAME RESUMED', true, false]);
+      assert.ok(toast.toastMs > 0 && toast.animationMs === 0);
+      assert.equal(toast.side, null);
+
+      // resuming a game that was not paused announces nothing
+      const count = (producer.events.announce || []).length;
+      await producer.act('action:match', { action: 'togglePause', enabled: false });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal((producer.events.announce || []).length, count);
+    });
+
+    it('says so in the activity feed, can be switched off like a banner, and is undone with the rest', async () => {
+      const feed = producer.expect('activity', (entry) => entry.label === 'Game paused', 6000);
+      await producer.act('action:match', { action: 'togglePause', enabled: true });
+      assert.equal((await feed).label, 'Game paused');
+
+      await producer.act('action:settings', { action: 'update', enablePauseToast: false });
+      const count = (producer.events.announce || []).length;
+      await producer.act('action:match', { action: 'togglePause', enabled: false });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal((producer.events.announce || []).length, count, 'banner switched off: no resumed toast either');
+      assert.equal(await paused(), false);
+
+      await producer.act('action:match', { action: 'togglePause', enabled: true });
+      assert.equal((await producer.act('action:undo', {})).state.paused, false, 'the pause can be undone');
+    });
+  });
+
   it('announces it whatever takes the last prize card, for the right trainer, and respects the switches', async () => {
     await trainer('trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 60 });
     await trainer('trainerB', { action: 'prizeSet', count: 2 });
@@ -435,9 +725,11 @@ describe('server', () => {
   });
 
   it('adds feature cards and toggles favorites', async () => {
+    // (a client that still sends a note is not refused: the note is simply not kept)
     let { state } = await producer.act('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Charizard', image: IMG, note: 'big' });
     assert.equal(state.featureCards.length, 1);
     assert.equal(typeof state.featureCards[0].id, 'string');
+    assert.equal('note' in state.featureCards[0], false, 'a feature card has no note');
 
     ({ state } = await producer.act('action:card', { action: 'removeFeatureCard', id: state.featureCards[0].id }));
     assert.equal(state.featureCards.length, 0);
@@ -451,6 +743,9 @@ describe('server', () => {
   });
 
   it('records a finished match without dropping the score update', async () => {
+    // games won earlier in this file (a trainer taking the last prize card adds a win) are not part of this one
+    await producer.act('action:match', { action: 'resetMatchScore' });
+    const earlier = (await (await fetch(`${server.base}/api/matches`)).json()).length;
     let { state } = await producer.act('action:match', { action: 'trainerAMatchWinPlus' });
     assert.equal(state.matchScore.trainerAWins, 1);
 
@@ -459,7 +754,7 @@ describe('server', () => {
     assert.equal(state.matchScore.trainerAWins, 2);
 
     const matches = await (await fetch(`${server.base}/api/matches`)).json();
-    assert.equal(matches.length, 1);
+    assert.equal(matches.length, earlier + 1);
     assert.equal(matches[0].winner, 'trainerA');
     assert.equal(matches[0].player_wins, 2);
     assert.equal('state' in matches[0], false, 'the list leaves out the saved game states');
@@ -543,6 +838,7 @@ describe('server', () => {
       { action: 'prizeReset' },
       { action: 'benchSizePlus' },
       { action: 'benchSizeMinus' },
+      { action: 'benchSizeReset' },
       { action: 'activeHeal' },
       { action: 'activeDamage', slot: -1, amount: 10 },
       { action: 'benchDamage', slot: 0, amount: 10 },
@@ -636,7 +932,7 @@ describe('server', () => {
     const assets = [
       '/js/control/app.js', '/js/control/library.js', '/js/control/settings.js', '/js/overlay.js', '/js/login.js', '/js/sfx.js',
       '/css/control.css', '/css/overlay.css', '/css/tokens.css', '/css/login.css',
-      '/js/display-options.js', '/js/game-data.js', '/js/sound-options.js', '/js/theme-options.js', '/socket.io/socket.io.js'
+      '/js/display-options.js', '/js/game-data.js', '/js/countries.js', '/js/brand.js', '/js/sound-options.js', '/js/theme-options.js', '/socket.io/socket.io.js'
     ];
     for (const asset of assets) {
       assert.equal((await fetch(`${server.base}${asset}`)).status, 200, asset);

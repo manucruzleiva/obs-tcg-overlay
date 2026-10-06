@@ -6,6 +6,15 @@
  * The names below are the ones a theme may set (see src/services/themes.js).
  */
 
+/* Windows does not draw the flags of countries (a flag emoji comes out as its two letters). This font does, and the browser only uses
+   it for the characters of flags, so it is safe to put first in a list of fonts (see assets/fonts and NOTICE.md). */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  src: url("/assets/fonts/TwemojiCountryFlags.woff2") format("woff2");
+  unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067, U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F;
+  font-display: block;
+}
+
 :root {
   /* Surfaces */
   --bg-primary: #0a0d14;
@@ -42,6 +51,7 @@
   --font-display: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  --font-flags: "Twemoji Country Flags", var(--font-body);
 
   /* Energy colors (the overlay can replace these with an uploaded icon strip) */
   --energy-grass: #4caf50;

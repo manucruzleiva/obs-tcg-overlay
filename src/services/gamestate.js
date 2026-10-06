@@ -9,6 +9,7 @@ const { randomUUID } = require('crypto');
 const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
 const GAME = require('../../public/js/game-data');
+const DECK = require('../../public/js/deck');
 const { MAX_ATTACKS, MAX_RETREAT } = require('./attacks');
 
 const MAX_ENERGIES_PER_POKEMON = 20;
@@ -20,6 +21,7 @@ const MAX_SECONDS = 30;
 const MAX_PRIZES = 6;
 const MIN_BENCH = 2;
 const MAX_BENCH = 8;
+const DEFAULT_BENCH = 5;
 const MAX_FEATURE_CARDS = 10;
 const MAX_FAVORITES = 50;
 
@@ -32,6 +34,21 @@ const NOOP_DB = {
 };
 
 const otherSide = (side) => (side === 'trainerA' ? 'trainerB' : 'trainerA');
+
+// The cards that are the prizes of a trainer, one for each prize card: { cardId, name, image }, or null for a prize card nobody has chosen a
+// card for. The overlay shows each on its prize card (face down with a question mark while the prizes are hidden).
+const emptyPrizeCards = () => Array.from({ length: MAX_PRIZES }, () => null);
+
+// What was saved or sent as prize cards, made into exactly one entry (a card, or null) for each prize card
+function cleanPrizeCards(list) {
+  const cards = emptyPrizeCards();
+  if (!Array.isArray(list)) return cards;
+  list.slice(0, MAX_PRIZES).forEach((card, index) => {
+    if (!card || typeof card !== 'object' || typeof card.name !== 'string' || !card.name) return;
+    cards[index] = { cardId: typeof card.cardId === 'string' ? card.cardId : '', name: card.name, image: typeof card.image === 'string' ? card.image : '' };
+  });
+  return cards;
+}
 
 const emptyPokemon = (slot) => ({
   slot,
@@ -76,8 +93,15 @@ class GameStateService {
       // Bumped by the server on every change; clients use it to detect stale actions
       revision: 0,
       settings: {
-        apiProvider: 'pokemontcg',
+        // which card services are asked ('auto', 'pokemontcg' or 'tcgdex') and the language of the cards TCGdex gives
+        apiProvider: 'auto',
+        cardLanguage: 'en',
+        // which service builds the card libraries (see catalog.js)
+        librarySource: 'pokemontcg',
+        // the keys of the card services: secrets (see SECRET_SETTINGS)
         apiKey: '',
+        scrydexKey: '',
+        scrydexTeam: '',
         preferLowestRarity: true,
         autoScale: true,
         overlayOpacity: 100,
@@ -99,6 +123,8 @@ class GameStateService {
         animationSeconds: 3,
 
         // Announcement enable flags (toast = small banner, animation = full-screen effect)
+        // (the pause toast: the banner that stays while the game is paused, and the short one when it is resumed)
+        enablePauseToast: true,
         enableStartGameToast: true,
         enableStartGameAnimation: true,
         enableTrainerAWinToast: true,
@@ -125,7 +151,9 @@ class GameStateService {
       favoriteCardIds: [],
       matchScore: { trainerAWins: 0, trainerBWins: 0, bestOf: 3 },
       // Shown on the scoreboard, for example "Round 3" or "Top 8"
-      matchInfo: { round: '' }
+      matchInfo: { round: '' },
+      // The game is paused (a judge call, a break): the overlay says so, and grays out the rest, until it is resumed
+      paused: false
     };
   }
 
@@ -133,9 +161,13 @@ class GameStateService {
     return {
       name,
       nationality: '',
+      // the deck ("Charizard ex", "Lightning GLC") shown next to the name, and what to put a picture of next to it when that is not what the
+      // deck says: an energy type or a Pokémon (empty is what the deck says, "none" is no picture); see public/js/deck.js
+      deck: '',
+      deckIcon: '',
       record: { wins: 0, losses: 0, ties: 0 },
-      // penalty: how many prize cards are marked red (0 to 6)
-      prizes: { count: MAX_PRIZES, hidden: false, penalty: 0 },
+      // penalty: how many prize cards the OTHER trainer counts as already taken (0 to 6); they are marked red on that trainer's side
+      prizes: { count: MAX_PRIZES, hidden: false, penalty: 0, cards: emptyPrizeCards() },
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
@@ -146,7 +178,7 @@ class GameStateService {
       },
       locks: { itemLock: false, evoLock: false },
       isTurn: false,
-      benchSize: 5, // configurable 2-8
+      benchSize: DEFAULT_BENCH, // configurable 2-8
       active: emptyPokemon('active'),
       bench: Array.from({ length: MAX_BENCH }, (_, i) => emptyPokemon(i))
     };
@@ -160,6 +192,14 @@ class GameStateService {
       delete merged[key];
     }
     if (!Number.isInteger(merged.revision) || merged.revision < 0) merged.revision = 0;
+    merged.paused = merged.paused === true;
+    // A feature card used to carry a note for the casters; it does not any more
+    for (const card of merged.featureCards || []) if (card && typeof card === 'object') delete card.note;
+    // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
+    if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
+    if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
+    if (!GAME.CARD_SERVICES.some((service) => service.key === merged.settings.librarySource)) merged.settings.librarySource = 'pokemontcg';
+    for (const name of GAME.SECRET_SETTINGS) if (!GAME.isSecretValue(merged.settings[name])) merged.settings[name] = '';
     for (const side of ['trainerA', 'trainerB']) {
       // Pokémon saved before Special Energy, attacks and retreat costs existed hold none
       for (const pokemon of [merged[side].active, ...merged[side].bench]) {
@@ -174,6 +214,10 @@ class GameStateService {
       if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
       else if (!Number.isInteger(prizes.penalty)) prizes.penalty = 0;
       prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, prizes.penalty));
+      // and the cards of the prizes came later still
+      prizes.cards = cleanPrizeCards(prizes.cards);
+      // the deck came after the nationality
+      for (const key of ['deck', 'deckIcon']) merged[side][key] = typeof merged[side][key] === 'string' ? merged[side][key].trim().slice(0, DECK.MAX_LENGTH) : '';
     }
     return merged;
   }
@@ -227,6 +271,15 @@ class GameStateService {
     this.state[side].nationality = nationality;
   }
 
+  // The deck shown next to the name, and the picture box that can say what to put a picture of next to it
+  setDeck(side, deck) {
+    this.state[side].deck = deck;
+  }
+
+  setDeckIcon(side, icon) {
+    this.state[side].deckIcon = icon;
+  }
+
   // The trainer's tournament record, shown next to the name
   setRecord(side, { wins, losses, ties }) {
     this.state[side].record = { wins, losses, ties };
@@ -250,13 +303,25 @@ class GameStateService {
     this.state[side].prizes.count = Math.max(0, Math.min(MAX_PRIZES, count));
   }
 
+  // Choose the cards that are the prizes: a list of up to six, one for each prize card, where null (or nothing) leaves a prize card without
+  // a card. They show on the overlay on their prize cards, so which ones are taken is still the count.
+  setPrizeCards(side, cards) {
+    this.state[side].prizes.cards = cleanPrizeCards(cards);
+  }
+
   // Hide the prize cards (the overlay shows them face down with a question mark); omit value to toggle
   setPrizesHidden(side, value) {
     const prizes = this.state[side].prizes;
     prizes.hidden = value === undefined ? !prizes.hidden : value;
   }
 
-  // How many prize cards are marked red as a penalty
+  // A player has won the game when they have taken every prize card they need. A penalty is a number of prize cards the OTHER player
+  // counts as already taken, so the cards a player still has are enough when they are no more than the opponent's penalty.
+  isWinning(side) {
+    return this.state[side].prizes.count <= this.state[otherSide(side)].prizes.penalty;
+  }
+
+  // The penalty of a player (what they did wrong, in prize cards): that many of the opponent's prize cards are marked red
   setPrizePenalty(side, count) {
     this.state[side].prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, Math.trunc(count)));
   }
@@ -279,6 +344,21 @@ class GameStateService {
 
   resetCounter(side, kind) {
     this.state[side].resources[kind].used = 0;
+  }
+
+  // Who has the turn ('trainerA' or 'trainerB'), or null before anybody does
+  turnHolder() {
+    return this.state.trainerA.isTurn ? 'trainerA' : this.state.trainerB.isTurn ? 'trainerB' : null;
+  }
+
+  // A Stadium has been played: it uses the Stadium play of the turn of the trainer who played it. Gives back the trainer it was used for,
+  // or null when there is nobody to use it for, or that trainer had used it already.
+  useStadiumPlay(side) {
+    if (side !== 'trainerA' && side !== 'trainerB') return null;
+    const counter = this.state[side].resources.stadiumPerTurn;
+    if (counter.used >= counter.available) return null;
+    counter.used += 1;
+    return side;
   }
 
   // slot -1 is the active Pokémon, 0.. are bench slots
@@ -434,6 +514,25 @@ class GameStateService {
     trainer.bench[slot] = active;
   }
 
+  // Move the Pokémon in one slot to another (-1 is the Active spot, 0 and up the bench). When there is a Pokémon in the other slot they
+  // change places; each keeps its own HP and attachments. A special condition ends when a Pokémon leaves the Active spot.
+  moveSlot(side, from, to) {
+    const trainer = this.state[side];
+    const at = (slot) => (slot === -1 ? trainer.active : trainer.bench[slot]);
+    const moving = at(from);
+    const other = at(to);
+    if (!moving || !other || from === to) return;
+    const place = (slot, pokemon) => {
+      pokemon.slot = slot === -1 ? 'active' : slot;
+      if (slot === -1) trainer.active = pokemon;
+      else trainer.bench[slot] = pokemon;
+    };
+    if (from === -1) moving.status = [];
+    if (to === -1) other.status = [];
+    place(to, moving);
+    place(from, other);
+  }
+
   // A Pokémon is knocked out: it leaves play and the opponent takes prize cards
   knockOut(side, slot, { prizesTaken = 1, clear = true } = {}) {
     if (clear) this.clearSlot(side, slot);
@@ -450,12 +549,22 @@ class GameStateService {
   }
 
   adjustBenchSize(side, delta) {
+    this.setBenchSize(side, this.state[side].benchSize + delta);
+  }
+
+  // The bench has this many slots (2 to 8); the Pokémon in the slots that go are gone with them
+  setBenchSize(side, wanted) {
     const trainer = this.state[side];
-    const size = Math.max(MIN_BENCH, Math.min(MAX_BENCH, trainer.benchSize + delta));
+    const size = Math.max(MIN_BENCH, Math.min(MAX_BENCH, wanted));
     if (size === trainer.benchSize) return;
     trainer.benchSize = size;
     while (trainer.bench.length < size) trainer.bench.push(emptyPokemon(trainer.bench.length));
     if (trainer.bench.length > size) trainer.bench = trainer.bench.slice(0, size);
+  }
+
+  // Back to the usual bench of 5 (what a Stadium such as Area Zero Underdepths made bigger is over)
+  resetBenchSize(side) {
+    this.setBenchSize(side, DEFAULT_BENCH);
   }
 
   // ------------------------------------------------------------------- match
@@ -472,6 +581,7 @@ class GameStateService {
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
       this.state[side].prizes.penalty = 0;
+      this.state[side].prizes.cards = emptyPrizeCards();
     }
     this.resetGameMarkers();
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
@@ -526,6 +636,24 @@ class GameStateService {
     this.resetGameMarkers();
   }
 
+  // The next game of the same match: prize cards and penalties start again (with new cards for the prizes, which nobody has chosen yet) and
+  // the once-per-game markers and abilities come back. The score, the names and what is on the table stay.
+  nextGame() {
+    for (const side of ['trainerA', 'trainerB']) {
+      this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.penalty = 0;
+      this.state[side].prizes.cards = emptyPrizeCards();
+      this.resetAbilities(side, { includeGame: true });
+    }
+    this.resetGameMarkers();
+  }
+
+  // Pause the game, or resume it; omit `paused` to toggle. Returns whether it is paused now.
+  setPaused(paused) {
+    this.state.paused = paused === undefined ? !this.state.paused : Boolean(paused);
+    return this.state.paused;
+  }
+
   setBestOf(bestOf) {
     this.state.matchScore.bestOf = bestOf;
   }
@@ -564,8 +692,8 @@ class GameStateService {
     }
   }
 
-  addFeatureCard({ cardId, name, image, note }) {
-    this.state.featureCards.unshift({ id: randomUUID(), cardId, name, image, note, addedAt: Date.now() });
+  addFeatureCard({ cardId, name, image }) {
+    this.state.featureCards.unshift({ id: randomUUID(), cardId, name, image, addedAt: Date.now() });
     if (this.state.featureCards.length > MAX_FEATURE_CARDS) this.state.featureCards.pop();
   }
 
@@ -593,6 +721,15 @@ class GameStateService {
             this.state.settings.display[option] = shown;
           }
         }
+      } else if (GAME.SECRET_SETTINGS.includes(key)) {
+        // a key is kept as it was pasted, without the spaces around it; one that cannot go in a header is not kept
+        if (typeof value === 'string' && GAME.isSecretValue(value.trim())) this.state.settings[key] = value.trim();
+      } else if (key === 'librarySource') {
+        if (GAME.CARD_SERVICES.some((service) => service.key === value)) this.state.settings.librarySource = value;
+      } else if (key === 'apiProvider') {
+        if (GAME.CARD_SOURCES.some((source) => source.key === value)) this.state.settings.apiProvider = value;
+      } else if (key === 'cardLanguage') {
+        if (GAME.CARD_LANGUAGES.some(([code]) => code === value)) this.state.settings.cardLanguage = value;
       } else if (key === 'sound') {
         this.mergeSound(value);
       } else if ((key === 'toastSeconds' || key === 'animationSeconds') && Number.isFinite(value)) {
@@ -623,7 +760,10 @@ class GameStateService {
   // Replace everything with a saved configuration (the revision keeps counting up)
   importState(config) {
     const revision = this.state.revision;
+    // the keys are this computer's own: a file (which never holds them) cannot take them away or give others
+    const keys = Object.fromEntries(GAME.SECRET_SETTINGS.map((name) => [name, this.state.settings[name]]));
     this.state = this.mergeWithDefaults(config);
+    Object.assign(this.state.settings, keys);
     this.state.revision = revision;
   }
 

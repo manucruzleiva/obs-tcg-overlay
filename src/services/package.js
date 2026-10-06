@@ -18,7 +18,7 @@
  */
 
 const { createZip, readZip, ZipError, MB } = require('./zip');
-const { ThemeError, cleanText, cleanName, folderName, sanitizeLayout, sanitizeCrop, MAX_IMAGE_BYTES } = require('./themes');
+const { ThemeError, cleanText, cleanName, folderName, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, MAX_IMAGE_BYTES } = require('./themes');
 const { MAX_SOUND_BYTES } = require('./sounds');
 const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
@@ -177,6 +177,8 @@ function unpack(buffer, defaults = null) {
       colors: rawDesign.colors && typeof rawDesign.colors === 'object' ? rawDesign.colors : {},
       layout: rawDesign.layout,
       crop: rawDesign.crop,
+      tile: rawDesign.tile,
+      prizeStyle: rawDesign.prizeStyle,
       images: {},
       font: null,
       sounds: {}
@@ -301,7 +303,9 @@ class PackageService {
         sounds: Object.keys(design.sounds),
         colors: Object.keys(design.colors).length,
         layout: Object.keys(sanitizeLayout(design.layout)).length,
-        crop: Object.keys(sanitizeCrop(design.crop))
+        crop: Object.keys(sanitizeCrop(design.crop)),
+        tile: Object.keys(sanitizeTile(design.tile)),
+        prizeStyle: sanitizePrize(design.prizeStyle) || null
       },
       controls: controls && describeControls(controls.settings),
       ignored

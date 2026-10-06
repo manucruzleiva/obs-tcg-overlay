@@ -60,6 +60,10 @@ Every part is optional, but a package must hold a design, control settings, or b
 | `author` | Who made it (up to 60 characters). Shown when someone installs it |
 | `description` | One line about it (up to 300 characters) |
 | `colors` | CSS variables the design sets. Unknown names are ignored. Values may not contain `; { } < > \` |
+| `layout` | Where pieces of the overlay are moved to and how big they are: `{ "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } }`. `x` and `y` are pixels of the 1920 × 1080 stage (up to ±1920), `scale` is 0.2 to 4. A piece that has not moved is not listed. The pieces: `logo`, `scoreboard`, `features`, `stadium`, `toasts`, and for each trainer (`trainerA`, `trainerB`) the whole trainer plus `.prizes`, `.tokens`, `.locks`, `.active` and `.bench` |
+| `crop` | Which part of a card picture shows, as fractions of the card (0 to 1): `{ "active": { "x": 0.07, "y": 0.115, "w": 0.86, "h": 0.385 } }`. `active`, `bench` and `stadium` are rectangles (`x`, `y`, `w`, `h`, at least 5% wide and high, inside the card); `energy` is the circle cut out of a Special Energy card (`x`, `y`, `w`: the height follows). Left out, a Pokémon shows the picture of its card (`x 0.07, y 0.115, w 0.86, h 0.385`) and the Stadium its own picture window (`x 0.082, y 0.145, w 0.836, h 0.37`), because a Trainer card is laid out differently. The whole card is `{ "x": 0, "y": 0, "w": 1, "h": 1 }`, and has to be asked for |
+| `tile` | Where the parts of a Pokémon's tile go, for `active` and `bench`: `{ "active": { "hp": "bottom", "retreat": "top-right" } }`. `hp`: `top`, `bottom` or `below` the picture. `energy`, `retreat` and `status`: a corner of the picture (`top-left`, `top-right`, `bottom-left`, `bottom-right`) or `below` it. The usual: HP on top, energy bottom left, retreat cost bottom right, status icons top right. Only what differs from the usual is kept |
+| `prizeStyle` | The picture on the prize cards: `english` or `japanese` (a Pokémon card back) or `pokeball`. Left out (or `current`), the prize cards keep the design's own `prizeCardBack` or `cardBackImage` picture, or the built-in look. The pictures themselves come with OTO (`assets/cardbacks`), not with the package. Anything else is ignored |
 
 The color and shape variables you can set are listed in the **Look** tab of Settings, and in [`public/js/theme-options.js`](../public/js/theme-options.js). Examples: `--accent`, `--trainer-a`, `--trainer-b`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`.
 
@@ -77,6 +81,7 @@ OTO does not read file names out of `design.json`. It looks for these exact name
 | `prizeCardBack` | The face-down prize cards |
 | `cardBackImage` | Used for prize cards when there is no prize card back |
 | `energySymbols` | A strip of 11 equal squares: Grass, Fire, Water, Lightning, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless |
+| `statusSymbols` | A strip of 6 equal squares: Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped |
 
 **Font**, `fonts/font.<type>` with the type `woff2`, `woff`, `ttf` or `otf`.
 

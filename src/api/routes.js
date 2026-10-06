@@ -15,6 +15,7 @@ const { CatalogError } = require('../services/catalog');
 const { PackageError, ZipError, MAX_PACKAGE_BYTES } = require('../services/package');
 
 const CARD_ID = /^[\w.-]{1,40}$/;
+const GAME = require('../../public/js/game-data');
 
 // The only things a card search can be narrowed by, taken from the query string as plain text
 const SEARCH_FILTERS = ['supertype', 'subtype', 'rarity', 'set', 'evolvesFrom'];
@@ -185,7 +186,12 @@ module.exports = (services) => {
     for (const key of ['supertype', 'subtype']) {
       if (typeof req.query[key] === 'string') filters[key] = req.query[key].slice(0, 100);
     }
-    res.json(cardUsage.popular({ ...filters, page: Math.min(100, parseInt(req.query.page, 10) || 1) }));
+    res.json(cardUsage.popular({ ...filters, page: Math.min(100, parseInt(req.query.page, 10) || 1), favorites: gameState.state.favoriteCardIds }));
+  }));
+  // A card that got a star: how it looks is remembered (without counting a use), so it can be listed later
+  protectedRouter.post('/cards/known', handle((req, res) => {
+    if (!cardUsage.remember(body(req))) return res.status(400).json({ error: 'That is not a card' });
+    res.json({ ok: true });
   }));
   // The picker says which card was chosen (the card as it showed it), so it can be offered first next time
   protectedRouter.post('/cards/used', handle((req, res) => {
@@ -193,13 +199,17 @@ module.exports = (services) => {
     res.json({ ok: true });
   }));
   protectedRouter.delete('/cards/used', handle((req, res) => {
-    cardUsage.clear();
+    cardUsage.clear(gameState.state.favoriteCardIds);
     res.json({ ok: true });
   }));
 
   protectedRouter.get('/cards/:id', handle(async (req, res) => {
     if (!CARD_ID.test(req.params.id)) return res.status(400).json({ error: 'Invalid card id' });
-    const card = await pokemonTCG.getCard(req.params.id);
+    // which card service the card came from, and in which language, when the page knows
+    const hint = {};
+    if (['pokemontcg', 'scrydex', 'tcgdex'].includes(req.query.source)) hint.source = req.query.source;
+    if (GAME.CARD_LANGUAGES.some(([code]) => code === req.query.language)) hint.language = req.query.language;
+    const card = await pokemonTCG.getCard(req.params.id, hint);
     if (!card) return res.status(404).json({ error: 'Card not found' });
     res.json(card);
   }));
@@ -269,7 +279,8 @@ module.exports = (services) => {
     const state = gameState.state;
     res.setHeader('Content-Disposition', 'attachment; filename="overlay-config.json"');
     res.setHeader('Content-Type', 'application/json');
-    res.send(JSON.stringify({ ...state, settings: { ...state.settings, apiKey: '' } }, null, 2));
+    // the keys of the card services are secrets: a file made for sharing never has them
+    res.send(JSON.stringify({ ...state, settings: { ...state.settings, ...Object.fromEntries(GAME.SECRET_SETTINGS.map((name) => [name, ''])) } }, null, 2));
   });
   protectedRouter.post('/config/import', handle((req, res) => {
     try {

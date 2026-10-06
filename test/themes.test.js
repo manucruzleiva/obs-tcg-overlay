@@ -22,7 +22,7 @@ describe('what a design may hold', () => {
   it('knows which variables and picture slots a design can set', () => {
     assert.ok(COLOR_KEYS.includes('--accent'));
     assert.ok(COLOR_KEYS.includes('--trainer-a'));
-    assert.deepEqual(IMAGE_KEYS, ['logoImage', 'backgroundImage', 'trainerAAvatar', 'trainerBAvatar', 'prizeCardBack', 'cardBackImage', 'energySymbols']);
+    assert.deepEqual(IMAGE_KEYS, ['logoImage', 'backgroundImage', 'trainerAAvatar', 'trainerBAvatar', 'prizeCardBack', 'cardBackImage', 'energySymbols', 'statusSymbols']);
   });
 
   it('keeps the colors it knows and drops everything else', () => {

@@ -12,6 +12,7 @@
 const announcements = require('./services/announcements');
 const { attacksOf, retreatOf } = require('./services/attacks');
 const GAME = require('../public/js/game-data');
+const DECK = require('../public/js/deck');
 
 const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
 
@@ -44,6 +45,16 @@ function imageUrl(value, name) {
   const url = text(value, name, 2048);
   if (url && !/^(https?:\/\/|\/)/i.test(url)) throw new ActionError(`${name} must be a web address`);
   return url;
+}
+
+// One of the cards that are the prizes, as the card picker sends it: { cardId, name, image }, or null for a prize card without a card
+const PRIZE_CARDS = 6; // as many as there are prize cards
+function prizeCard(card) {
+  if (card === null || card === undefined) return null;
+  if (typeof card !== 'object' || Array.isArray(card)) throw new ActionError('each prize card must be a card, or null');
+  const name = text(card.name ?? '', 'name', 80);
+  if (!name) throw new ActionError('a card needs a name');
+  return { cardId: text(card.cardId ?? '', 'cardId', 64), name, image: imageUrl(card.image, 'image') };
 }
 
 const penaltyText = (count) => (count === 0 ? 'none' : `${count} prize card${count === 1 ? '' : 's'} in red`);
@@ -135,6 +146,16 @@ const TRAINER = {
     run: (gs, side, p) => gs.setNationality(side, text(p.nationality, 'nationality', 40)),
     label: (gs, side) => `${who(gs, side)} nationality → ${gs.state[side].nationality || 'none'}`
   },
+  setDeck: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setDeck(side, text(p.deck ?? '', 'deck', DECK.MAX_LENGTH)),
+    label: (gs, side) => `${who(gs, side)} deck → ${gs.state[side].deck || 'none'}`
+  },
+  setDeckIcon: {
+    targets: () => null,
+    run: (gs, side, p) => gs.setDeckIcon(side, text(p.icon ?? '', 'icon', DECK.MAX_LENGTH)),
+    label: (gs, side) => `${who(gs, side)} deck picture → ${gs.state[side].deckIcon || 'automatic'}`
+  },
   setRecord: {
     targets: () => null,
     run: (gs, side, p) => gs.setRecord(side, {
@@ -175,6 +196,17 @@ const TRAINER = {
     label: (gs, side) => `${who(gs, side)} prizes reset`
   },
   togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizesHidden(side, value)),
+  // Choose the cards that are the prizes: up to six, one for each prize card (null leaves one without a card). They show on the overlay on
+  // their prize cards, face down with a question mark while the prizes are hidden. An empty list takes them all away.
+  prizeCardsSet: {
+    targets: (side) => [`${side}.prizeCards`],
+    run: (gs, side, p, out, ctx) => {
+      if (!Array.isArray(p.cards) || p.cards.length > PRIZE_CARDS) throw new ActionError(`cards must be a list of up to ${PRIZE_CARDS} cards`);
+      gs.setPrizeCards(side, p.cards.map(prizeCard));
+      ctx.count = gs.state[side].prizes.cards.filter(Boolean).length;
+    },
+    label: (gs, side, p, ctx) => (ctx.count ? `${who(gs, side)} prize cards set (${ctx.count})` : `${who(gs, side)} prize cards cleared`)
+  },
   // The penalty is a number of prize cards, shown in red on the overlay
   prizePenaltyPlus: {
     targets: (side) => [`${side}.penalty`],
@@ -372,6 +404,31 @@ const TRAINER = {
     label: (gs, side, p, ctx) => `${who(gs, side)} switched in ${ctx.name || 'a Pokémon'}`
   },
 
+  // Drag and drop: the Pokémon in one slot goes to another (-1 is the Active spot, 0 and up the bench). When there is a Pokémon there
+  // they change places.
+  moveSlot: {
+    sfx: (side, p) => (Number(p.from) === -1 || Number(p.to) === -1 ? 'deploy' : 'bench'),
+    targets: (side, p) => [slotKey(side, p.from), slotKey(side, p.to)],
+    run: (gs, side, p, out, ctx) => {
+      const from = pickSlot(p.from);
+      const to = pickSlot(p.to);
+      if (from === to) throw new ActionError('that is the same slot');
+      const size = gs.state[side].benchSize;
+      if (from >= size || to >= size) throw new ActionError('that bench slot is not in use');
+      const moving = gs.pokemonAt(side, from);
+      if (!moving || !(moving.cardId || moving.name)) throw new ActionError('no Pokémon in that slot');
+      const other = gs.pokemonAt(side, to);
+      ctx.name = moving.name || 'a Pokémon';
+      ctx.other = other && (other.cardId || other.name) ? other.name || 'a Pokémon' : '';
+      ctx.to = to;
+      gs.moveSlot(side, from, to);
+    },
+    label: (gs, side, p, ctx) => {
+      const place = ctx.to === -1 ? 'the Active spot' : `bench ${ctx.to + 1}`;
+      return ctx.other ? `${who(gs, side)} swapped ${ctx.name} and ${ctx.other}` : `${who(gs, side)} moved ${ctx.name} to ${place}`;
+    }
+  },
+
   // A Pokémon is knocked out: announce it, take it off the table and let the opponent take prizes
   knockOut: {
     sfx: () => 'ko',
@@ -454,6 +511,11 @@ const TRAINER = {
     targets: (side) => [`${side}.benchSize`],
     run: (gs, side) => gs.adjustBenchSize(side, -1),
     label: (gs, side) => `${who(gs, side)} bench size ${gs.state[side].benchSize}`
+  },
+  benchSizeReset: {
+    targets: (side) => [`${side}.benchSize`],
+    run: (gs, side) => gs.resetBenchSize(side),
+    label: (gs, side) => `${who(gs, side)} bench back to ${gs.state[side].benchSize} slots`
   }
 };
 
@@ -486,6 +548,30 @@ const MATCH = {
     targets: () => ['game', 'score', 'trainerA.prizes', 'trainerB.prizes'],
     run: (gs) => gs.startGame(),
     label: () => 'Game started'
+  },
+  // The next game of the match: both trainers' prize cards and penalties start again and the once-per-game markers come back. The score
+  // and the names stay (startGame, above, starts a whole new match: the score goes back to 0 too).
+  nextGame: {
+    targets: () => ['game', 'trainerA.prizes', 'trainerB.prizes', 'trainerA.penalty', 'trainerB.penalty'],
+    run: (gs) => gs.nextGame(),
+    label: (gs) => {
+      const { trainerAWins, trainerBWins } = gs.state.matchScore;
+      return `Next game (score ${trainerAWins}–${trainerBWins})`;
+    }
+  },
+  // The game is paused (a judge call, a break) or resumed. While it is paused the overlay shows a banner and grays out the rest; resuming
+  // shows a short toast. `enabled` says what is wanted, so two producers pressing it at once agree.
+  togglePause: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : ['paused']),
+    run: (gs, side, p, out) => {
+      const was = gs.state.paused;
+      const now = gs.setPaused(typeof p.enabled === 'boolean' ? p.enabled : undefined);
+      if (was && !now) {
+        const resumed = announcements.build(gs.state, 'resume');
+        if (resumed) out.push(resumed);
+      }
+    },
+    label: (gs) => (gs.state.paused ? 'Game paused' : 'Game resumed')
   },
   endGame: {
     targets: () => ['game'],
@@ -595,24 +681,36 @@ function cleanCard(data) {
   };
 }
 
+// A Stadium that is played uses the Stadium play of the turn of the trainer who played it, unless the sender says it does not (`consume:
+// false`: a correction, or an effect that put it there). `playedBy` says who (the control panel always does); without it, whoever has the turn.
+const isSide = (value) => value === 'trainerA' || value === 'trainerB';
+const stadiumPlayedBy = (gs, p) => (isSide(p.playedBy) ? p.playedBy : gs.turnHolder());
+const stadiumTargets = (p) => (p.consume !== false && isSide(p.playedBy) ? [`${p.playedBy}.stadium use`] : []);
+const stadiumLabel = (gs, ctx) => (ctx.usedBy ? ` · ${who(gs, ctx.usedBy)} used the Stadium play` : '');
+
 const CARD = {
   select: {
     sfx: (side, p) => (p.target === 'stadium' ? 'stadium' : /-active$/.test(String(p.target)) ? 'deploy' : 'bench'),
     targets: (side, p) => {
       const key = cardTargetKey(p.target);
-      return key ? [key] : null;
+      return key ? [key, ...(p.target === 'stadium' ? stadiumTargets(p) : [])] : null;
     },
-    run: (gs, side, p) => {
+    run: (gs, side, p, out, ctx) => {
       if (p.target !== 'stadium' && !CARD_TARGET.test(String(p.target))) throw new ActionError('invalid card target');
       gs.selectCard(p.target, cleanCard(p.cardData), { keep: p.evolve === true });
+      if (p.target === 'stadium' && p.consume !== false) ctx.usedBy = gs.useStadiumPlay(stadiumPlayedBy(gs, p));
     },
-    label: (gs, side, p) => `${p.target === 'stadium' ? 'Stadium' : p.target.replace('-', ' ').replace('-', ' ')} → ${p.cardData && p.cardData.name}`
+    label: (gs, side, p, ctx) => `${p.target === 'stadium' ? 'Stadium' : p.target.replace('-', ' ').replace('-', ' ')} → ${p.cardData && p.cardData.name}${stadiumLabel(gs, ctx)}`
   },
   setStadium: {
     sfx: (side, p) => (p.cardId || p.name ? 'stadium' : null),
-    targets: () => ['stadium'],
-    run: (gs, side, p) => gs.setStadium(text(p.cardId ?? '', 'cardId', 64), text(p.name ?? '', 'name', 80), imageUrl(p.image, 'image')),
-    label: (gs) => (gs.state.stadium.inPlay ? `Stadium → ${gs.state.stadium.name}` : 'Stadium cleared')
+    targets: (side, p) => ['stadium', ...stadiumTargets(p)],
+    run: (gs, side, p, out, ctx) => {
+      gs.setStadium(text(p.cardId ?? '', 'cardId', 64), text(p.name ?? '', 'name', 80), imageUrl(p.image, 'image'));
+      // (taking it away, with nothing in its place, uses nothing)
+      if (gs.state.stadium.inPlay && p.consume !== false) ctx.usedBy = gs.useStadiumPlay(stadiumPlayedBy(gs, p));
+    },
+    label: (gs, side, p, ctx) => (gs.state.stadium.inPlay ? `Stadium → ${gs.state.stadium.name}${stadiumLabel(gs, ctx)}` : 'Stadium cleared')
   },
   favorite: {
     targets: (side, p) => [`favorite.${p.cardId}`],
@@ -624,8 +722,7 @@ const CARD = {
     run: (gs, side, p) => gs.addFeatureCard({
       cardId: text(p.cardId ?? '', 'cardId', 64),
       name: text(p.name ?? '', 'name', 80),
-      image: imageUrl(p.image, 'image'),
-      note: text(p.note ?? '', 'note', 200)
+      image: imageUrl(p.image, 'image')
     }),
     label: (gs, side, p) => `Feature card added: ${p.name}`
   },
@@ -668,9 +765,18 @@ const SETTINGS_UPDATE = {
   targets: () => null,
   run: (gs, side, p) => {
     const { action, meta, ...patch } = p;
+    // a key that cannot be one is refused with a reason, rather than quietly not kept
+    for (const name of GAME.SECRET_SETTINGS) {
+      if (name in patch && (typeof patch[name] !== 'string' || !GAME.isSecretValue(patch[name].trim()))) {
+        throw new ActionError('That does not look like a key: it has to be made of letters, digits and symbols, without spaces');
+      }
+    }
     gs.updateSettings(patch);
   },
-  label: (gs, side, p) => ('display' in p ? 'Overlay visibility changed' : 'Settings changed')
+  // (what is said here is read by every producer: a key itself never is)
+  label: (gs, side, p) => ('display' in p ? 'Overlay visibility changed'
+    : GAME.SECRET_SETTINGS.some((name) => name in p) ? 'A card service key changed'
+      : ['apiProvider', 'cardLanguage', 'librarySource'].some((name) => name in p) ? 'Card services changed' : 'Settings changed')
 };
 
 const RESET = {
@@ -726,21 +832,28 @@ function resolve(event, payload) {
     // Applies the action to `gs` and returns the announcements it triggers
     run(gs) {
       const out = [];
-      const before = { trainerA: gs.state.trainerA.prizes.count, trainerB: gs.state.trainerB.prizes.count };
+      const winning = { trainerA: gs.isWinning('trainerA'), trainerB: gs.isWinning('trainerB') };
       spec.run(gs, side, payload, out, ctx);
-      // Whoever has just taken their last prize card has won: the victory is announced by itself, whatever
-      // took the card (a knock out, the minus button, a draft sent from somewhere else)
+      // Whoever has just taken the last prize card they need has won the game: the score goes up and the victory is announced by
+      // itself, whatever took the card (a knock out, the minus button, a draft sent from somewhere else) or gave the opponent the
+      // penalty that made the last one unnecessary. The opponent's penalty counts as prize cards already taken.
       for (const trainer of ['trainerA', 'trainerB']) {
-        if (before[trainer] > 0 && gs.state[trainer].prizes.count === 0) {
-          const victory = announcements.build(gs.state, 'win', { side: trainer });
-          if (victory) out.push(victory);
-          ctx.won = true;
-        }
+        if (winning[trainer] || !gs.isWinning(trainer)) continue;
+        gs.matchWin(trainer);
+        const victory = announcements.build(gs.state, 'win', { side: trainer, game: true });
+        if (victory) out.push(victory);
+        ctx.won = true;
+        ctx.winners = [...(ctx.winners || []), trainer];
       }
       return out;
     },
     // Human-readable description, to be called after run()
-    label: (gs) => spec.label(gs, side, payload, ctx),
+    label: (gs) => {
+      const text = spec.label(gs, side, payload, ctx);
+      if (!ctx.winners) return text;
+      const { trainerAWins, trainerBWins } = gs.state.matchScore;
+      return `${text} · ${ctx.winners.map((winner) => who(gs, winner)).join(' and ')} won the game (${trainerAWins}–${trainerBWins})`;
+    },
     // The sound cues this action makes, to be called after run(). Independent of the visual announcements.
     cues: () => [...(spec.sfx ? [].concat(spec.sfx(side, payload, ctx) || []) : []), ...(ctx.won ? ['win'] : [])]
   };
@@ -758,7 +871,7 @@ async function prepare(gs, event, payload) {
   if (supplied && (payload.target === 'stadium' || (supplied.abilities !== undefined && supplied.attacks !== undefined))) return payload;
 
   const details = await Promise.race([
-    gs.pokemonTCG.getCard(payload.cardId, supplied && supplied.source).catch(() => null),
+    gs.pokemonTCG.getCard(payload.cardId, { source: supplied && supplied.source, language: supplied && supplied.language }).catch(() => null),
     new Promise((resolve) => setTimeout(() => resolve(null), DETAILS_TIMEOUT_MS).unref())
   ]);
   if (!details) return payload;

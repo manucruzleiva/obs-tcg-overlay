@@ -1,6 +1,6 @@
 /**
  * The dialogs behind the keyboard shortcuts: pick a card, knock out, damage and heal, energy, bench,
- * abilities, attack announcement, help, overlay preview and draft conflicts.
+ * prize cards, abilities, attack announcement, help, overlay preview and draft conflicts.
  */
 import { h, icon, replace, debounce, energyStyle } from './dom.js';
 import { openModal, closeModal } from './ui.js';
@@ -70,11 +70,12 @@ const FILTERS = [
   { label: 'Energy', value: 'Energy' }
 ];
 
-// What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution, or a Special Energy
+// What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution, a Special Energy
 // card for a Pokémon (`countsAsTurn` and `onDone` belong to that one: whether it uses up the turn's energy
-// attachment, and what to do when a card has been attached).
+// attachment, and what to do when a card has been attached), or one of the prize cards (`onPick` gets the card: nothing is sent,
+// the prize cards dialog behind it holds the choice).
 export function openPicker(app, purpose) {
-  const { kind, side, slot, countsAsTurn, onDone } = purpose;
+  const { kind, side, slot, countsAsTurn, onDone, onPick } = purpose;
   const state = app.state;
   const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'special-energy' ? 'Energy' : kind === 'active' || kind === 'bench' || kind === 'evolve' ? 'Pokémon' : '';
   let filter = fixedFilter;
@@ -87,12 +88,12 @@ export function openPicker(app, purpose) {
     stadium: 'Stadium',
     feature: 'Feature a card',
     evolve: 'Evolve',
-    'special-energy': `Special Energy · ${side && trainerName(state, side)}`
+    'special-energy': `Special Energy · ${side && trainerName(state, side)}`,
+    prize: `Prize card ${slot + 1} · ${side && trainerName(state, side)}`
   };
 
   const input = h('input', { type: 'search', class: 'search-input', placeholder: kind === 'stadium' ? 'Search stadium cards…' : kind === 'special-energy' ? 'Search Special Energy cards, for example Double Turbo…' : 'Search by card name…', 'aria-label': 'Card name', 'data-autofocus': true, autocomplete: 'off' });
   const results = h('div', { class: 'card-grid', 'aria-live': 'polite' });
-  const note = kind === 'feature' ? h('input', { type: 'text', maxlength: 200, placeholder: 'Note for the casters (optional)', 'aria-label': 'Note' }) : null;
   const status = h('p', { class: 'picker-status' }, 'Type a card name to search.');
   // What the list shows: 'start' (the most used and the saved cards, before anything is typed), 'search' or nothing
   let showing = '';
@@ -103,18 +104,44 @@ export function openPicker(app, purpose) {
     status.textContent = `Searching for evolutions of ${evolvesFrom}…`;
   }
 
+  // A Stadium that is played uses the Stadium play of the turn of whoever plays it: the one who has the turn unless it is said otherwise,
+  // and it can be left unused (a correction, or an effect that put it there)
+  let playedBy = state.trainerA.isTurn ? 'trainerA' : state.trainerB.isTurn ? 'trainerB' : app.focus;
+  let consume = true;
+  const playRow = kind === 'stadium' ? h('div', { class: 'stadium-play' }) : null;
+  const drawPlay = () => {
+    if (!playRow) return;
+    const counter = app.state[playedBy].resources.stadiumPerTurn;
+    const used = counter.used >= counter.available;
+    const box = h('input', { type: 'checkbox', checked: consume, 'aria-label': 'Uses the Stadium play of the turn' });
+    box.addEventListener('change', () => { consume = box.checked; drawPlay(); });
+    replace(playRow,
+      h('div', { class: 'section-label' }, 'Played by'),
+      sideTabs(app, playedBy, (next) => { playedBy = next; drawPlay(); }),
+      h('label', { class: 'switch inline' }, box, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Uses ${trainerName(app.state, playedBy)}'s Stadium play for the turn`)),
+      h('p', { class: `hint-line${consume && used ? ' warn' : ''}` }, consume
+        ? (used ? `${trainerName(app.state, playedBy)} already played a Stadium this turn. Turn this off for a correction or an effect.` : "Uses up the turn's Stadium play.")
+        : "The turn's Stadium play stays available."));
+  };
+  drawPlay();
+
   const pick = async (card) => {
-    const cardData = { id: card.id, name: card.name, hp: card.hp, images: card.images };
+    // where the card came from goes with it, so the details (attacks, abilities) are asked of the same service
+    const cardData = { id: card.id, name: card.name, hp: card.hp, images: card.images, source: card.source, language: card.language };
     let result;
     if (kind === 'feature') {
-      result = await app.act('action:card', { action: 'addFeatureCard', cardId: card.id, name: card.name, image: (card.images && (card.images.large || card.images.small)) || '', note: note.value });
+      result = await app.act('action:card', { action: 'addFeatureCard', cardId: card.id, name: card.name, image: (card.images && (card.images.large || card.images.small)) || '' });
     } else if (kind === 'stadium') {
-      result = await app.act('action:card', { action: 'select', target: 'stadium', cardId: card.id, cardData });
+      result = await app.act('action:card', { action: 'select', target: 'stadium', cardId: card.id, cardData, playedBy, consume });
     } else if (kind === 'special-energy') {
       result = await app.act(`action:${side}`, {
         action: 'attachSpecialEnergy', slot, cardId: card.id, name: card.name,
         image: (card.images && (card.images.large || card.images.small)) || '', countsAsTurn: countsAsTurn !== false
       });
+    } else if (kind === 'prize') {
+      // a prize card is small on the overlay: the small picture is enough
+      onPick({ cardId: card.id, name: card.name, image: (card.images && (card.images.small || card.images.large)) || '' });
+      result = { ok: true };
     } else {
       const target = `${side}-${slot === undefined || slot === -1 ? 'active' : `bench-${slot}`}`;
       result = await app.act('action:card', { action: 'select', target, cardId: card.id, cardData, evolve: kind === 'evolve' });
@@ -127,17 +154,37 @@ export function openPicker(app, purpose) {
     }
   };
 
-  const render = (cards) => {
-    replace(results, cards.map((card) => h('div', { class: 'card-tile' },
-      h('button', { class: 'card-pick', type: 'button', onclick: () => pick(card), title: `${card.name} · ${card.setName} #${card.number}` },
-        card.images && card.images.small ? h('img', { src: card.images.small, alt: card.name, loading: 'lazy' }) : h('span', { class: 'art-fallback' }, icon('star', 28)),
-        h('span', { class: 'card-name' }, card.name),
-        h('span', { class: 'card-meta' }, `${card.setName} #${card.number}`)),
-      h('button', {
-        class: `star-btn${app.state.favoriteCardIds.includes(card.id) ? ' on' : ''}`, type: 'button', 'aria-label': 'Favorite',
-        onclick: async (event) => { await app.act('action:card', { action: 'favorite', cardId: card.id }); event.currentTarget.classList.toggle('on'); }
-      }, icon('star', 16)))));
+  // The star on a card: it shows whether the card is a favorite (also when another producer changes it)
+  const isFavorite = (card) => app.state.favoriteCardIds.includes(card.id);
+  const showStar = (button, on) => {
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
+    button.title = on ? 'A favorite: click to take the star off' : 'Mark as a favorite: it is listed first next time';
   };
+  const render = (cards) => {
+    replace(results, cards.map((card) => {
+      const star = h('button', { class: 'star-btn', type: 'button', 'aria-label': `Favorite: ${card.name}`, dataset: { card: card.id } });
+      showStar(star, isFavorite(card));
+      star.addEventListener('click', async () => {
+        const was = isFavorite(card);
+        const result = await app.act('action:card', { action: 'favorite', cardId: card.id });
+        if (!result.ok) return;
+        showStar(star, !was);
+        // so the card can be listed with the favorites later, whatever the picture it was found with
+        if (!was) fetch('/api/cards/known', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
+      });
+      return h('div', { class: 'card-tile' },
+        h('button', { class: 'card-pick', type: 'button', onclick: () => pick(card), title: `${card.name} · ${card.setName} #${card.number}` },
+          card.images && card.images.small ? h('img', { src: card.images.small, alt: card.name, loading: 'lazy' }) : h('span', { class: 'art-fallback' }, icon('star', 28)),
+          h('span', { class: 'card-name' }, card.name),
+          h('span', { class: 'card-meta' }, `${card.setName} #${card.number}`)),
+        star);
+    }));
+  };
+  // another producer's star shows here too
+  const followStars = app.conn.on('state', () => {
+    for (const star of results.querySelectorAll('.star-btn')) showStar(star, app.state.favoriteCardIds.includes(star.dataset.card));
+  });
 
   // Load one page of results: the first replaces the list, later ones ("Show more") add to it
   let listed = [];
@@ -163,14 +210,18 @@ export function openPicker(app, purpose) {
       listed = pageNumber === 1 ? data.cards : listed.concat(data.cards);
       showing = starting ? 'start' : 'search';
       if (starting) {
-        const what = { used: 'Your most used cards', mixed: 'Your most used cards, then others saved on this computer', cache: 'Cards saved on this computer' }[data.source];
+        // what the list is made of, in the order it is listed
+        const parts = [data.favorites > 0 && 'Your favorite cards', data.used > 0 && 'your most used cards', (data.saved === undefined ? data.source !== 'used' : data.saved > 0) && 'cards saved on this computer'].filter(Boolean);
+        const what = parts.join(', then ').replace(/^./, (letter) => letter.toUpperCase());
         status.textContent = listed.length
           ? `${what} (${data.totalCount > listed.length ? `showing ${listed.length} of ${data.totalCount}` : data.totalCount}). Type a card name to search for others.`
-          : 'Type a card name to search. The cards you use are listed here next time.';
+          : 'Type a card name to search. The cards you use, and the ones you give a star, are listed here next time.';
       } else {
-        const where = data.source === 'library' ? ` in your ${data.library} library` : '';
+        const where = data.source === 'library' ? ` in your ${data.library} library` : data.source === 'tcgdex' ? ' on TCGdex' : data.source === 'scrydex' ? ' on Scrydex' : '';
+        // TCGdex does not say how many cards there are in all: a full page means there may be more
+        const open = data.source === 'tcgdex' && data.hasMore;
         status.textContent = listed.length
-          ? `${data.totalCount} cards found${where}${data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}`
+          ? `${open ? `${listed.length}+` : data.totalCount} cards found${where}${!open && data.totalCount > listed.length ? ` (showing ${listed.length})` : ''}`
           : data.offline ? `Nothing in your ${data.library} library matches, and the online search cannot be reached.` : `No cards found${where}.`;
       }
       render(listed);
@@ -230,8 +281,9 @@ export function openPicker(app, purpose) {
     }, pokemon.image && h('img', { src: pokemon.image, alt: '' }), h('span', { class: 'choice-text' }, h('strong', {}, pokemon.name), h('span', {}, `Bench ${benchSlot + 1} · ${hpText(pokemon)}`))))));
 
   openModal({
-    title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy', // over the energy editor that asked for it
-    body: [fromBench, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, note && h('div', { class: 'note-row' }, note), status, results, h('div', { class: 'more-row' }, moreButton)]
+    title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy' || kind === 'prize', // over the energy editor or the prize cards that asked for it
+    onClose: followStars,
+    body: [fromBench, playRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
   });
   search();
 }
@@ -446,6 +498,51 @@ export function openEnergy(app, side, slot) {
   });
 }
 
+// ----------------------------------------------------------------------------------------- prizes
+
+const PRIZE_SLOTS = 6;
+const sameCard = (a, b) => (a ? Boolean(b) && a.cardId === b.cardId && a.name === b.name && a.image === b.image : !b);
+
+// Choose the cards that are the prizes of a trainer: up to six, one on each prize card. They show on the overlay on the prize cards (face
+// down with a question mark while the prizes are hidden). Nothing is sent until "Set prizes".
+export function openPrizes(app, side) {
+  const key = side || app.focus;
+  const saved = () => (app.state[key].prizes.cards || []);
+  // what is chosen so far, a card ({ cardId, name, image }) or nothing (null) for each prize card
+  const cards = Array.from({ length: PRIZE_SLOTS }, (_, index) => saved()[index] || null);
+  const body = h('div', {});
+
+  const choose = (index) => openPicker(app, { kind: 'prize', side: key, slot: index, onPick: (card) => { cards[index] = card; draw(); } });
+  const apply = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+    const result = await app.act(`action:${key}`, { action: 'prizeCardsSet', cards });
+    if (result.ok) closeModal();
+  } }, 'Set prizes');
+  const clearAll = h('button', { class: 'btn tiny', type: 'button', onclick: () => { cards.fill(null); draw(); } }, 'Clear all');
+
+  function draw() {
+    const left = app.state[key].prizes.count; // the prize cards from the right are the ones taken
+    replace(body,
+      h('p', { class: 'hint-line' }, 'Choose the card of each prize. They show on the prize cards of the overlay, and turn face down with the Hide prizes switch. Prize cards that are taken fade out, from the right.'),
+      h('div', { class: 'prize-slots' }, cards.map((card, index) => h('div', { class: `prize-slot${card ? ' filled' : ''}${index >= left ? ' taken' : ''}`, dataset: { slot: index } },
+        h('button', {
+          class: 'prize-pick', type: 'button', 'data-autofocus': index === 0 || undefined,
+          'aria-label': card ? `Prize card ${index + 1}: ${card.name}. Choose another card` : `Prize card ${index + 1}: choose a card`,
+          onclick: () => choose(index)
+        }, card && card.image ? h('img', { src: card.image, alt: '' }) : card ? icon('star', 28) : icon('plus', 24)),
+        h('span', { class: 'prize-slot-name' }, card ? card.name : `Prize ${index + 1}`),
+        card ? h('button', { class: 'btn tiny danger-text', type: 'button', 'aria-label': `Clear prize card ${index + 1}`, onclick: () => { cards[index] = null; draw(); } }, 'Clear') : h('span', { class: 'prize-slot-gap' })))),
+      h('div', { class: 'button-row' }, clearAll));
+    clearAll.disabled = !cards.some(Boolean);
+    apply.disabled = cards.every((card, index) => sameCard(card, saved()[index] || null));
+  }
+
+  draw(); // before it opens, so the first prize card is there to take the focus
+  openModal({
+    title: `Prize cards · ${trainerName(app.state, key)}`, subtitle: 'Put cards on the prizes', size: 'lg', name: 'prizes', body,
+    footer: [h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Cancel'), apply]
+  });
+}
+
 // ------------------------------------------------------------------------------------------ bench
 
 export function openBench(app, side) {
@@ -460,7 +557,8 @@ export function openBench(app, side) {
       h('div', { class: 'section-label' }, `Bench · ${trainer.benchSize} slots`,
         h('span', { class: 'bench-controls' },
           h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Smaller bench', onclick: async () => { await app.act(`action:${current}`, { action: 'benchSizeMinus' }); draw(); } }, icon('minus', 14)),
-          h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Bigger bench', onclick: async () => { await app.act(`action:${current}`, { action: 'benchSizePlus' }); draw(); } }, icon('plus', 14)))),
+          h('button', { class: 'round-btn small', type: 'button', 'aria-label': 'Bigger bench', onclick: async () => { await app.act(`action:${current}`, { action: 'benchSizePlus' }); draw(); } }, icon('plus', 14)),
+          h('button', { class: 'btn tiny', type: 'button', title: 'Back to the usual 5 slots', disabled: trainer.benchSize === 5 || undefined, onclick: async () => { await app.act(`action:${current}`, { action: 'benchSizeReset' }); draw(); } }, 'Reset to 5'))),
       h('div', { class: 'bench-list' }, trainer.bench.slice(0, trainer.benchSize).map((pokemon, index) => {
         const present = hasPokemon(pokemon);
         return h('div', { class: `bench-row${present ? '' : ' empty'}` },
@@ -646,7 +744,7 @@ export function openAttack(app) {
         : h('p', { class: 'empty' }, hasPokemon(active) ? 'This card has no attacks on file. Type the attack below.' : `${trainerName(state, attacker)} has no Active Pokémon. Type the attack below.`),
       abilityList.length > 0 && h('div', { class: 'section-label' }, 'Abilities', h('span', { class: 'hint' }, 'Announced like an attack')),
       abilityList.length > 0 && h('div', { class: 'attack-list' }, abilityList),
-      h('div', { class: 'section-label' }, usingAbility ? 'Ability' : 'Attack'),
+      h('div', { class: 'section-label' }, 'Announce'),
       fields);
     announce.textContent = usingAbility ? 'Announce ability' : 'Announce attack';
     refresh();

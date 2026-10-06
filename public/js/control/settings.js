@@ -11,6 +11,7 @@ import { openImportDialog, openExportDialog } from './packages.js';
 const DISPLAY = window.OTO_DISPLAY;
 const SOUND = window.OTO_SOUND;
 const THEME = window.OTO_THEME;
+const GAME = window.OTO_GAME;
 
 // The most the server takes for one picture or font
 const MAX_UPLOAD_BYTES = 4.5 * 1024 * 1024;
@@ -64,7 +65,8 @@ function overlayTab(app) {
   const display = settings.display || {};
   const update = (patch) => app.act('action:settings', { action: 'update', ...patch });
 
-  const setAll = (predicate) => update({ display: Object.fromEntries(DISPLAY.KEYS.map((key) => [key, predicate(key)])) });
+  // (a way of drawing something, such as the flag for a nationality, is not a piece to show or hide: these buttons leave it as it is)
+  const setAll = (predicate) => update({ display: Object.fromEntries(DISPLAY.KEYS.filter((key) => !DISPLAY.STYLE_KEYS.includes(key)).map((key) => [key, predicate(key)])) });
   const MINIMAL = new Set(['scoreboard', 'matchScore', 'trainerName', 'activePokemon', 'pokemonNames', 'hpBars', 'toasts']);
 
   const visibility = section('What the overlay shows',
@@ -76,30 +78,78 @@ function overlayTab(app) {
       h('legend', {}, group.label),
       group.options.map((option) => switchControl(option.label, display[option.key] !== false, (on) => update({ display: { [option.key]: on } })))))));
 
-  const rows = [
-    ['Game start', 'StartGame', null],
-    ['Top Deck', 'TopDeck', null],
-    ['Attack', 'Attack', null],
-    ['Pass turn', 'PassTurn', null],
-    ['Knock out · Trainer A', 'TrainerAKO', 'enableTrainerAKO_OOC_Animation'],
-    ['Knock out · Trainer B', 'TrainerBKO', 'enableTrainerBKO_OOC_Animation'],
-    ['Victory · Trainer A', 'TrainerAWin', null],
-    ['Victory · Trainer B', 'TrainerBWin', null]
+  // The hype moments, each with the switches it has: its banner, its full-screen effect and (a knock out) the effect for a bench Pokémon.
+  // The pause only has a banner: the one that stays while the game is paused, and the short one when it is resumed.
+  const moments = [
+    { label: 'Game start', banner: 'enableStartGameToast', effect: 'enableStartGameAnimation' },
+    { label: 'Top Deck', banner: 'enableTopDeckToast', effect: 'enableTopDeckAnimation' },
+    { label: 'Attack', banner: 'enableAttackToast', effect: 'enableAttackAnimation' },
+    { label: 'Pass turn', banner: 'enablePassTurnToast', effect: 'enablePassTurnAnimation' },
+    { label: 'Knock out · Trainer A', banner: 'enableTrainerAKOToast', effect: 'enableTrainerAKOAnimation', bench: 'enableTrainerAKO_OOC_Animation' },
+    { label: 'Knock out · Trainer B', banner: 'enableTrainerBKOToast', effect: 'enableTrainerBKOAnimation', bench: 'enableTrainerBKO_OOC_Animation' },
+    { label: 'Victory · Trainer A', banner: 'enableTrainerAWinToast', effect: 'enableTrainerAWinAnimation' },
+    { label: 'Victory · Trainer B', banner: 'enableTrainerBWinToast', effect: 'enableTrainerBWinAnimation' },
+    { label: 'Game pause', banner: 'enablePauseToast' }
   ];
-  const check = (key) => {
-    const input = h('input', { type: 'checkbox', checked: settings[key] !== false, 'aria-label': key });
-    input.addEventListener('change', () => update({ [key]: input.checked }));
+  const KIND_LABEL = { banner: 'Banner', effect: 'Effect', bench: 'Effect for a bench KO' };
+  const boxes = []; // every switch of the table: { moment, kind, key, input }
+  const masters = { rows: new Map(), columns: {}, everything: null }; // the checkboxes that switch several at once
+
+  // A master shows on when all of its switches are on, off when none is, and in between (a dash) when some are
+  const refreshMasters = () => {
+    const show = (input, list) => {
+      const on = list.filter((box) => box.input.checked).length;
+      input.checked = list.length > 0 && on === list.length;
+      input.indeterminate = on > 0 && on < list.length;
+    };
+    for (const [moment, input] of masters.rows) show(input, boxes.filter((box) => box.moment === moment));
+    for (const [kind, input] of Object.entries(masters.columns)) show(input, boxes.filter((box) => box.kind === kind));
+    show(masters.everything, boxes);
+  };
+  // Switch these on or off together: one change to the settings for all of them
+  const setMany = (list, on) => {
+    const changed = list.filter((box) => box.input.checked !== on);
+    for (const box of changed) box.input.checked = on;
+    refreshMasters();
+    if (changed.length) update(Object.fromEntries(changed.map((box) => [box.key, on])));
+  };
+  const check = (moment, kind) => {
+    const key = moment[kind];
+    if (!key) return h('span', { class: 'muted' }, '–');
+    const input = h('input', { type: 'checkbox', checked: settings[key] !== false, 'aria-label': `${moment.label}: ${KIND_LABEL[kind].toLowerCase()}` });
+    const box = { moment, kind, key, input };
+    boxes.push(box);
+    // (one switch says what it is now: it is not compared with itself, as the masters' switches are)
+    input.addEventListener('change', () => { refreshMasters(); update({ [key]: input.checked }); });
     return input;
   };
+  const master = (label, list) => {
+    const input = h('input', { type: 'checkbox', 'aria-label': label });
+    input.addEventListener('change', () => setMany(list(), input.checked));
+    return input;
+  };
+
+  const momentRows = moments.map((moment) => {
+    const cells = ['banner', 'effect', 'bench'].map((kind) => h('td', {}, check(moment, kind)));
+    const all = master(`${moment.label}: everything`, () => boxes.filter((box) => box.moment === moment));
+    masters.rows.set(moment, all);
+    return h('tr', {}, h('th', { scope: 'row' }, moment.label), ...cells, h('td', { class: 'all-cell' }, all));
+  });
+  // The first row switches a whole column: every banner, every effect, every bench effect, or everything
+  const allRow = h('tr', { class: 'all-row' },
+    h('th', { scope: 'row' }, 'All moments'),
+    ...['banner', 'effect', 'bench'].map((kind) => {
+      masters.columns[kind] = master(`All: ${KIND_LABEL[kind].toLowerCase()}`, () => boxes.filter((box) => box.kind === kind));
+      return h('td', {}, masters.columns[kind]);
+    }),
+    h('td', { class: 'all-cell' }, (masters.everything = master('All: everything', () => boxes))));
+  refreshMasters();
+
   const announcements = section('Announcements',
-    note('Each hype moment can show a banner, a full-screen effect, or both.'),
+    note('Each hype moment can show a banner, a full-screen effect, or both. The All column switches a whole row, and the All moments row a whole column.'),
     h('table', { class: 'grid-table' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Moment'), h('th', {}, 'Banner'), h('th', {}, 'Effect'), h('th', {}, 'Effect for a bench KO'))),
-      h('tbody', {}, rows.map(([label, key, bench]) => h('tr', {},
-        h('th', { scope: 'row' }, label),
-        h('td', {}, check(`enable${key}Toast`)),
-        h('td', {}, check(`enable${key}Animation`)),
-        h('td', {}, bench ? check(bench) : h('span', { class: 'muted' }, '–')))))),
+      h('thead', {}, h('tr', {}, h('th', {}, 'Moment'), h('th', {}, 'Banner'), h('th', {}, 'Effect'), h('th', {}, 'Effect for a bench KO'), h('th', {}, 'All'))),
+      h('tbody', {}, allRow, ...momentRows)),
     h('div', { class: 'slider-stack' },
       slider({ label: 'Banner stays for', value: settings.toastSeconds ?? 2, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ toastSeconds: v }) }),
       slider({ label: 'Effect stays for', value: settings.animationSeconds ?? 3, min: 1, max: 30, step: 0.5, format: (v) => `${v} s`, onChange: (v) => update({ animationSeconds: v }) })));
@@ -394,24 +444,91 @@ function themesTab(app) {
 
 // ---------------------------------------------------------------------------------------- cards
 
+// One credential of a card service. Once it is saved it is shown masked (its first three characters, ***, its last four): the
+// key itself never comes back from the server. Until then there is a box to paste it in.
+function credentialRow(app, credential, service) {
+  const row = h('div', { class: 'credential-row', dataset: { setting: credential.setting } });
+  let changing = false;
+  const send = (value) => app.act('action:settings', { action: 'update', [credential.setting]: value });
+  const name = `${service.label} ${credential.label.toLowerCase()}`;
+
+  const draw = () => {
+    const mask = ((app.state.settings.keys || {})[credential.setting]) || '';
+    const label = h('span', { class: 'credential-label' }, credential.label, credential.needed && h('small', {}, ' · needed'));
+    if (mask && !changing) {
+      replace(row, label,
+        h('code', { class: 'secret-mask', title: 'Saved. Only the ends are shown.' }, mask),
+        h('button', { class: 'btn tiny', type: 'button', 'aria-label': `Change the ${name}`, onclick: () => { changing = true; draw(); } }, 'Change'),
+        h('button', {
+          class: 'btn tiny danger-text', type: 'button', 'aria-label': `Remove the ${name}`,
+          onclick: async () => { if ((await send('')).ok) { app.toast(`The ${name} was removed`, 'success'); draw(); } }
+        }, 'Remove'));
+      return;
+    }
+    const input = h('input', { type: 'password', placeholder: `Paste the ${credential.label.toLowerCase()}`, autocomplete: 'off', spellcheck: 'false', 'aria-label': `The ${name}` });
+    const save = async () => {
+      const value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      if ((await send(value)).ok) {
+        app.toast(`The ${name} was saved`, 'success');
+        changing = false;
+        draw();
+      }
+    };
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); save(); } });
+    replace(row, label, input,
+      h('button', { class: 'btn tiny primary', type: 'button', onclick: save }, 'Save'),
+      changing && h('button', { class: 'btn tiny', type: 'button', onclick: () => { changing = false; draw(); } }, 'Cancel'));
+  };
+  draw();
+  return row;
+}
+
 function cardsTab(app) {
   const settings = app.state.settings;
-  const keyInput = h('input', { type: 'password', placeholder: settings.apiKeySet ? '•••••••• (a key is saved)' : 'Paste your API key', autocomplete: 'off', 'aria-label': 'Card API key' });
   const body = h('div', { class: 'settings-stack' });
   const library = libraryPanels(app);
   body.cleanup = library.cleanup; // stop listening for download progress when this tab goes away
 
+  // Where cards are searched for, and in which language (see PokemonTCGService)
+  const update = (patch) => app.act('action:settings', { action: 'update', ...patch });
+  const sourceSelect = h('select', { 'aria-label': 'Card source' },
+    GAME.CARD_SOURCES.map((entry) => h('option', { value: entry.key, selected: settings.apiProvider === entry.key || undefined }, entry.label)));
+  sourceSelect.addEventListener('change', () => update({ apiProvider: sourceSelect.value }));
+  const languageSelect = h('select', { 'aria-label': 'Card language' },
+    GAME.CARD_LANGUAGES.map(([code, label]) => h('option', { value: code, selected: settings.cardLanguage === code || undefined }, label)));
+  languageSelect.addEventListener('change', () => update({ cardLanguage: languageSelect.value }));
+
+  // Which service builds the card libraries; one whose key is missing cannot be chosen yet
+  const saved = (service) => service.credentials.filter((entry) => entry.needed).every((entry) => ((app.state.settings.keys || {})[entry.setting] || ''));
+  const librarySelect = h('select', { 'aria-label': 'Build the libraries from' },
+    GAME.CARD_SERVICES.map((service) => h('option', { value: service.key, selected: settings.librarySource === service.key || undefined, disabled: !saved(service) || undefined },
+      saved(service) ? service.label : `${service.label} (needs its key)`)));
+  librarySelect.addEventListener('change', () => update({ librarySource: librarySelect.value }));
+
+  const serviceBlock = (service) => h('div', { class: 'service-block', dataset: { service: service.key } },
+    h('div', { class: 'service-head' },
+      h('strong', {}, service.label),
+      h('a', { href: service.site, target: '_blank', rel: 'noopener noreferrer' }, new URL(service.site).host)),
+    note(service.note),
+    service.credentials.map((credential) => credentialRow(app, credential, service)));
+
   body.append(
+    section('Card services',
+      note('Cards are searched for in free services. Automatic asks the Pokémon TCG API and, when it does not answer, TCGdex; or choose one of them. Keys are saved on this computer and shown here with only their ends.'),
+      h('div', { class: 'inline-form' },
+        h('label', { class: 'field' }, h('span', {}, 'Search in'), sourceSelect),
+        h('label', { class: 'field' }, h('span', {}, 'Card language'), languageSelect)),
+      note('Only TCGdex has cards in other languages than English. With another language it is asked first, and your English card library below is left out of the search.'),
+      GAME.CARD_SERVICES.map(serviceBlock)),
     section('Card library',
       note('Keep a copy of the cards you need on this computer. Searching is instant, keeps working when the internet does not, and never runs into the card service\'s request limits. Pick one to search it; a card it does not have is looked up online.'),
+      h('div', { class: 'inline-form' }, h('label', { class: 'field' }, h('span', {}, 'Build the libraries from'), librarySelect)),
+      note('Standard can be built from any of the services. Gym Leader Challenge and Expanded need to know which cards are legal in Expanded, which only the Pokémon TCG API tells, so they always come from it.'),
       library.libraryBox),
     section('Card pictures',
       note('A card\'s picture is saved on this computer the first time it is shown, so it still shows without internet. You can also save them all ahead of time.'),
       library.picturesBox),
-    section('Card data',
-      note('Cards come from the Pokémon TCG API. It works without a key, but a free key from pokemontcg.io/developer raises the request limit.'),
-      h('div', { class: 'inline-form' }, keyInput,
-        h('button', { class: 'btn', type: 'button', onclick: async () => { const result = await app.act('action:settings', { action: 'update', apiKey: keyInput.value.trim() }); if (result.ok) { app.toast(keyInput.value.trim() ? 'API key saved' : 'API key removed', 'success'); keyInput.value = ''; keyInput.placeholder = 'Done'; } } }, 'Save key'))),
     section('Most used cards',
       note('The card picker starts from the cards you use most, and from those already saved on this computer, before you type anything.'),
       h('button', { class: 'btn', type: 'button', onclick: async () => {
@@ -438,6 +555,23 @@ function generalTab(app) {
   body.append(section('You',
     note('Other producers see this name next to everything you do.'),
     h('div', { class: 'inline-form' }, nameInput, h('button', { class: 'btn', type: 'button', onclick: save }, 'Save name'))));
+
+  // how the Pokémon of the table look in this control panel (the overlay has its own crop, in a design)
+  const viewButtons = [['art', 'Art only'], ['full', 'Whole card']].map(([view, label]) => {
+    const button = h('button', { class: 'seg', type: 'button', dataset: { view }, onclick: () => { app.setCardView(view); showView(); } }, label);
+    return button;
+  });
+  const showView = () => {
+    for (const button of viewButtons) {
+      const on = button.dataset.view === app.cardView;
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-pressed', String(on));
+    }
+  };
+  showView();
+  body.append(section('Pokémon cards here',
+    note('What the Active Pokémon and the bench show in this control panel: just the art of the card, or the whole card. This is only for this browser; the overlay has its own crop, which a design sets (Settings, Overlay, Designs).'),
+    h('div', { class: 'segmented', role: 'group', 'aria-label': 'What the Pokémon cards show in this control panel' }, viewButtons)));
 
   // password
   const passwordBox = h('div', {});

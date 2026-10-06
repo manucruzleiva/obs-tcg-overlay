@@ -18,7 +18,10 @@ import { openImportDialog } from './packages.js';
   probe.src = window.OTO_GAME.ENERGY_TYPES[0].icon;
 }
 
-const NATIONALITIES = ['USA', 'CAN', 'MEX', 'BRA', 'ARG', 'CHL', 'COL', 'PER', 'GBR', 'IRL', 'FRA', 'DEU', 'ESP', 'ITA', 'PRT', 'NLD', 'BEL', 'SWE', 'NOR', 'DNK', 'FIN', 'POL', 'AUT', 'CHE', 'JPN', 'KOR', 'CHN', 'TWN', 'HKG', 'SGP', 'MYS', 'THA', 'IDN', 'PHL', 'VNM', 'IND', 'AUS', 'NZL', 'ZAF'];
+// The codes offered while typing a nationality, with the name of each country next to it (see public/js/countries.js)
+const COUNTRIES = window.OTO_COUNTRIES;
+// What is offered while typing a deck: the energy types and every Pokémon (see public/js/deck.js)
+const DECK = window.OTO_DECK;
 
 // ------------------------------------------------------------------------------------ keyboard
 
@@ -26,6 +29,9 @@ const noMods = (e) => !e.ctrlKey && !e.metaKey && !e.altKey;
 const plain = (key) => (e) => noMods(e) && !e.shiftKey && e.key.toLowerCase() === key;
 const shifted = (key) => (e) => noMods(e) && e.shiftKey && e.key.toLowerCase() === key;
 const ctrl = (...keys) => (e) => (e.ctrlKey || e.metaKey) && !e.altKey && keys.includes(e.key.toLowerCase());
+const prizeKey = (e) => ['ArrowUp', 'ArrowDown'].includes(e.key);
+// Down: a prize card taken (one fewer left). Up: given back.
+const prizeAction = (e) => (e.key === 'ArrowDown' ? 'prizeMinus' : 'prizePlus');
 
 // What each shortcut does. Shortcuts about "the trainer" apply to the focused one: press 1 or 2 to
 // choose, and the focus follows the turn on its own.
@@ -33,14 +39,15 @@ export const KEYMAP = [
   { group: 'Game', keys: ['Space'], label: 'Pass the turn', test: (e) => noMods(e) && e.key === ' ', run: (app) => app.act('action:match', { action: 'toggleTurn' }) },
   { group: 'Game', keys: ['1'], label: 'Shortcuts apply to Trainer A', test: plain('1'), run: (app) => app.setFocus('trainerA') },
   { group: 'Game', keys: ['2'], label: 'Shortcuts apply to Trainer B', test: plain('2'), run: (app) => app.setFocus('trainerB') },
-  { group: 'Game', keys: ['↑', '↓'], label: 'Trainer A takes / gives back a prize card', test: (e) => noMods(e) && !e.shiftKey && ['ArrowUp', 'ArrowDown'].includes(e.key), run: (app, e) => app.act('action:trainerA', { action: e.key === 'ArrowDown' ? 'prizeMinus' : 'prizePlus' }) },
-  { group: 'Game', keys: ['Shift', '↑ ↓'], label: 'The same for Trainer B', test: (e) => noMods(e) && e.shiftKey && ['ArrowUp', 'ArrowDown'].includes(e.key), run: (app, e) => app.act('action:trainerB', { action: e.key === 'ArrowDown' ? 'prizeMinus' : 'prizePlus' }) },
+  { group: 'Game', keys: ['↑', '↓'], label: 'The player whose turn it is takes / gives back a prize card', test: (e) => noMods(e) && !e.shiftKey && prizeKey(e), run: (app, e) => app.act(`action:${app.prizeSide(false)}`, { action: prizeAction(e) }) },
+  { group: 'Game', keys: ['Shift', '↑ ↓'], label: 'The same for the player who does not have the turn', test: (e) => noMods(e) && e.shiftKey && prizeKey(e), run: (app, e) => app.act(`action:${app.prizeSide(true)}`, { action: prizeAction(e) }) },
   { group: 'Game', keys: ['I'], label: 'Item lock on / off (focused trainer)', test: plain('i'), run: (app) => app.toggleLock('itemLock', 'toggleItemLock') },
   { group: 'Game', keys: ['V'], label: 'Evolution lock on / off (focused trainer)', test: plain('v'), run: (app) => app.toggleLock('evoLock', 'toggleEvoLock') },
   { group: 'Game', keys: ['Shift', 'S'], label: 'Supporter played this turn (focused trainer)', test: shifted('s'), run: (app) => app.toggleSupporter() },
 
   { group: 'Dialogs', keys: ['A'], label: 'Deploy a new Active Pokémon', test: plain('a'), run: (app) => app.openPicker({ kind: 'active', side: app.focus }) },
   { group: 'Dialogs', keys: ['B'], label: 'Edit the bench', test: plain('b'), run: (app) => app.openBench(app.focus) },
+  { group: 'Dialogs', keys: ['Shift', 'B'], label: 'Bench back to 5 slots (focused trainer)', test: shifted('b'), run: (app) => app.act(`action:${app.focus}`, { action: 'benchSizeReset' }) },
   { group: 'Dialogs', keys: ['D'], label: 'Damage', test: plain('d'), run: (app) => app.openDamage('damage') },
   { group: 'Dialogs', keys: ['H'], label: 'Heal', test: plain('h'), run: (app) => app.openDamage('heal', app.focus) },
   { group: 'Dialogs', keys: ['E'], label: 'Energy (the turn\'s attachment, or a special one)', test: plain('e'), run: (app) => app.openEnergy(app.focus) },
@@ -51,6 +58,7 @@ export const KEYMAP = [
   { group: 'Hype', keys: ['C'], label: 'Announce an attack', test: plain('c'), run: (app) => app.openAttack() },
   { group: 'Hype', keys: ['T'], label: 'Announce a Top Deck', test: plain('t'), run: (app) => app.act('action:toast', { action: 'topDeck', target: app.focus }) },
   { group: 'Hype', keys: ['P'], label: 'Announce a passed turn', test: plain('p'), run: (app) => app.act('action:toast', { action: 'passTurn' }) },
+  { group: 'Hype', keys: ['Shift', 'P'], label: 'Pause the game, or resume it (the overlay is grayed out while it is paused)', test: shifted('p'), run: (app) => app.togglePause() },
 
   { group: 'History', keys: ['Ctrl', 'Z'], label: 'Undo', test: (e) => ctrl('z')(e) && !e.shiftKey, run: (app) => app.undo() },
   { group: 'History', keys: ['Ctrl', 'Y'], label: 'Redo (also Ctrl+Shift+Z)', test: (e) => ctrl('y')(e) || (ctrl('z')(e) && e.shiftKey), run: (app) => app.redo() },
@@ -62,9 +70,17 @@ export const KEYMAP = [
 
 // ----------------------------------------------------------------------------------------- app
 
+// How the Active Pokémon and the bench look in this control panel: the art of the card ('art', the usual) or the whole card ('full'). It is
+// a choice of this browser (the overlay has its own crop, in a design), so it is kept here and not shared with the other producers.
+const CARD_VIEW_KEY = 'oto-card-view';
+function loadCardView() {
+  try { return window.localStorage.getItem(CARD_VIEW_KEY) === 'full' ? 'full' : 'art'; } catch (error) { return 'art'; }
+}
+
 class App {
   constructor() {
     this.conn = new Connection();
+    this.cardView = loadCardView();
     this.focus = 'trainerA';
     this.keymap = KEYMAP;
     this.sfx = new window.OTO_SFX.Engine();
@@ -78,7 +94,11 @@ class App {
     const root = $('#app');
     append(root, [this.topbar.root, this.banner.root,
       h('main', { class: 'board' }, this.trainers.trainerA.root, this.center.root, this.trainers.trainerB.root)]);
-    append(document.body, h('datalist', { id: 'nationalities' }, NATIONALITIES.map((code) => h('option', { value: code }))));
+    append(document.body, h('datalist', { id: 'nationalities' }, COUNTRIES.COMMON.map((code) => h('option', { value: code, label: COUNTRIES.nameOf(code) }))));
+    const deckNames = [...DECK.energyNames(), ...DECK.pokemonNames()];
+    append(document.body,
+      h('datalist', { id: 'deck-names' }, deckNames.map((name) => h('option', { value: name }))),
+      h('datalist', { id: 'deck-pictures' }, [DECK.NO_PICTURE, ...deckNames].map((name) => h('option', { value: name }))));
 
     this.wire();
     this.listenForPackages();
@@ -114,6 +134,31 @@ class App {
     return this.conn.state;
   }
 
+  // Who has the turn ('trainerA' or 'trainerB'), or null before anybody does
+  get turnHolder() {
+    const state = this.state;
+    return !state ? null : state.trainerA.isTurn ? 'trainerA' : state.trainerB.isTurn ? 'trainerB' : null;
+  }
+
+  // Show the Pokémon of the table as the art of their cards, or as the whole card, in this control panel
+  setCardView(view) {
+    this.cardView = view === 'full' ? 'full' : 'art';
+    try { window.localStorage.setItem(CARD_VIEW_KEY, this.cardView); } catch (error) { /* a private window cannot remember it */ }
+    if (this.state) this.render();
+  }
+
+  // Pause the game, or resume it. It says what it wants (not "toggle"), so two producers pressing it at once agree.
+  togglePause() {
+    return this.act('action:match', { action: 'togglePause', enabled: !(this.state && this.state.paused === true) });
+  }
+
+  // Whom the prize shortcuts are for: the player whose turn it is, or with Shift the other one. Until somebody has the turn they are
+  // Trainer A and Trainer B, so the keys are never dead.
+  prizeSide(other) {
+    const holder = this.turnHolder || 'trainerA';
+    return other ? (holder === 'trainerA' ? 'trainerB' : 'trainerA') : holder;
+  }
+
   wire() {
     const { conn } = this;
     conn.on('connection', (connected) => this.topbar.setConnected(connected));
@@ -143,7 +188,7 @@ class App {
     if (!state) return;
 
     // The focus follows the turn
-    const holder = state.trainerA.isTurn ? 'trainerA' : state.trainerB.isTurn ? 'trainerB' : null;
+    const holder = this.turnHolder;
     if (holder && holder !== this.lastHolder) this.focus = holder;
     this.lastHolder = holder;
 
@@ -189,7 +234,8 @@ class App {
 
   async redo() {
     const result = await this.conn.redo();
-    if (result.ok) toast('Redone', 'info', 2000);
+    // says what was done again, like the undo says what was taken back
+    if (result.ok) toast(`Redid: ${this.conn.activity[this.conn.activity.length - 1]?.label.replace(/^Redid: /, '') || 'the last change'}`, 'info', 2600);
   }
 
   toggleLock(lock, action) {
@@ -247,6 +293,7 @@ class App {
   openDamage(mode, side, slot) { modals.openDamage(this, mode, side, slot); }
   openEnergy(side, slot) { modals.openEnergy(this, side, slot); }
   openBench(side) { modals.openBench(this, side); }
+  openPrizes(side) { modals.openPrizes(this, side); }
   openAbilities(side) { modals.openAbilities(this, side); }
   openAttack() { modals.openAttack(this); }
   openHelp() { modals.openHelp(this); }

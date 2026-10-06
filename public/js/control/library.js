@@ -1,7 +1,8 @@
 /**
  * Settings > Cards: the card library (Standard, Gym Leader Challenge, Expanded) kept on this computer,
  * and the card pictures saved with it. Progress arrives live from the server; the list is only redrawn
- * when something changes shape, so a click is never lost to a redraw while a download runs.
+ * when something changes shape, so a click is never lost to a redraw while a download runs. Updating a library brings only what is new
+ * (see src/services/catalog.js), unless it has to come from another service now.
  */
 import { h, replace } from './dom.js';
 import { confirmDialog } from './ui.js';
@@ -50,7 +51,8 @@ export function libraryPanels(app) {
   // What decides the shape of the lists: when it changes they are redrawn, otherwise only progress moves
   const shapeOf = (s) => JSON.stringify([
     s.active,
-    s.profiles.map((p) => [p.id, p.ready, p.building, p.resumable, p.count, p.builtAt]),
+    s.source,
+    s.profiles.map((p) => [p.id, p.ready, p.building, p.resumable, p.count, p.builtAt, p.source, p.using, p.updatable]),
     s.job && [s.job.id, s.job.kind, s.job.finished, s.job.phase],
     s.pictures && [s.pictures.count, s.pictures.bytes]
   ]);
@@ -83,8 +85,8 @@ export function libraryPanels(app) {
 
   const start = async (profile) => {
     try {
-      const fromExpanded = profile.id === 'glc' && status.profiles.some((p) => p.id === 'expanded' && p.ready);
-      if (profile.big && !fromExpanded) {
+      // (an update that brings only what is new, or Gym Leader Challenge made from Expanded, is no big download)
+      if (profile.big && !profile.updatable) {
         const yes = await confirmDialog({
           title: `Download the ${profile.label} library?`,
           message: `It is about ${number(profile.approximate)} cards and can take ten minutes or more. It runs in the background, so you can keep producing, and you can stop it at any time and carry on later.`,
@@ -102,11 +104,18 @@ export function libraryPanels(app) {
     try { refresh(await api('DELETE', `/api/catalog/${profile.id}`)); } catch (error) { failed(error); }
   };
 
+  const serviceName = (key) => (status.sources && status.sources[key]) || key;
+
   const libraryRow = (profile) => {
     const running = job();
     const mine = running && running.kind === 'library' && running.profile === profile.id ? running : null;
-    const last = status.job && status.job.finished && status.job.kind === 'library' && status.job.profile === profile.id && status.job.phase === 'error' ? status.job : null;
+    const ended = status.job && status.job.finished && status.job.kind === 'library' && status.job.profile === profile.id ? status.job : null;
+    const last = ended && ended.phase === 'error' ? ended : null;
+    // how the last update or download of this library went ("up to date: 3,291 cards. 12 new.")
+    const done = ended && ended.phase === 'done' ? ended : null;
     const choosable = profile.ready && !mine;
+    // a library that only the Pokémon TCG API can build, while another service is chosen
+    const onlyApi = profile.sources && profile.sources.length === 1 && status.source !== profile.sources[0];
 
     let state;
     if (mine) {
@@ -114,9 +123,12 @@ export function libraryPanels(app) {
       live.library = { id: profile.id, update: bar.update };
       state = bar.node;
     } else if (profile.ready) {
-      state = h('span', { class: 'library-state' }, `${number(profile.count)} cards · ${size(profile.bytes)} · saved ${day(profile.builtAt)}`,
+      state = h('span', { class: 'library-state' }, `${number(profile.count)} cards · ${size(profile.bytes)} · saved ${day(profile.builtAt)}${profile.source ? ` · from ${serviceName(profile.source)}` : ''}`,
         // a copy saved before the library held more says what it is missing
-        profile.outdated && h('span', { class: 'library-new' }, ` · Update to add ${profile.whatsNew || 'new cards'}`));
+        profile.outdated && h('span', { class: 'library-new' }, ` · Update to add ${profile.whatsNew || 'new cards'}`),
+        // the service chosen now is not the one it came from: Update downloads it all again
+        !profile.updatable && profile.using && profile.source && profile.using !== profile.source
+          && h('span', { class: 'library-new' }, ` · Update downloads it again from ${serviceName(profile.using)}`));
     } else {
       state = h('span', { class: 'library-state' }, profile.resumable ? 'Stopped part way. It carries on from where it got to.' : `Not downloaded · about ${number(profile.approximate)} cards`);
     }
@@ -124,7 +136,10 @@ export function libraryPanels(app) {
     const actions = mine
       ? [h('button', { class: 'btn tiny', type: 'button', onclick: stop }, 'Stop')]
       : profile.ready
-        ? [h('button', { class: 'btn tiny', type: 'button', disabled: Boolean(running) || undefined, onclick: () => start(profile) }, 'Update'),
+        ? [h('button', {
+          class: 'btn tiny', type: 'button', disabled: Boolean(running) || undefined, onclick: () => start(profile),
+          title: profile.updatable ? 'Brings only the cards that are new' : `Downloads the whole library again${profile.using ? ` from ${serviceName(profile.using)}` : ''}`
+        }, 'Update'),
           h('button', { class: 'btn tiny danger-text', type: 'button', disabled: Boolean(running) || undefined, onclick: () => remove(profile) }, 'Remove')]
         : [h('button', { class: 'btn tiny primary', type: 'button', disabled: Boolean(running) || undefined, onclick: () => start(profile) }, profile.resumable ? 'Continue' : 'Download')];
 
@@ -133,8 +148,10 @@ export function libraryPanels(app) {
       h('div', { class: 'library-text' },
         h('div', { class: 'library-name' }, profile.label),
         h('p', {}, profile.description),
+        onlyApi && h('p', { class: 'library-note' }, `Built from ${serviceName(profile.sources[0])}: it is the only service that says what is legal in Expanded.`),
         state,
-        last && h('p', { class: 'library-error' }, last.message)),
+        last && h('p', { class: 'library-error' }, last.message),
+        done && h('p', { class: 'library-done' }, done.message)),
       h('div', { class: 'library-actions' }, actions));
   };
 
@@ -233,7 +250,12 @@ export function libraryPanels(app) {
   }
 
   const off = app.conn.on('catalog:progress', refresh);
+  // the service that builds the libraries is a setting: when it changes, so does what Update does
+  const offState = app.conn.on('state', () => {
+    const chosen = app.state && app.state.settings && app.state.settings.librarySource;
+    if (status && chosen && chosen !== status.source) reload();
+  });
   reload();
 
-  return { libraryBox, picturesBox, cleanup: off };
+  return { libraryBox, picturesBox, cleanup: () => { off(); offState(); } };
 }

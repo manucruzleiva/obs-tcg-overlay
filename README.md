@@ -72,9 +72,10 @@ Set the trainers' names and nationalities, pick their Pokémon, and keep score a
 |-----|--------|
 | `Space` | Pass the turn |
 | `1` / `2` | The keys below apply to Trainer A / Trainer B (they follow whoever has the turn on their own) |
-| `↑` / `↓` | Trainer A takes / gives back a prize card. Add `Shift` for Trainer B |
+| `↑` / `↓` | The player whose turn it is takes / gives back a prize card. Add `Shift` for the player who does not have the turn (before anybody has it: Trainer A, and with `Shift` Trainer B) |
 | `A` | Deploy a new Active Pokémon (search for a card, or bring one up from the bench) |
 | `B` | Edit the bench |
+| `Shift` + `B` | Put the bench back to 5 slots (when a Stadium that made it bigger is gone) |
 | `D` | Damage: choose the Pokémon (one or several) and the amount |
 | `H` | Heal |
 | `E` | Attach energy: counts as the turn's attachment, or switch that off for a special attachment |
@@ -85,6 +86,7 @@ Set the trainers' names and nationalities, pick their Pokémon, and keep score a
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack (name and damage, and apply the damage if you like) |
 | `T` / `P` | Top Deck / Pass Turn announcements |
+| `Shift` + `P` | Pause the game (a banner, and the rest grayed out), or resume it |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
 | `Ctrl` + `Enter` | Send your draft to the overlay (see [Producing together](#producing-together)) |
@@ -95,6 +97,17 @@ Shortcuts are ignored while you are typing in a text box.
 **More that helps**
 
 - **Ability tokens** show on each Pokémon, ready or used. A once-per-turn ability becomes ready again when its trainer's turn begins.
+- **Drag and drop:** drag a Pokémon card (the Active or one on the bench) onto an empty slot to move it, or onto another Pokémon to swap places. A special condition ends when a Pokémon leaves the Active spot. **Right-click an energy** on a Pokémon to attach another of the same type (it is the turn's attachment while that is free, and a special attachment after).
+- **Special conditions:** Asleep, Burned, Confused, Paralyzed, Poisoned and Trapped (cannot retreat) go on the Active Pokémon with the chips under it, and show as icons on the overlay.
+- **Deck or GLC type:** under each trainer's name, write their deck (`Charizard ex`, `Lightning GLC`, `Lost Zone Box`). The overlay shows it next to the record, with a picture in front of it: the Pokémon the deck names (its official artwork) or, when it names no Pokémon, the icon of the energy type it names (`Water Box`, `Electric`, `Dark` work too). Write something else in the **Picture** box to choose another picture (`Gardevoir` for a deck called `Control`), or `none` for no picture. The line under the boxes says what the overlay will show. A Pokémon's picture is downloaded the first time it is shown and kept on the computer, like card pictures.
+- **Set prizes:** the **Set prizes** button on a player's Prize cards opens a dialog with the six prize cards. Choose the card of each with the card search, then **Set prizes**: those cards show on that player's prize cards on the overlay, and the small prize pips in the control panel show them too. The **Hide prizes** switch turns them face down with a question mark; the prize cards that are taken fade out, from the right, with their card still on them. They start again for the next game.
+- **Penalties:** a penalty is set on the player who got it. That many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
+- **Victory by itself:** when a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and **that player gets a game win**. **Next game** (in the Match box) starts the next game: prizes and penalties start again and the GX and VSTAR markers come back, while the score and the names stay. **New match** starts over with the score at 0.
+- **Pause:** **Pause game** (or `Shift+P`) puts a PAUSED banner in the middle of the overlay and grays out everything else until you resume. Resuming shows a short "game resumed" banner.
+- **Stadium:** putting a Stadium in play uses the Stadium play of the player who played it (the one whose turn it is, unless you pick the other). Turn the switch in the picker off for a correction, or a Stadium an effect put there.
+- **Bench size:** `Shift+B` (or **Reset to 5** next to Edit bench) puts the bench back to 5 slots when a Stadium that made it bigger is gone.
+- **The Pokémon cards in the control panel** show just the art of the card. Settings, then General, can show the whole card instead (this is only for your browser: the overlay has its own crop, set by a design).
+- **Undo and redo** both say what they did in a short banner (`Undid: …`, `Redid: …`).
 - **Feature cards** let you show something to the audience during commentary.
 - **Preview** shows the overlay inside the control panel.
 - **Autosave:** if OTO closes unexpectedly, your match is restored when it reopens.
@@ -133,7 +146,9 @@ Often the person running the game is not the person at the streaming PC. They ca
 
 Settings, then **Overlay**, has a switch for every element: the scoreboard, match score, round label, names, nationality, tournament record, prize cards, energy and stadium counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, ability tokens, the stadium, feature cards, banners and full-screen animations. Two presets help: **Show everything**, and **Minimal** (score, names, the Active Pokémon and HP).
 
-The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out) where each can show a **banner**, a **full-screen effect**, or both, and sets **how long** banners and effects stay on screen (1 to 30 seconds each). A new announcement always replaces the one still showing, so the screen never fills up during a fast turn. A **Picture** section sets the overlay's opacity and whether it scales to fit the browser source.
+Under **Trainers**, the deck can be hidden, or just the picture next to it. **Nationality as a flag emoji** shows a flag (🇺🇸) instead of the letters when what you typed is a country: a code such as `USA` or `US`, or a name such as `Chile`. Anything else stays as text. Windows draws no flags of its own, so OTO brings a small flag font (credited in [NOTICE.md](NOTICE.md)). The control panel shows the flag next to the box as you type, so you know the country was understood. **Show everything** and **Minimal** leave this option as it is.
+
+The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out, game pause) where each can show a **banner**, a **full-screen effect**, or both, and sets **how long** banners and effects stay on screen (1 to 30 seconds each). The **All** column switches a whole row at once, and the **All moments** row switches a whole column (every banner, or every effect). A new announcement always replaces the one still showing, so the screen never fills up during a fast turn. The pause banner is the exception: it stays until you resume. A **Picture** section sets the overlay's opacity and whether it scales to fit the browser source.
 
 ## Sound effects
 
@@ -152,7 +167,13 @@ The **Look** tab is where artists and organizers give OTO its own identity. A **
 - **Pictures:** logo, background, trainer A and B avatars, prize card back, card back, and an energy icon strip.
 - **A font** for names, numbers and announcements.
 - **Sounds** for any of the moments above.
+- **Layout:** move and resize the pieces of the overlay (the scoreboard, each trainer's prizes, tokens, Active Pokémon and bench, the feature cards, the Stadium, the banners). The editor shows the overlay on a canvas you can zoom (scroll or pinch) and pan, with snapping lines, or you can edit the design's code.
+- **Card crop:** which part of a card shows for the Active Pokémon, the bench and the Stadium. The usual is just the art, with the Stadium's name below it; you can show the whole card, the name and the art, or any rectangle you draw. Special Energy cards on a Pokémon show as a circle cut out of the card, which you can move and resize too.
+- **Tile:** where the HP bar, the attached energy, the retreat cost and the status icons go on a Pokémon's picture (on it, at the top or bottom or in a corner, or below it).
+- **Prize cards:** the picture on the back of the prize cards: the design's own (or the built-in one), an **English** or a **Japanese Pokémon card back**, or a **Poké Ball**. The prize cards stay cards: they fade out when they are taken. The card backs are the files in `assets/cardbacks` (see [assets/README.md](assets/README.md)); a plain drawing is shown when a file is not there.
 - A **name, author and description**, shown when someone installs it.
+
+The icons for the energy types and the special conditions are files in the `assets` folder (see [assets/README.md](assets/README.md)); a design can replace either set with its own strip of pictures.
 
 Changes save by themselves, and if the design is on the overlay you see them on stream as you make them.
 
@@ -188,9 +209,12 @@ Searching for cards normally asks an online service, which can be slow, rate-lim
 | **Expanded** | Every Expanded-legal card. A big download (around 15,000 cards): you are asked first |
 
 - **Download** runs in the background with a progress bar, and **you can keep producing** while it does. If the card service fails halfway, which it sometimes does, it carries on from where it stopped. Stop it any time.
+- **Update** brings only what is new: it asks the card service how many cards each part of the library has now (a few small requests), skips the parts that did not change, and downloads only the new cards of the ones that did. After a rotation, the cards that left the format go. It says how it went ("Standard is up to date: 3,291 cards. 12 new."). Only when the library came from another service than the one chosen now (or from TCGdex, which does not count its cards, when a new set is out) is it downloaded again in full, and the Cards tab says so beforehand.
 - Pick one library to **search**. Searching it is instant and works with no internet, and a card it does not have is looked up online. Gym Leader Challenge is built from Expanded without downloading again if you already have that.
 - **Card pictures** are saved on your computer the first time they are shown, so a card shown once still shows offline. You can also **save the pictures ahead of time** (small ones for the search, or the full-size art the overlay shows), and delete them again.
 - A free API key from [pokemontcg.io](https://pokemontcg.io/) raises the request limits. Paste it in the same tab.
+
+**Which service answers.** The same tab chooses where cards come from: *Automatic* asks the Pokémon TCG API and, when it does not answer (it often does not), [TCGdex](https://tcgdex.dev/), which needs no account and has the cards in many languages; or you can pick one on purpose, or **Scrydex** with your own account (paste the API key and the team ID: they are kept on your computer, always shown as the first three characters, three stars and the last four, and never go into an exported file or a `.oto`). The library can be built from any of the three: Standard from all of them, while Gym Leader Challenge and Expanded always come from the Pokémon TCG API, which is the one that says what is legal in Expanded.
 
 ## Installing, repairing and updating
 
@@ -312,6 +336,7 @@ Environment variables:
 | `POKEMONTCG_API_URL` | `https://api.pokemontcg.io/v2` | Another card API server (the tests use a local mock) |
 | `OTO_IMAGE_BASE` | `https://images.pokemontcg.io` | Where card pictures are fetched from |
 | `OTO_SCRYDEX_IMAGE_BASE` | `https://images.scrydex.com` | Where the card pictures of the newest sets are fetched from |
+| `OTO_SPRITE_BASE` | the PokeAPI sprites repository (official artwork) | Where the pictures of Pokémon next to a deck are fetched from (`<base>/<Pokédex number>.png`) |
 
 ### Security model
 
@@ -362,7 +387,7 @@ A design is a **folder** under the data folder: `themes/<name>/design.json` plus
 
 ### REST API
 
-Open (no password needed): `GET /api/health`, `GET /api/auth/status`, `POST /api/login`, `POST /api/logout`, `GET /api/theme` (the design on air), `GET /api/theme/assets/:folder/:file`, `GET /api/sounds`, `GET /api/sounds/:cue`, `GET /img/:set/:file` (card pictures, saved on first use).
+Open (no password needed): `GET /api/health`, `GET /api/auth/status`, `POST /api/login`, `POST /api/logout`, `GET /api/theme` (the design on air), `GET /api/theme/assets/:folder/:file`, `GET /api/sounds`, `GET /api/sounds/:cue`, `GET /img/:set/:file` (card pictures, and the pictures of Pokémon as `/img/sprite/<Pokédex number>.png`, saved on first use).
 
 Behind the password:
 
@@ -373,6 +398,7 @@ Behind the password:
 | `POST /api/auth/password` | Set or remove the password |
 | `GET /api/cards/search?q=&supertype=&subtype=&rarity=&set=&evolvesFrom=&page=` | Search cards (the library first, then online) |
 | `GET /api/cards/:id`, `GET /api/evolution/search` | Card details, evolution search |
+| `GET /api/cards/popular`, `POST/DELETE /api/cards/used`, `POST /api/cards/known` | The cards the picker starts from: favorites, the most used, and the ones saved on this computer |
 | `GET /api/favorites`, `POST /api/favorites/:id` | List or toggle favorites |
 | `GET /api/matches` | Finished matches |
 | `GET /api/cache/stats`, `POST /api/cache/clear` | Remembered searches |
@@ -387,7 +413,7 @@ Behind the password:
 ### Socket.io
 
 - **Server to client:** `state:full` (on connect), `state:update` (after every change), `announce`, `sfx`, `presence`, `you`, `activity`, `activity:history`, `action:applied`, `action:rejected`, `draft:state`, `draft:sent`, `draft:conflicts`, `theme:changed`, `sounds:changed`, `catalog:progress`.
-- **Client to server:** `action:trainerA`, `action:trainerB`, `action:match`, `action:toast`, `action:card`, `action:settings`, `action:reset`, `action:undo`, `action:redo`, `draft:start`, `draft:send`, `draft:discard`, `presence:rename`. Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The handlers live in [src/actions.js](src/actions.js).
+- **Client to server:** `action:trainerA`, `action:trainerB`, `action:match`, `action:toast`, `action:card`, `action:settings`, `action:reset`, `action:undo`, `action:redo`, `draft:start`, `draft:send`, `draft:discard`, `presence:rename`. Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The handlers live in [src/actions.js](src/actions.js). Among them: `moveSlot` (`{ from, to }`, `-1` is the Active spot: move or swap), `swapWithActive`, `benchSizeReset`, `toggleStatus` / `clearStatus`, `setRetreat`, `attachEnergy` / `attachSpecialEnergy` (with `countsAsTurn`), `gxPlus` / `vstarPlus` (and `Minus`, `Reset`), `prizePenaltySet` (the penalty of that trainer, in prize cards the other counts as taken), `prizeCardsSet` (`{ cards }`: up to six `{ cardId, name, image }`, or `null`, one for each prize card of that trainer), `setDeck` (`{ deck }`) and `setDeckIcon` (`{ icon }`: a Pokémon or an energy type, `none`, or empty for what the deck names), and on `action:match`: `nextGame`, `startGame`, `togglePause` (`{ enabled }`); a Stadium put in play with `select` (target `stadium`) or `setStadium` takes `playedBy` and `consume`.
 
 ### Tests
 

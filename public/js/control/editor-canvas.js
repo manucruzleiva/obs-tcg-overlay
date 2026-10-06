@@ -110,7 +110,12 @@ export class EditorCanvas {
     const target = this.frame.contentWindow;
     const origin = window.location.origin;
     target.postMessage({ kind: 'design', theme: this.model.theme(this.assetUrl) }, origin);
-    target.postMessage({ kind: 'state', state: this.sample() }, origin);
+    // (no match until the page has the game: it is sent when the game arrives)
+    const state = this.sample();
+    if (state) {
+      target.postMessage({ kind: 'state', state }, origin);
+      this.hasState = true;
+    }
     target.postMessage({ kind: 'banner', show: this.banner }, origin);
   }
 

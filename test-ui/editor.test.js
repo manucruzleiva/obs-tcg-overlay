@@ -143,7 +143,7 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(scoreboard, { x: frameRects.scoreboard.x, y: frameRects.scoreboard.y, w: frameRects.scoreboard.w, h: frameRects.scoreboard.h });
       // the made-up match fills everything
       assert.equal(await frame.locator('.sb-name').first().textContent(), 'Ash');
-      assert.equal(await frame.locator('.trainer-a .prize.penalty').count(), 1, 'even a penalty, so it can be placed');
+      assert.equal(await frame.locator('.trainer-b .prize.penalty').count(), 1, 'even a penalty (Ash has one: Gary\'s prize card is red), so it can be placed');
       assert.deepEqual(page.problems, []);
     });
 
@@ -404,7 +404,7 @@ describe('design editor', { skip }, () => {
 
     it('shows the design as text, with line numbers', async () => {
       const text = await input().inputValue();
-      assert.deepEqual(JSON.parse(text), { author: '', description: '', colors: {}, layout: {}, crop: {} });
+      assert.deepEqual(JSON.parse(text), { author: '', description: '', colors: {}, layout: {}, crop: {}, tile: {} });
       assert.equal(await page.locator('.code-gutter').textContent(), Array.from({ length: text.split('\n').length }, (_, i) => i + 1).join('\n'));
     });
 
@@ -465,6 +465,176 @@ describe('design editor', { skip }, () => {
     });
   });
 
+  describe('the tile panel', () => {
+    beforeEach(async () => {
+      await openEditorFor('Tile Test');
+      await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+    });
+    const tile = () => page.evaluate(() => JSON.parse(JSON.stringify(window.oto.designEditor.model.draft.tile)));
+    const choose = (group, part, place) => page.locator(`select[aria-label="${group}: ${part}"]`).selectOption(place);
+    const value = (group, part) => page.locator(`select[aria-label="${group}: ${part}"]`).inputValue();
+    const where = (selector) => overlayFrame().locator(selector).count();
+
+    it('starts with the usual places: the HP bar on top, the energy at the bottom left and the retreat cost at the bottom right', async () => {
+      for (const group of ['Active Pokémon', 'Bench']) {
+        assert.deepEqual([await value(group, 'HP bar'), await value(group, 'Attached energy'), await value(group, 'Retreat cost')], ['top', 'bottom-left', 'bottom-right'], group);
+      }
+      assert.deepEqual(await tile(), {});
+      assert.equal(await page.getByRole('button', { name: 'Use the usual places' }).isDisabled(), true, 'nothing to put back');
+      assert.deepEqual(await page.locator('select[aria-label="Active Pokémon: HP bar"] option').allTextContents(), ['On the picture, at the top', 'On the picture, at the bottom', 'Below the picture']);
+      assert.equal(await page.locator('select[aria-label="Bench: Retreat cost"] option').count(), 5, 'the four corners and below');
+      await drawn();
+      assert.equal(await where('.trainer-a .active .band-top .band-bar .hp'), 1);
+      assert.equal(await where('.trainer-a .active .band-bottom .corner-left .energies'), 1);
+      assert.equal(await where('.trainer-a .active .band-bottom .corner-right .retreat'), 1);
+      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-bottom .corner-right .retreat'), 3, 'and the same on the bench');
+    });
+
+    it('moves a part as soon as it is chosen, for the Active Pokémon and the bench on their own', async () => {
+      await choose('Active Pokémon', 'HP bar', 'below');
+      await choose('Active Pokémon', 'Attached energy', 'top-right');
+      await choose('Bench', 'Retreat cost', 'top-left');
+      assert.deepEqual(await tile(), { active: { hp: 'below', energy: 'top-right' }, bench: { retreat: 'top-left' } });
+      await drawn();
+      assert.equal(await where('.trainer-a .active .art .hp'), 0, 'not on the picture any more');
+      assert.equal(await where('.trainer-a .active .details .hp'), 1, 'but under it');
+      assert.equal(await where('.trainer-a .active .band-top .corner-right .energies'), 1);
+      assert.equal(await where('.trainer-a .active .band-bottom .corner-right .retreat'), 1, 'the retreat cost of the Active Pokémon stays');
+      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-top .corner-left .retreat'), 3);
+      assert.equal(await where('.trainer-a .bench .mon.mini:not([hidden]) .band-top .band-bar .hp'), 3, 'the bench keeps its HP bar');
+    });
+
+    it('forgets a choice that is the usual place again, and puts everything back with one button', async () => {
+      await choose('Active Pokémon', 'HP bar', 'bottom');
+      assert.deepEqual(await tile(), { active: { hp: 'bottom' } });
+      await choose('Active Pokémon', 'HP bar', 'top');
+      assert.deepEqual(await tile(), {}, 'the usual is not written down');
+
+      await choose('Active Pokémon', 'Retreat cost', 'below');
+      await choose('Bench', 'HP bar', 'bottom');
+      await page.getByRole('button', { name: 'Use the usual places' }).click();
+      assert.deepEqual(await tile(), {});
+      assert.equal(await value('Active Pokémon', 'Retreat cost'), 'bottom-right');
+      assert.equal(await value('Bench', 'HP bar'), 'top');
+    });
+
+    it('undoes with Ctrl+Z, and shows in the code view', async () => {
+      await choose('Bench', 'Attached energy', 'bottom-right');
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      assert.deepEqual(JSON.parse(await page.locator('.code-input').inputValue()).tile, { bench: { energy: 'bottom-right' } });
+      await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+      await page.locator('.editor-toolbar').getByRole('button', { name: /^Undo/ }).click();
+      assert.deepEqual(await tile(), {});
+      assert.equal(await value('Bench', 'Attached energy'), 'bottom-left');
+    });
+
+    it('can be typed in the code view, and a place that does not exist is refused with its line', async () => {
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      await page.locator('.code-input').fill(JSON.stringify({ tile: { active: { hp: 'below' } } }, null, 2));
+      await wait(450);
+      assert.equal(await page.locator('.code-status').textContent(), 'Applied.');
+      assert.deepEqual(await tile(), { active: { hp: 'below' } });
+      await page.locator('.code-input').fill(JSON.stringify({ tile: { active: { hp: 'sideways' } } }));
+      await wait(450);
+      assert.match(await page.locator('.code-status').textContent(), /"hp" can go in one of these places: top, bottom, below/);
+      assert.deepEqual(await tile(), { active: { hp: 'below' } }, 'the last good version stays');
+      await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+      assert.equal(await value('Active Pokémon', 'HP bar'), 'below');
+    });
+
+    describe('the picture on the prize cards', () => {
+      const prize = () => page.locator('select[aria-label="Picture on the prize cards"]');
+      const style = () => page.evaluate(() => window.oto.designEditor.model.draft.prizeStyle);
+      const backOf = () => overlayFrame().evaluate(() => getComputedStyle(document.querySelector('.trainer-a .prize:not(.taken)')).backgroundImage);
+
+      it('offers the current card back, an English or a Japanese one and a Poké Ball, and starts with the current one', async () => {
+        assert.deepEqual(await prize().locator('option').allTextContents(), ['The current card back', 'English Pokémon card back', 'Japanese Pokémon card back', 'A Poké Ball']);
+        assert.equal(await prize().inputValue(), 'current');
+        assert.equal(await style(), '');
+        assert.match(await page.locator('.prize-help').textContent(), /own prize card back or card back picture, or the built-in one/);
+        await drawn();
+        assert.equal(await overlayFrame().evaluate(() => /(^|\s)prize-/.test(document.documentElement.className)), false, 'the overlay is as it always was');
+      });
+
+      it('changes the prize cards on the canvas as soon as one is chosen, and says which file the picture is', async () => {
+        await drawn();
+        await prize().selectOption('japanese');
+        assert.equal(await style(), 'japanese');
+        assert.match(await page.locator('.prize-help').textContent(), /assets\/cardbacks\/japanese/);
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-japanese'));
+        assert.match(await backOf(), /cardbacks\/japanese/);
+        assert.match(await backOf(), /data:image\/svg\+xml/, 'with a drawing under the file, for when it is not there');
+
+        await prize().selectOption('pokeball');
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-pokeball'));
+        assert.equal(await overlayFrame().evaluate(() => document.documentElement.classList.contains('prize-japanese')), false, 'one at a time');
+        assert.match(await backOf(), /cardbacks\/pokeball/);
+
+        await prize().selectOption('current');
+        assert.equal(await style(), '', 'the usual is not written down');
+        await page.waitForFunction(() => !/prize-/.test(document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.className));
+      });
+
+      it('keeps the taken prize cards grayed out whatever is printed on them', async () => {
+        await prize().selectOption('english');
+        await drawn();
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.classList.contains('prize-english'));
+        const taken = await overlayFrame().evaluate(() => {
+          const node = document.querySelector('.trainer-a .prize.taken');
+          const style = node && getComputedStyle(node);
+          return node ? { opacity: style.opacity, filter: style.filter, back: style.backgroundImage } : null;
+        });
+        assert.ok(taken, 'the sample match has prize cards that are taken');
+        assert.ok(Number(taken.opacity) < 0.3, 'faded');
+        assert.match(taken.filter, /grayscale/);
+        assert.match(taken.back, /cardbacks\/english/, 'but still the same card back');
+      });
+
+      it('goes into the code view, and is read back from it, with a mistake refused and its choices listed', async () => {
+        await prize().selectOption('english');
+        await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+        assert.equal(JSON.parse(await page.locator('.code-input').inputValue()).prizeStyle, 'english');
+
+        await page.locator('.code-input').fill(JSON.stringify({ prizeStyle: 'japanese' }));
+        await wait(450);
+        assert.equal(await page.locator('.code-status').textContent(), 'Applied.');
+        assert.equal(await style(), 'japanese');
+
+        await page.locator('.code-input').fill(JSON.stringify({ prizeStyle: 'spanish' }));
+        await wait(450);
+        assert.match(await page.locator('.code-status').textContent(), /The prize cards can show: "current", "english", "japanese", "pokeball"/);
+        assert.equal(await style(), 'japanese', 'the last good version stays');
+
+        await page.locator('.code-input').fill(JSON.stringify({ author: 'Mina' }));
+        await wait(450);
+        assert.equal(await style(), '', 'what the text does not mention is cleared');
+        assert.equal('prizeStyle' in JSON.parse(await page.locator('.code-input').inputValue()), false);
+        await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+        assert.equal(await prize().inputValue(), 'current');
+      });
+
+      it('undoes with Ctrl+Z and is saved with the design', async () => {
+        await prize().selectOption('pokeball');
+        await page.locator('.editor-toolbar').getByRole('button', { name: /^Undo/ }).click();
+        assert.equal(await style(), '');
+        assert.equal(await prize().inputValue(), 'current');
+        await page.locator('.editor-toolbar').getByRole('button', { name: /^Redo/ }).click();
+        assert.equal(await prize().inputValue(), 'pokeball');
+
+        await page.locator('.modal[aria-label="Design: Tile Test"]').getByRole('button', { name: 'Save', exact: true }).click();
+        await page.waitForFunction(() => !window.oto.designEditor.model.dirty);
+        assert.equal((await api('GET', '/api/themes/Tile%20Test')).json.prizeStyle, 'pokeball');
+        assert.equal((await api('GET', '/api/theme')).json.theme, null, 'it is not on the overlay unless it is the chosen design');
+
+        await prize().selectOption('current');
+        await page.locator('.modal[aria-label="Design: Tile Test"]').getByRole('button', { name: 'Save', exact: true }).click();
+        await page.waitForFunction(() => !window.oto.designEditor.model.dirty);
+        assert.equal('prizeStyle' in (await api('GET', '/api/themes/Tile%20Test')).json, false, 'going back to the usual forgets it');
+        assert.deepEqual(page.problems, []);
+      });
+    });
+  });
+
   describe('the card crop selector', () => {
     beforeEach(async () => {
       await openEditorFor('Crop Test');
@@ -473,37 +643,42 @@ describe('design editor', { skip }, () => {
     const rectFields = async () => Object.fromEntries(await Promise.all(['Left', 'Top', 'Width', 'Height'].map(async (label) => [label, await page.locator(`.crop-field input[aria-label^="${label}"]`).inputValue()])));
     const cardBox = (side = 'a', where = '.active') => overlayFrame().evaluate(({ side, where }) => { const art = document.querySelector(`.trainer-${side} ${where} .art`).getBoundingClientRect(); return { w: art.width, h: art.height }; }, { side, where });
 
-    it('starts with the whole card for both, and presets change what the overlay shows', async () => {
-      assert.deepEqual(await rectFields(), { Left: '0', Top: '0', Width: '100', Height: '100' });
-      assert.equal(await page.locator('.crop-panel .btn[data-preset="full"]').getAttribute('aria-pressed'), 'true');
-      assert.equal(await page.locator('.crop-panel input[aria-label="Use the same crop for the bench"]').isChecked(), true);
-      assert.equal((await cardBox()).h, 418);
+    const ART = { x: 0.07, y: 0.115, w: 0.86, h: 0.385 };
+    const WHOLE = { x: 0, y: 0, w: 1, h: 1 };
 
-      await page.locator('.crop-panel .btn[data-preset="art"]').click();
-      assert.deepEqual(await crop(), { active: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 }, bench: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } }, 'the bench follows');
-      await drawn();
-      const active = await cardBox();
-      assert.ok(Math.abs(active.h - 300 * 1.3933 * 0.385 / 0.86) < 1, `the Active Pokémon is as tall as its art: ${active.h}`);
-      assert.ok(Math.abs((await cardBox('a', '.bench')).h - 104 * 1.3933 * 0.385 / 0.86) < 1, 'and so is the bench');
-      assert.equal(await page.locator('.crop-panel .btn[data-preset="art"]').getAttribute('aria-pressed'), 'true');
+    it('starts with the art of the card for both, and presets change what the overlay shows', async () => {
       assert.deepEqual(await rectFields(), { Left: '7', Top: '11.5', Width: '86', Height: '38.5' });
-      assert.match(await page.locator('.crop-summary').textContent(), /Shows 86% of the width and 38.5% of the height/);
+      assert.equal(await page.locator('.crop-panel .btn[data-preset="art"]').getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.locator('.crop-panel input[aria-label="Use the same crop for the bench"]').isChecked(), true);
+      assert.ok(Math.abs((await cardBox()).h - 300 * 1.3933 * 0.385 / 0.86) < 1, 'the Active Pokémon is as tall as its art');
+      assert.deepEqual(await crop(), {}, 'the usual is not written down');
 
       await page.locator('.crop-panel .btn[data-preset="full"]').click();
-      assert.deepEqual(await crop(), {}, 'the whole card is the same as no crop');
+      assert.deepEqual(await crop(), { active: WHOLE, bench: WHOLE }, 'the whole card is a choice, so it is written down; the bench follows');
       await drawn();
-      assert.equal((await cardBox()).h, 418);
+      assert.ok(Math.abs((await cardBox()).h - 418) < 0.1, 'the whole card is as tall as a card (the browser works in 64ths of a pixel)');
+      assert.ok(Math.abs((await cardBox('a', '.bench')).h - 145) < 1, 'and so is the bench');
+      assert.equal(await page.locator('.crop-panel .btn[data-preset="full"]').getAttribute('aria-pressed'), 'true');
+      assert.deepEqual(await rectFields(), { Left: '0', Top: '0', Width: '100', Height: '100' });
+
+      await page.locator('.crop-panel .btn[data-preset="top"]').click();
+      assert.deepEqual((await crop()).active, { x: 0.02, y: 0.02, w: 0.96, h: 0.48 });
+      await page.locator('.crop-panel .btn[data-preset="art"]').click();
+      assert.deepEqual(await crop(), {}, 'the art is the same as no crop');
+      await drawn();
+      assert.ok(Math.abs((await cardBox()).h - 300 * 1.3933 * 0.385 / 0.86) < 1);
+      assert.match(await page.locator('.crop-summary').textContent(), /Shows 86% of the width and 38.5% of the height/);
     });
 
     it('crops the bench on its own when the switch is off', async () => {
       await page.locator('.crop-panel .switch').click();
-      await page.locator('.crop-panel .btn[data-preset="art"]').click();
-      assert.deepEqual(await crop(), { active: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } });
+      await page.locator('.crop-panel .btn[data-preset="full"]').click();
+      assert.deepEqual(await crop(), { active: WHOLE });
       await page.locator('.crop-panel .seg', { hasText: 'Bench' }).click();
-      assert.deepEqual(await rectFields(), { Left: '0', Top: '0', Width: '100', Height: '100' }, 'the bench has its own');
+      assert.deepEqual(await rectFields(), { Left: '7', Top: '11.5', Width: '86', Height: '38.5' }, 'the bench has its own: the art');
       await page.locator('.crop-panel .btn[data-preset="top"]').click();
       assert.deepEqual((await crop()).bench, { x: 0.02, y: 0.02, w: 0.96, h: 0.48 });
-      assert.deepEqual((await crop()).active, { x: 0.07, y: 0.115, w: 0.86, h: 0.385 }, 'the Active Pokémon keeps its own');
+      assert.deepEqual((await crop()).active, WHOLE, 'the Active Pokémon keeps its own');
       // turning it on again makes the bench like the one being looked at
       await page.locator('.crop-panel .switch').click();
       assert.deepEqual((await crop()).active, (await crop()).bench);
@@ -513,22 +688,22 @@ describe('design editor', { skip }, () => {
       const stage = await page.locator('.crop-stage').boundingBox();
       const at = (fx, fy) => ({ x: stage.x + stage.width * fx, y: stage.y + stage.height * fy });
 
-      // draw a new one
-      await page.mouse.move(at(0.2, 0.2).x, at(0.2, 0.2).y);
+      // draw a new one, starting outside the part that shows now (the art, in the top half of the card)
+      await page.mouse.move(at(0.05, 0.55).x, at(0.05, 0.55).y);
       await page.mouse.down();
-      await page.mouse.move(at(0.6, 0.5).x, at(0.6, 0.5).y, { steps: 5 });
+      await page.mouse.move(at(0.45, 0.85).x, at(0.45, 0.85).y, { steps: 5 });
       await page.mouse.up();
       let rect = (await crop()).active;
-      assert.ok(Math.abs(rect.x - 0.2) < 0.01 && Math.abs(rect.y - 0.2) < 0.01 && Math.abs(rect.w - 0.4) < 0.01 && Math.abs(rect.h - 0.3) < 0.01, JSON.stringify(rect));
+      assert.ok(Math.abs(rect.x - 0.05) < 0.01 && Math.abs(rect.y - 0.55) < 0.01 && Math.abs(rect.w - 0.4) < 0.01 && Math.abs(rect.h - 0.3) < 0.01, JSON.stringify(rect));
 
       // move it by its middle
       const middle = at(rect.x + rect.w / 2, rect.y + rect.h / 2);
       await page.mouse.move(middle.x, middle.y);
       await page.mouse.down();
-      await page.mouse.move(middle.x + stage.width * 0.1, middle.y + stage.height * 0.2, { steps: 5 });
+      await page.mouse.move(middle.x + stage.width * 0.1, middle.y + stage.height * 0.1, { steps: 5 });
       await page.mouse.up();
       const moved = (await crop()).active;
-      assert.ok(Math.abs(moved.x - 0.3) < 0.01 && Math.abs(moved.y - 0.4) < 0.01 && Math.abs(moved.w - rect.w) < 0.001 && Math.abs(moved.h - rect.h) < 0.001, JSON.stringify(moved));
+      assert.ok(Math.abs(moved.x - 0.15) < 0.01 && Math.abs(moved.y - 0.65) < 0.01 && Math.abs(moved.w - rect.w) < 0.001 && Math.abs(moved.h - rect.h) < 0.001, JSON.stringify(moved));
 
       // resize it by a corner, then by an edge; it never leaves the card or gets smaller than 5%
       const corner = await page.locator('.crop-handle.se').boundingBox();
@@ -706,7 +881,9 @@ describe('design editor', { skip }, () => {
       await box('scoreboard').click();
       await page.keyboard.press('Shift+ArrowDown');
       await page.locator('.editor-side .tab', { hasText: 'Card crop' }).click();
-      await page.locator('.crop-panel .btn[data-preset="art"]').click();
+      await page.locator('.crop-panel .btn[data-preset="full"]').click();
+      await page.locator('.editor-side .tab', { hasText: 'Tile' }).click();
+      await page.locator('select[aria-label="Active Pokémon: HP bar"]').selectOption('bottom');
       assert.deepEqual((await api('GET', '/api/themes/Save%20Test')).json.layout, undefined, 'nothing is saved before Save');
       assert.equal(await overlay.locator('.moved').count(), 0, 'and the stream does not see it');
 
@@ -714,9 +891,11 @@ describe('design editor', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
       const design = (await api('GET', '/api/themes/Save%20Test')).json;
       assert.deepEqual(design.layout, { scoreboard: { x: 0, y: 10, scale: 1 } });
-      assert.deepEqual(design.crop.active, { x: 0.07, y: 0.115, w: 0.86, h: 0.385 });
+      assert.deepEqual(design.crop.active, { x: 0, y: 0, w: 1, h: 1 });
+      assert.deepEqual(design.tile, { active: { hp: 'bottom' } });
       await overlay.waitForSelector('.scoreboard.moved');
-      await overlay.waitForSelector('html.has-crop-active');
+      await overlay.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '1');
+      await overlay.waitForSelector('.trainer-a .active .band-bottom .band-bar .hp', { state: 'attached' });
       assert.match(await page.locator('.toast-success').first().textContent(), /on the overlay, so you see it on stream/);
       assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true, 'nothing left to save');
       await overlay.context().close();

@@ -352,7 +352,7 @@ describe('the package service', () => {
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
-      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [] });
+      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null });
       assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)'], 'the markers that are off to begin with are not "hidden"');
       assert.deepEqual(info.controls.revealed, []);
       assert.equal(info.controls.toastSeconds, 6);
@@ -363,10 +363,12 @@ describe('the package service', () => {
     });
 
     it('says when a design has its own layout or crop', () => {
-      themes.save('Store League', { layout: { scoreboard: { x: 0, y: 30, scale: 1 }, logo: { x: 5, y: 0, scale: 1 } }, crop: { active: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
+      themes.save('Store League', { layout: { scoreboard: { x: 0, y: 30, scale: 1 }, logo: { x: 5, y: 0, scale: 1 } }, crop: { active: { x: 0.1, y: 0.1, w: 0.8, h: 0.4 } }, tile: { bench: { hp: 'below' } }, prizeStyle: 'japanese' });
       const info = service.inspect(exported());
       assert.equal(info.design.layout, 2, 'two pieces moved');
+      assert.equal(info.design.prizeStyle, 'japanese', 'and the prize cards have a card back of their own');
       assert.deepEqual(info.design.crop, ['active']);
+      assert.deepEqual(info.design.tile, ['bench'], 'and the parts of the bench tile have been placed');
     });
 
     it('knows whether the design is new here', () => {
@@ -400,6 +402,17 @@ describe('the package service', () => {
       assert.equal(patch.toastSeconds, 6);
       assert.equal(patch.display.record, false);
       assert.equal('apiKey' in patch, false);
+    });
+
+    it('brings the picture on the prize cards with the design, and leaves out one it does not know', () => {
+      themes.save('Store League', { prizeStyle: 'pokeball' });
+      const result = service.install(exported({ design: 'Store League' }));
+      assert.equal(themes.get(result.design.name).prizeStyle, 'pokeball');
+
+      const odd = service.install(zip({ 'design.json': { name: 'Odd Prizes', prizeStyle: 'klingon' } }));
+      assert.equal('prizeStyle' in themes.get(odd.design.name), false, 'what is not one of the pictures is left out');
+      const usual = service.install(zip({ 'design.json': { name: 'Usual Prizes', prizeStyle: 'current' } }));
+      assert.equal('prizeStyle' in themes.get(usual.design.name), false, 'and so is the usual one');
     });
 
     it('can replace the design that has the same name', () => {

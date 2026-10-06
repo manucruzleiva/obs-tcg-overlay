@@ -178,7 +178,7 @@ describe('desktop app', { skip }, () => {
       try { const themes = await api('/api/themes'); if (themes.names.length === 0) fresh = themes; } catch { /* still starting */ }
     }
     assert.ok(fresh, 'OTO came back with empty data');
-    assert.equal((await api('/api/state')).settings.toastSeconds, 4, 'the settings are back to the defaults too');
+    assert.equal((await api('/api/state')).settings.toastSeconds, 2, 'the settings are back to the defaults too');
 
     // OTO_DATA_DIR is the app's own folder; inside it, "data" holds the match, designs and so on
     const userData = path.join(dir, 'data');

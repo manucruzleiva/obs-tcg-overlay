@@ -46,30 +46,40 @@ describe('overlay', { skip }, () => {
 
   afterEach(async () => { await page.context().close(); });
 
+  // The penalty of a trainer (set on their own panel) is that many prize cards the OTHER trainer counts as taken: those are marked red on
+  // the other trainer's side, and that trainer needs that many fewer to win.
   describe('a penalty', () => {
-    const reds = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.classList.contains('penalty')));
-    const flag = (side = 'a') => page.locator(`.trainer-${side} .prize-flag`).textContent();
+    const reds = (side = 'b') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.classList.contains('penalty')));
+    const flag = (side = 'b') => page.locator(`.trainer-${side} .prize-flag`).textContent();
 
-    it('marks that many prize cards in red', async () => {
+    it('marks that many prize cards of the other trainer in red', async () => {
       assert.deepEqual(await reds(), [false, false, false, false, false, false]);
       assert.equal(await flag(), '');
 
       await send('action:trainerA', { action: 'prizePenaltySet', count: 2 });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 2);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 2);
       assert.deepEqual(await reds(), [true, true, false, false, false, false]);
       assert.equal(await flag(), 'PENALTY');
-      assert.deepEqual(await reds('b'), [false, false, false, false, false, false], 'the other trainer is not marked');
+      assert.deepEqual(await reds('a'), [false, false, false, false, false, false], 'the trainer who has the penalty is not marked');
+      assert.equal(await flag('a'), '');
 
       await send('action:trainerA', { action: 'prizePenaltyPlus' });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 3);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 3);
       await send('action:trainerA', { action: 'prizePenaltySet', count: 0 });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 0);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 0);
       assert.equal(await flag(), '');
+    });
+
+    it('works both ways: the penalty of the second trainer marks the cards of the first', async () => {
+      await send('action:trainerB', { action: 'prizePenaltySet', count: 1 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 1);
+      assert.deepEqual(await reds('a'), [true, false, false, false, false, false]);
+      assert.deepEqual(await reds('b'), [false, false, false, false, false, false]);
     });
 
     it('looks red', async () => {
       await send('action:trainerA', { action: 'prizePenaltySet', count: 1 });
-      await page.waitForSelector('.trainer-a .prize.penalty');
+      await page.waitForSelector('.trainer-b .prize.penalty');
       const looks = await page.evaluate(() => {
         const danger = getComputedStyle(document.documentElement).getPropertyValue('--danger').trim();
         const probe = document.createElement('i');
@@ -77,8 +87,8 @@ describe('overlay', { skip }, () => {
         document.body.appendChild(probe);
         const expected = getComputedStyle(probe).color;
         probe.remove();
-        const card = document.querySelector('.trainer-a .prize.penalty');
-        const plain = document.querySelector('.trainer-a .prize:not(.penalty)');
+        const card = document.querySelector('.trainer-b .prize.penalty');
+        const plain = document.querySelector('.trainer-b .prize:not(.penalty)');
         return {
           expected,
           border: getComputedStyle(card).borderTopColor,
@@ -95,21 +105,299 @@ describe('overlay', { skip }, () => {
 
     it('only marks prize cards that are still there', async () => {
       await send('action:trainerA', { action: 'prizePenaltySet', count: 4 });
-      await send('action:trainerA', { action: 'prizeSet', count: 2 });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.taken').length === 4);
+      await send('action:trainerB', { action: 'prizeSet', count: 2 }); // two left is already enough to win with that penalty
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.taken').length === 4);
       assert.deepEqual(await reds(), [true, true, false, false, false, false], 'two are left, so two can be red');
       assert.equal((await live()).trainerA.prizes.penalty, 4, 'the penalty itself is kept');
 
-      await send('action:trainerA', { action: 'prizeSet', count: 6 });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 4);
+      await send('action:trainerB', { action: 'prizeSet', count: 6 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 4);
     });
 
     it('pulses unless the penalty animation is switched off', async () => {
       await send('action:trainerA', { action: 'prizePenaltySet', count: 1 });
-      await page.waitForSelector('.trainer-a .prizes.pulse');
+      await page.waitForSelector('.trainer-b .prizes.pulse');
       await send('action:settings', { action: 'update', showPenaltyAnimation: false });
-      await page.waitForFunction(() => !document.querySelector('.trainer-a .prizes.pulse'));
-      assert.equal(await page.locator('.trainer-a .prize.penalty').count(), 1, 'still marked, only still');
+      await page.waitForFunction(() => !document.querySelector('.trainer-b .prizes.pulse'));
+      assert.equal(await page.locator('.trainer-b .prize.penalty').count(), 1, 'still marked, only still');
+    });
+  });
+
+  // The deck of a trainer next to the name on the scoreboard, with the picture of what it names
+  describe('the deck', () => {
+    // a picture of a Pokémon, so no test needs the internet
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8Dwn4EBDAAZ6gH/8gKh1gAAAABJRU5ErkJggg==', 'base64');
+    const pill = (side = 'a') => page.locator(`.sb-${side} .sb-deck`);
+    const read = (side = 'a') => page.$eval(`.sb-${side} .sb-deck`, (node) => {
+      const icon = node.querySelector('.sb-deck-icon');
+      return {
+        shown: !node.hidden && getComputedStyle(node).display !== 'none',
+        text: node.querySelector('.sb-deck-text').textContent,
+        icon: icon.hidden || getComputedStyle(icon).display === 'none' ? null : icon.getAttribute('src'),
+        kind: icon.dataset.kind || null,
+        title: icon.title
+      };
+    });
+
+    beforeEach(async () => {
+      await page.route('**/img/sprite/*.png', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
+    });
+
+    it('shows nothing until a trainer has a deck', async () => {
+      assert.equal((await read('a')).shown, false);
+      assert.equal((await read('b')).shown, false);
+    });
+
+    it('shows the deck next to the nationality and the record, with the Pokémon it names in front of it', async () => {
+      await send('action:trainerA', { action: 'setDeck', deck: 'Charizard ex' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-text').textContent === 'Charizard ex');
+      assert.deepEqual(await read('a'), { shown: true, text: 'Charizard ex', icon: '/img/sprite/6.png', kind: 'pokemon', title: 'Charizard' });
+      assert.deepEqual(await page.$$eval('.sb-a .sb-meta > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['sb-nat', 'sb-record', 'sb-deck']);
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').complete);
+      assert.equal(await page.$eval('.sb-a .sb-deck-icon', (img) => img.naturalWidth > 0), true, 'the picture loaded');
+      assert.equal((await read('b')).shown, false, 'the other trainer has none');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('shows the icon of the energy type a deck names, from the assets folder', async () => {
+      await send('action:trainerB', { action: 'setDeck', deck: 'Lightning GLC' });
+      await page.waitForFunction(() => document.querySelector('.sb-b .sb-deck-text').textContent === 'Lightning GLC');
+      assert.deepEqual(await read('b'), { shown: true, text: 'Lightning GLC', icon: '/assets/energy/lightning.png', kind: 'energy', title: 'Lightning energy' });
+    });
+
+    it('shows the text alone when the deck names nothing, what the picture box names, or no picture when it says none', async () => {
+      await send('action:trainerA', { action: 'setDeck', deck: 'Lost Zone Box' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-text').textContent === 'Lost Zone Box');
+      assert.deepEqual(await read('a'), { shown: true, text: 'Lost Zone Box', icon: null, kind: null, title: '' });
+
+      await send('action:trainerA', { action: 'setDeckIcon', icon: 'Comfey' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').getAttribute('src') === '/img/sprite/764.png');
+      assert.equal((await read('a')).title, 'Comfey');
+
+      await send('action:trainerA', { action: 'setDeckIcon', icon: 'none' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').hidden);
+      assert.deepEqual(await read('a'), { shown: true, text: 'Lost Zone Box', icon: null, kind: 'pokemon', title: '' });
+      assert.equal(await pill('a').evaluate((node) => node.classList.contains('has-icon')), false);
+
+      await send('action:trainerA', { action: 'setDeck', deck: '' });
+      await send('action:trainerA', { action: 'setDeckIcon', icon: 'Fire' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').getAttribute('src') === '/assets/energy/fire.png');
+      const alone = await read('a');
+      assert.equal(alone.shown, true, 'a picture without a deck text');
+      assert.equal(alone.text, '');
+      assert.equal(await pill('a').evaluate((node) => node.classList.contains('no-text')), true);
+      await send('action:trainerA', { action: 'setDeckIcon', icon: '' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck').hidden);
+    });
+
+    it('can switch off the deck, or just its picture, in the overlay settings', async () => {
+      await send('action:trainerA', { action: 'setDeck', deck: 'Gardevoir ex' });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').getAttribute('src') === '/img/sprite/282.png');
+      await send('action:settings', { action: 'update', display: { deckIcon: false } });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck-icon').hidden);
+      assert.deepEqual(await read('a'), { shown: true, text: 'Gardevoir ex', icon: null, kind: 'pokemon', title: '' });
+
+      await send('action:settings', { action: 'update', display: { deckType: false, deckIcon: true } });
+      await page.waitForFunction(() => document.querySelector('.sb-a .sb-deck').classList.contains('opt-off'));
+      assert.equal((await read('a')).shown, false);
+      await send('action:settings', { action: 'update', display: { deckType: true } });
+      await page.waitForFunction(() => !document.querySelector('.sb-a .sb-deck').classList.contains('opt-off'));
+      assert.equal((await read('a')).icon, '/img/sprite/282.png');
+    });
+
+    it('keeps the text when the picture of the Pokémon cannot be had (no internet), and keeps a long deck on one line', async () => {
+      await page.unroute('**/img/sprite/*.png');
+      await page.route('**/img/sprite/*.png', (route) => route.fulfill({ status: 204 }));
+      await send('action:trainerB', { action: 'setDeck', deck: 'Dragapult ex with a very long name here' });
+      await page.waitForFunction(() => document.querySelector('.sb-b .sb-deck-text').textContent.startsWith('Dragapult'));
+      await page.waitForFunction(() => document.querySelector('.sb-b .sb-deck-icon').hidden);
+      const state = await read('b');
+      assert.equal(state.shown, true);
+      assert.equal(state.icon, null, 'no broken picture');
+      const box = await pill('b').evaluate((node) => ({ height: node.getBoundingClientRect().height, width: node.getBoundingClientRect().width, wraps: getComputedStyle(node).whiteSpace }));
+      assert.ok(box.height < 40, `one line (${box.height})`);
+      assert.ok(box.width <= 340, `not wider than the room it has (${box.width})`);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  // The cards chosen for the prizes of a trainer show on their prize cards
+  describe('the cards on the prizes', () => {
+    const art = (name) => `/art/${name}.svg`;
+    const card = (name) => ({ cardId: `t-${name}`, name, image: art(name) });
+    const prize = (side, index) => page.locator(`.trainer-${side} .prize`).nth(index);
+    const faces = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.classList.contains('has-face')));
+    // the picture painted in front of a prize card (the card chosen for it), or none
+    const front = (side, index) => prize(side, index).evaluate((node) => { const style = getComputedStyle(node, '::after'); return style.content === 'none' ? 'none' : style.backgroundImage; });
+    const waitFaces = (side, count) => page.waitForFunction(([which, wanted]) => document.querySelectorAll(`.trainer-${which} .prize.has-face`).length === wanted, [side, count]);
+    const shot = async (side, index) => { await wait(350); return prize(side, index).screenshot(); };
+
+    it('shows the card chosen for a prize card on that prize card, and nothing on the others', async () => {
+      assert.deepEqual(await faces('a'), [false, false, false, false, false, false], 'no card is chosen at first');
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one'), card('two'), null, card('four')] });
+      await waitFaces('a', 3);
+      assert.deepEqual(await faces('a'), [true, true, false, true, false, false]);
+      assert.deepEqual(await faces('b'), [false, false, false, false, false, false], 'the other trainer has none');
+      assert.match(await front('a', 0), /\/art\/one\.svg/);
+      assert.match(await front('a', 1), /\/art\/two\.svg/);
+      assert.equal(await front('a', 2), 'none');
+      assert.match(await front('a', 3), /\/art\/four\.svg/);
+      assert.equal(await prize('a', 0).evaluate((node) => node.style.getPropertyValue('--prize-face')), 'url("/art/one.svg")');
+      assert.equal(await prize('a', 2).evaluate((node) => node.style.getPropertyValue('--prize-face')), '', 'a prize card without one has nothing left behind');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('loads the picture of the card, and paints it over the card back, which stays the same underneath', async () => {
+      const backBefore = await prize('a', 0).evaluate((node) => getComputedStyle(node).backgroundImage);
+      const without = await shot('a', 0);
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
+      await waitFaces('a', 1);
+      const width = await page.evaluate((url) => new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image.naturalWidth);
+        image.onerror = () => resolve(0);
+        image.src = url;
+      }), art('one'));
+      assert.equal(width, 300, 'the picture of the card loads');
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node).backgroundImage), backBefore, 'the card back is not touched');
+      assert.ok(!(await shot('a', 0)).equals(without), 'and the card is what shows');
+      // the same size as the prize card, so it covers the back
+      const sizes = await prize('a', 0).evaluate((node) => { const after = getComputedStyle(node, '::after'); return [after.width, after.height, getComputedStyle(node).width, getComputedStyle(node).height]; });
+      assert.deepEqual(sizes.slice(0, 2).map(parseFloat).map(Math.round), [38, 54], 'inside the 1 pixel border of the 40 by 56 prize card');
+      assert.deepEqual(sizes.slice(2).map(parseFloat), [40, 56]);
+    });
+
+    it('turns them face down with a question mark while the prizes are hidden, and face up again when they are not', async () => {
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one'), card('two')] });
+      await waitFaces('a', 2);
+      const faceUp = await shot('a', 0);
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').content), '"?"', 'a question mark, not the card');
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').backgroundImage), 'none');
+      assert.ok(!(await shot('a', 0)).equals(faceUp), 'face down');
+      assert.deepEqual(await faces('a'), [true, true, false, false, false, false], 'the cards are still chosen');
+
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
+      await page.waitForFunction(() => !document.querySelector('.trainer-a .prizes.is-hidden'));
+      assert.match(await front('a', 0), /\/art\/one\.svg/);
+    });
+
+    it('fades the ones that are taken with their card still on them, and keeps the red mask of a penalty over the card', async () => {
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: ['one', 'two', 'three', 'four', 'five', 'six'].map(card) });
+      await send('action:trainerA', { action: 'prizeSet', count: 3 });
+      await send('action:trainerB', { action: 'prizePenaltySet', count: 1 });
+      await waitFaces('a', 6);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.taken').length === 3 && document.querySelectorAll('.trainer-a .prize.penalty').length === 1);
+      await page.waitForFunction(() => { const taken = getComputedStyle(document.querySelector('.trainer-a .prize.taken')); return taken.filter === 'grayscale(1)' && Number(taken.opacity) < 0.3; });
+      assert.deepEqual(await faces('a'), [true, true, true, true, true, true]);
+      assert.match(await front('a', 5), /\/art\/six\.svg/, 'a taken prize card keeps its card');
+      assert.equal(await prize('a', 0).evaluate((node) => node.classList.contains('penalty')), true);
+      const layers = await prize('a', 0).evaluate((node) => [getComputedStyle(node, '::before').zIndex, getComputedStyle(node, '::after').zIndex, getComputedStyle(node, '::before').backgroundColor]);
+      assert.equal(layers[0], '1', 'the red mask is over the card');
+      assert.equal(layers[1], 'auto');
+      assert.notEqual(layers[2], 'rgba(0, 0, 0, 0)');
+    });
+
+    it('goes with the picture of the design on the back of the prize cards: the card is over it', async () => {
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
+      await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'japanese' }));
+      await waitFaces('a', 1);
+      assert.match(await prize('a', 0).evaluate((node) => getComputedStyle(node).backgroundImage), /cardbacks\/japanese/);
+      assert.match(await front('a', 0), /\/art\/one\.svg/);
+      assert.equal(await front('a', 1), 'none');
+      assert.match(await prize('a', 1).evaluate((node) => getComputedStyle(node).backgroundImage), /cardbacks\/japanese/, 'the others show that back');
+    });
+
+    it('takes them away when the cards are cleared, and for the next game', async () => {
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one'), card('two')] });
+      await send('action:trainerB', { action: 'prizeCardsSet', cards: [card('three')] });
+      await waitFaces('a', 2);
+      await waitFaces('b', 1);
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [] });
+      await waitFaces('a', 0);
+      assert.equal(await prize('a', 0).evaluate((node) => node.style.getPropertyValue('--prize-face')), '');
+      await waitFaces('b', 1);
+      await send('action:match', { action: 'nextGame' });
+      await waitFaces('b', 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('reads a game saved before the cards existed, and a state that has none', async () => {
+      const sample = await live();
+      for (const side of ['trainerA', 'trainerB']) delete sample[side].prizes.cards;
+      await page.evaluate((state) => window.oto.update(state), sample);
+      assert.deepEqual(await faces('a'), [false, false, false, false, false, false]);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the Stadium', () => {
+    const box = () => page.$eval('.stadium-art', (node) => { const rect = node.getBoundingClientRect(); return { w: rect.width, h: rect.height }; });
+
+    it('shows the picture window of the Stadium card, with its name below, and the whole card when a design asks for it', async () => {
+      await send('action:card', { action: 'setStadium', cardId: 'sv-2', name: 'Area Zero', image: '/art/area-zero.svg', consume: false });
+      await page.waitForSelector('.stadium:not([hidden])');
+      await page.waitForFunction(() => document.querySelector('.stadium-img').complete);
+      const art = await box();
+      assert.ok(Math.abs(art.w - 300) < 1, `width ${art.w}`);
+      assert.ok(Math.abs(art.h - 300 * 1.393333 * 0.37 / 0.836) < 1, `the shape of the picture window: ${art.h}`);
+      assert.equal(await page.locator('.stadium-name').textContent(), 'Area Zero');
+      const below = await page.$eval('.stadium', (node) => node.querySelector('.stadium-name').getBoundingClientRect().top >= node.querySelector('.stadium-art').getBoundingClientRect().bottom);
+      assert.equal(below, true, 'the name is under the picture');
+
+      await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { stadium: { x: 0, y: 0, w: 1, h: 1 } } }));
+      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '1');
+      const whole = await box();
+      assert.ok(Math.abs(whole.h - 300 * 1.393333) < 1, `the whole card: ${whole.h}`);
+      await page.evaluate(() => window.oto.applyTheme(null));
+      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '');
+      assert.ok(Math.abs((await box()).h - 300 * 1.393333 * 0.37 / 0.836) < 1, 'back to the picture window');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is not there while no Stadium is in play', async () => {
+      assert.equal(await page.locator('.stadium').isHidden(), true);
+    });
+  });
+
+  describe('a paused game', () => {
+    const paused = () => page.$eval('#stage', (node) => node.classList.contains('is-paused'));
+
+    it('shows a PAUSED banner in the middle, and grays out everything else until the game is resumed', async () => {
+      assert.equal(await page.locator('.pause-banner').isHidden(), true);
+      await send('action:match', { action: 'togglePause', enabled: true });
+      await page.waitForSelector('.pause-banner:not([hidden])');
+      assert.match(await page.locator('.pause-banner').textContent(), /GAME PAUSED/);
+      assert.equal(await paused(), true);
+      assert.match(await page.$eval('.scoreboard', (node) => getComputedStyle(node).filter), /grayscale\(1\)/);
+      assert.match(await page.$eval('.trainer-a', (node) => getComputedStyle(node).filter), /grayscale\(1\)/);
+      assert.equal(await page.$eval('.pause-banner', (node) => getComputedStyle(node).filter), 'none', 'the banner itself is not grayed');
+      const middle = await page.$eval('.pause-banner', (node) => { const rect = node.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; });
+      assert.ok(Math.abs(middle.x - 960) < 4 && Math.abs(middle.y - 540) < 60, `in the middle: ${JSON.stringify(middle)}`);
+      await wait(3000);
+      assert.equal(await page.locator('.pause-banner').isVisible(), true, 'it stays: it is not a toast that goes by itself');
+
+      await send('action:match', { action: 'togglePause', enabled: false });
+      await page.waitForSelector('.pause-banner', { state: 'hidden' });
+      assert.equal(await paused(), false);
+      assert.equal(await page.$eval('.scoreboard', (node) => getComputedStyle(node).filter), 'none');
+      await page.waitForFunction(() => /GAME RESUMED/.test(document.querySelector('.toasts').textContent));
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is not shown when the game pause banner, or the banners, are switched off', async () => {
+      await send('action:settings', { action: 'update', enablePauseToast: false });
+      await send('action:match', { action: 'togglePause', enabled: true });
+      await wait(300);
+      assert.equal(await page.locator('.pause-banner').isHidden(), true);
+      assert.equal(await paused(), false);
+
+      await send('action:settings', { action: 'update', enablePauseToast: true });
+      await page.waitForSelector('.pause-banner:not([hidden])');
+      await send('action:settings', { action: 'update', display: { toasts: false } });
+      await page.waitForSelector('.pause-banner', { state: 'hidden' });
+      assert.equal(await paused(), false);
     });
   });
 
@@ -268,6 +556,108 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  describe('a Pokémon\'s tile', () => {
+    const box = (selector) => page.$eval(selector, (node) => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; });
+    const within = (inner, outer, label, slack = 14) => {
+      assert.ok(inner.left >= outer.left - 1 && inner.right <= outer.right + 1 && inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1, `${label} is inside the picture: ${JSON.stringify(inner)} in ${JSON.stringify(outer)}`);
+      return slack;
+    };
+
+    beforeEach(async () => {
+      await send('action:trainerA', { action: 'setRetreat', slot: -1, cost: 2 });
+      await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60, retreat: 1 });
+      await send('action:trainerA', { action: 'attachEnergy', slot: 0, energyType: 'water', count: 2, countsAsTurn: false });
+      await page.waitForSelector('.trainer-a .active .retreat .energy');
+      await page.waitForSelector('.trainer-a .bench .mon:not([hidden]) .energy');
+    });
+
+    it('has the HP bar on top of the art, the energy at its bottom left and the retreat cost at its bottom right', async () => {
+      const art = await box('.trainer-a .active .art');
+      const bar = await box('.trainer-a .active .art .hp');
+      const energies = await box('.trainer-a .active .art .energies');
+      const retreat = await box('.trainer-a .active .art .retreat');
+      within(bar, art, 'the HP bar');
+      within(energies, art, 'the energy');
+      within(retreat, art, 'the retreat cost');
+      assert.ok(bar.top - art.top < 14, `the HP bar is at the top: ${bar.top - art.top}`);
+      assert.ok(bar.width > art.width * 0.9, 'and spans the picture');
+      assert.ok(art.bottom - energies.bottom < 14 && energies.left - art.left < 14, 'the energy is in the bottom left corner');
+      assert.ok(art.bottom - retreat.bottom < 14 && art.right - retreat.right < 14, 'the retreat cost is in the bottom right corner');
+      assert.ok(energies.right < retreat.left, 'they do not overlap');
+
+      // the numbers are on the bar
+      const text = await box('.trainer-a .active .art .hp-text');
+      within(text, bar, 'the numbers');
+      assert.equal(await page.locator('.trainer-a .active .art .hp-text').textContent(), '100/100');
+      assert.equal(await page.locator('.trainer-a .active .details .hp').count(), 0, 'nothing of it is left under the picture');
+
+      // the name stays beside the picture, and the picture is the art of the card, not the whole card
+      assert.ok(art.height < 200, `just the art: ${art.height}`);
+      assert.equal(await page.locator('.trainer-a .active .details .mon-name').textContent(), 'Pikachu');
+    });
+
+    it('draws the retreat cost as that many colorless Energy', async () => {
+      assert.equal(await page.locator('.trainer-a .active .retreat .energy-colorless').count(), 2);
+      assert.equal(await page.locator('.trainer-a .active .retreat').getAttribute('title'), 'Retreat cost 2');
+      const image = await page.$eval('.trainer-a .active .retreat .energy-colorless', (node) => getComputedStyle(node).backgroundImage);
+      assert.match(image, /\/assets\/energy\/colorless\.png/);
+
+      await send('action:trainerA', { action: 'setRetreat', slot: -1, cost: 4 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .retreat .energy-colorless').length === 4);
+      await send('action:trainerA', { action: 'setRetreat', slot: -1, cost: 0 });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .retreat').hidden);
+      assert.equal(await page.locator('.trainer-a .active .retreat').isVisible(), false, 'a free retreat shows nothing');
+    });
+
+    it('does the same on the bench, with the small thin bar and at most six Energy and the count of the rest', async () => {
+      const art = await box('.trainer-a .bench .mon.mini:not([hidden]) .art');
+      const bar = await box('.trainer-a .bench .mon.mini:not([hidden]) .art .hp');
+      const retreat = await box('.trainer-a .bench .mon.mini:not([hidden]) .art .retreat');
+      within(bar, art, 'the HP bar');
+      within(retreat, art, 'the retreat cost');
+      assert.ok(bar.height <= 17 && bar.top - art.top < 6, `a thin bar on top: ${bar.height}`);
+      assert.ok(art.right - retreat.right < 8, 'the retreat cost is at the right');
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .retreat .energy').count(), 1);
+
+      await send('action:trainerA', { action: 'attachEnergy', slot: 0, energyType: 'fire', count: 7, countsAsTurn: false });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .bench .mon.mini:not([hidden]) .art .energies .energy').length === 6);
+      assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .art .energies .energy-more').textContent(), '+3', 'nine are attached, six are drawn');
+    });
+
+    it('crosses the retreat cost out while the Pokémon cannot retreat', async () => {
+      assert.equal(await page.locator('.trainer-a .active .retreat.blocked').count(), 0);
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'trapped', enabled: true });
+      await page.waitForSelector('.trainer-a .active .retreat.blocked');
+      assert.equal(await page.locator('.trainer-a .active .retreat').getAttribute('title'), "Can't retreat");
+      const line = await page.$eval('.trainer-a .active .retreat', (node) => { const style = getComputedStyle(node, '::after'); return { content: style.content, color: style.backgroundColor, height: style.height }; });
+      assert.equal(line.content, '""');
+      assert.notEqual(line.color, 'rgba(0, 0, 0, 0)', 'a red line across it');
+      await send('action:trainerA', { action: 'clearStatus' });
+      await page.waitForFunction(() => !document.querySelector('.trainer-a .active .retreat.blocked'));
+    });
+
+    it('can be switched off with its own switch, and the rest of the tile stays', async () => {
+      await send('action:settings', { action: 'update', display: { retreatCost: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .retreat').offsetParent === null);
+      assert.equal(await page.locator('.trainer-a .active .art .energies').isVisible(), true);
+      assert.equal(await page.locator('.trainer-a .active .art .hp').isVisible(), true);
+      await send('action:settings', { action: 'update', display: { retreatCost: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .retreat').offsetParent !== null);
+    });
+
+    it('does not draw anything over the picture when there is nothing to show', async () => {
+      await send('action:trainerA', { action: 'clearSlot', slot: 0 });
+      await send('action:trainerB', { action: 'setActive', cardId: 'b-1', name: 'Charizard', image: IMG, hp: 150 });
+      await page.waitForSelector('.trainer-b .active .mon:not([hidden])');
+      // no energy, no retreat cost, no abilities: the bands are empty and take no room
+      const art = await box('.trainer-b .active .art');
+      assert.equal(await page.locator('.trainer-b .active .art .energies').isVisible(), false);
+      assert.equal(await page.locator('.trainer-b .active .art .retreat').isVisible(), false);
+      assert.ok(art.height < 200);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
   describe('the GX and VSTAR markers', () => {
     const marker = (side, name) => page.locator(`.trainer-${side} .token.marker`, { hasText: name });
     const shown = async (side, name) => (await marker(side, name).count()) > 0 && marker(side, name).isVisible();
@@ -332,9 +722,14 @@ describe('overlay', { skip }, () => {
       assert.deepEqual(await chips(), ['Asleep', 'Poisoned', 'Trapped']);
       assert.deepEqual(await chips('b'), []);
 
-      const looks = await page.$$eval('.trainer-a .active .status-chip', (nodes) => nodes.map((node) => ({ key: node.dataset.status, color: getComputedStyle(node).backgroundColor, title: node.title })));
-      assert.equal(new Set(looks.map((look) => look.color)).size, 3, 'each condition has a color of its own');
-      assert.equal(looks.find((look) => look.key === 'trapped').title, 'Can\'t retreat');
+      // each is an icon (the pictures of the assets folder) on the picture of the card, at the top right, and its name is in its title
+      const looks = await page.$$eval('.trainer-a .active .status-chip', (nodes) => nodes.map((node) => ({
+        key: node.dataset.status, icon: node.querySelector('.status-icon').style.getPropertyValue('--icon'), title: node.title, onArt: Boolean(node.closest('.art')), label: getComputedStyle(node.querySelector('.status-label')).display
+      })));
+      assert.equal(new Set(looks.map((look) => look.icon)).size, 3, 'each condition has an icon of its own');
+      assert.match(looks.find((look) => look.key === 'poisoned').icon, /\/assets\/status\/poison\.png/);
+      assert.match(looks.find((look) => look.key === 'trapped').title, /Can't retreat/);
+      assert.ok(looks.every((look) => look.onArt && look.label === 'none'), 'on the picture, with no room taken by their names');
 
       // a second Asleep-like condition takes the place of the first
       await send('action:trainerA', { action: 'toggleStatus', condition: 'paralyzed', enabled: true });
@@ -344,6 +739,37 @@ describe('overlay', { skip }, () => {
       await send('action:trainerA', { action: 'clearStatus' });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-a .active .status-chip').length === 0);
       assert.deepEqual(page.problems, []);
+    });
+
+    it('draws a disc with a letter for a condition whose icon file is not there (the folder can be deleted), and a picture for the others', async () => {
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'confused', enabled: true });
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'burned', enabled: true });
+      // a screen where the server has no picture for Confused: it answers "nothing here", as it does for an icon that is known but has no file
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+      const without = await context.newPage();
+      await without.route('**/assets/status/confused.png', (route) => route.fulfill({ status: 204 }));
+      try {
+        await without.goto(`${server.base}/overlay`);
+        await without.waitForSelector('.trainer-a .active .status-chip[data-status="confused"] .status-icon.no-icon');
+        const disc = await without.locator('.trainer-a .active .status-chip[data-status="confused"] .status-icon').evaluate((node) => ({ glyph: node.dataset.glyph, image: getComputedStyle(node).backgroundImage, after: getComputedStyle(node, '::after').content, color: getComputedStyle(node).backgroundColor }));
+        assert.equal(disc.glyph, '?');
+        assert.equal(disc.image, 'none', 'no picture to show');
+        assert.match(disc.after, /\?/, 'the letter is drawn on it');
+        assert.notEqual(disc.color, 'rgba(0, 0, 0, 0)', 'a colored disc');
+        assert.equal(await without.locator('.trainer-a .active .status-chip[data-status="burned"] .status-icon.no-icon').count(), 0, 'the others have their picture');
+      } finally {
+        await context.close();
+      }
+    });
+
+    it('shows the picture of every condition when all six icons are there', async () => {
+      // (Confused and Asleep do not go together: Burned does)
+      for (const condition of ['confused', 'burned']) await send('action:trainerA', { action: 'toggleStatus', condition, enabled: true });
+      await page.waitForSelector('.trainer-a .active .status-chip[data-status="confused"] .status-icon');
+      await wait(400); // the icons are checked as the page opens
+      assert.equal(await page.locator('.trainer-a .active .status-icon.no-icon').count(), 0, 'none is drawn as a disc');
+      const image = await page.locator('.trainer-a .active .status-chip[data-status="confused"] .status-icon').evaluate((node) => getComputedStyle(node).backgroundImage);
+      assert.match(image, /\/assets\/status\/confused\.png/);
     });
 
     it('can be switched off with the other Pokémon details', async () => {
@@ -461,30 +887,21 @@ describe('overlay', { skip }, () => {
 
     describe('with a crop', () => {
       const ART = { x: 0.07, y: 0.115, w: 0.86, h: 0.385 };
+      const WHOLE = { x: 0, y: 0, w: 1, h: 1 };
       const mon = (side, where) => page.$eval(`.trainer-${side} ${where} .art`, (art) => {
         const rect = art.getBoundingClientRect();
         const img = art.querySelector('img').getBoundingClientRect();
         return { w: rect.width, h: rect.height, imgW: img.width, imgH: img.height, left: img.left - rect.left, top: img.top - rect.top };
       });
       const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1, `${label}: ${actual} is not ${expected}`);
+      const cropped = (variable, value) => page.waitForFunction(([name, wanted]) => document.documentElement.style.getPropertyValue(name) === wanted, [variable, value]);
 
       beforeEach(async () => {
         await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60 });
         await page.waitForSelector('.trainer-a .bench .mon:not([hidden])');
       });
 
-      it('shows the whole card until the design says otherwise', async () => {
-        const full = await mon('a', '.active');
-        near(full.w, 300, 'width');
-        near(full.h, 418, 'height');
-        near(full.imgW, 300, 'picture width');
-        near(full.imgH, 418, 'picture height');
-        assert.equal(await page.evaluate(() => document.documentElement.classList.contains('has-crop-active')), false);
-      });
-
-      it('shows only the art of the Active Pokémon and takes the shape of it', async () => {
-        await wear({ name: 'Art', crop: { active: ART } });
-        await page.waitForSelector('html.has-crop-active');
+      it('shows just the art of the card, for the Active Pokémon and the bench, until the design says otherwise', async () => {
         const active = await mon('a', '.active');
         near(active.w, 300, 'the width stays');
         near(active.h, 300 * 1.3933 * ART.h / ART.w, 'the height follows the part that is shown');
@@ -493,30 +910,51 @@ describe('overlay', { skip }, () => {
         near(active.left, -300 * ART.x / ART.w, 'moved left to start at the art');
         near(active.top, -active.h * ART.y / ART.h, 'moved up to start at the art');
         const bench = await mon('a', '.bench');
-        near(bench.w, 104, 'the bench is not cropped by an Active crop');
+        near(bench.w, 104, 'the bench is cropped the same way');
+        near(bench.h, 104 * 1.3933 * ART.h / ART.w, 'bench height');
+        near(bench.imgW, 104 / ART.w, 'bench picture width');
+      });
+
+      it('shows the whole card when the design asks for it', async () => {
+        await wear({ name: 'Full Cards', crop: { active: WHOLE, bench: WHOLE } });
+        await cropped('--ca-w', '1');
+        const full = await mon('a', '.active');
+        near(full.w, 300, 'width');
+        near(full.h, 418, 'height');
+        near(full.imgW, 300, 'picture width');
+        near(full.imgH, 418, 'picture height');
+        const bench = await mon('a', '.bench');
+        near(bench.w, 104, 'bench width');
         near(bench.h, 145, 'bench height');
       });
 
       it('crops the bench on its own', async () => {
         await wear({ name: 'Bench', crop: { bench: { x: 0.2, y: 0.2, w: 0.6, h: 0.5 } } });
-        await page.waitForSelector('html.has-crop-bench');
+        await cropped('--cb-w', '0.6');
         const bench = await mon('a', '.bench');
         near(bench.w, 104, 'width');
         near(bench.h, 104 * 1.3933 * 0.5 / 0.6, 'height');
         near(bench.imgW, 104 / 0.6, 'picture width');
         near(bench.left, -104 * 0.2 / 0.6, 'left');
         const active = await mon('a', '.active');
-        near(active.h, 418, 'the Active Pokémon keeps its whole card');
-        assert.equal(await page.evaluate(() => document.documentElement.classList.contains('has-crop-active')), false);
+        near(active.h, 300 * 1.3933 * ART.h / ART.w, 'the Active Pokémon keeps the art');
+        assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--ca-w')), '', 'and is not given numbers of its own');
       });
 
-      it('shows exactly the chosen part of the card picture', async () => {
+      it('goes back to the art when the design on air is taken away', async () => {
+        await wear({ name: 'Full Again', crop: { active: WHOLE } });
+        await cropped('--ca-w', '1');
+        near((await mon('a', '.active')).h, 418, 'whole card');
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '');
+        near((await mon('a', '.active')).h, 300 * 1.3933 * ART.h / ART.w, 'the art again');
+      });
+
+      it('shows exactly the part of the card picture that is chosen, and the artwork window by default', async () => {
         // a card whose art window is green and everything else blue, so the crop can be checked by color
         const card = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="418"><rect width="300" height="418" fill="#2030d0"/><rect x="21" y="48.07" width="258" height="160.93" fill="#20d040"/></svg>';
         await page.route('**/art/flat.svg', (route) => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: card }));
         await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Flat', image: '/art/flat.svg', hp: 60 });
-        await wear({ name: 'Flat Art', crop: { active: ART } });
-        await page.waitForSelector('html.has-crop-active');
         await page.waitForFunction(() => { const img = document.querySelector('.trainer-a .active .art-img'); return img && img.complete && img.naturalWidth > 0 && img.getAttribute('src').includes('flat'); });
         const colors = await page.evaluate(() => {
           const art = document.querySelector('.trainer-a .active .art');
@@ -536,6 +974,220 @@ describe('overlay', { skip }, () => {
           return [sample(0.03, 0.03), sample(0.97, 0.03), sample(0.03, 0.97), sample(0.97, 0.97), sample(0.5, 0.5)];
         });
         assert.deepEqual([...new Set(colors)], ['32,208,64'], 'only the green art window is in the box: ' + colors.join(' | '));
+      });
+    });
+
+    describe('with a tile', () => {
+      beforeEach(async () => {
+        await send('action:trainerA', { action: 'setRetreat', slot: -1, cost: 2 });
+        await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60, retreat: 1 });
+        await page.waitForSelector('.trainer-a .bench .mon:not([hidden])');
+      });
+      const parentOf = (selector) => page.$eval(selector, (node) => node.parentElement.className);
+
+      it('puts every part under the picture when the design says so, as it used to be', async () => {
+        await wear({ name: 'Below', tile: { active: { hp: 'below', energy: 'below', retreat: 'below', status: 'below' } }, crop: { active: { x: 0, y: 0, w: 1, h: 1 } } });
+        await page.waitForSelector('.trainer-a .active .details .hp');
+        assert.equal(await page.locator('.trainer-a .active .art .hp').count(), 0);
+        assert.equal(await page.locator('.trainer-a .active .art .energies').count(), 0);
+        assert.equal(await page.locator('.trainer-a .active .art .retreat').count(), 0);
+        assert.equal(await page.locator('.trainer-a .active .art .statuses').count(), 0);
+        // in their old order: the name, the HP, the energy, the retreat cost, the abilities
+        assert.deepEqual(await page.$$eval('.trainer-a .active .details > *', (nodes) => nodes.map((node) => node.className.split(' ')[0])), ['mon-name', 'hp', 'energies', 'retreat', 'abilities', 'statuses']);
+        const hp = await page.$eval('.trainer-a .active .details .hp-text', (node) => ({ position: getComputedStyle(node).position, margin: getComputedStyle(node).marginTop }));
+        assert.equal(hp.position, 'static', 'the numbers are under the bar again');
+        const art = await page.$eval('.trainer-a .active .art', (node) => node.getBoundingClientRect().height);
+        assert.ok(Math.abs(art - 418) < 0.1, 'the whole card, as the design asked');
+        const bench = await page.$$eval('.trainer-a .bench .mon.mini:not([hidden]) .art .hp', (nodes) => nodes.length);
+        assert.equal(bench, 1, 'the bench keeps the usual tile');
+      });
+
+      it('puts parts in the corner and the edge of the picture that the design chooses', async () => {
+        await wear({ name: 'Corners', tile: { active: { hp: 'bottom', energy: 'top-right', retreat: 'top-left' } } });
+        await page.waitForSelector('.trainer-a .active .band-bottom .band-bar .hp');
+        assert.equal(await parentOf('.trainer-a .active .art .energies'), 'corner corner-right');
+        assert.equal(await parentOf('.trainer-a .active .art .retreat'), 'corner corner-left');
+        const art = await page.$eval('.trainer-a .active .art', (node) => node.getBoundingClientRect().toJSON());
+        const bar = await page.$eval('.trainer-a .active .art .hp', (node) => node.getBoundingClientRect().toJSON());
+        const energies = await page.$eval('.trainer-a .active .art .energies', (node) => node.getBoundingClientRect().toJSON());
+        const retreat = await page.$eval('.trainer-a .active .art .retreat', (node) => node.getBoundingClientRect().toJSON());
+        assert.ok(art.bottom - bar.bottom < 14, 'the HP bar is at the bottom');
+        assert.ok(energies.top - art.top < 14 && art.right - energies.right < 14, 'the energy is at the top right');
+        assert.ok(retreat.top - art.top < 14 && retreat.left - art.left < 14, 'the retreat cost is at the top left');
+      });
+
+      it('stacks two parts that share a corner, one under the other', async () => {
+        await wear({ name: 'Together', tile: { active: { retreat: 'bottom-left' } } });
+        await page.waitForSelector('.trainer-a .active .corner-left .retreat');
+        const energies = await page.$eval('.trainer-a .active .art .energies', (node) => node.getBoundingClientRect().toJSON());
+        const retreat = await page.$eval('.trainer-a .active .art .retreat', (node) => node.getBoundingClientRect().toJSON());
+        assert.ok(retreat.top >= energies.bottom - 1 || energies.top >= retreat.bottom - 1, 'they do not cover each other');
+      });
+
+      it('does the bench on its own, and goes back to the usual places when the design is taken away', async () => {
+        await wear({ name: 'Bench Tile', tile: { bench: { hp: 'bottom', energy: 'below' } } });
+        await page.waitForSelector('.trainer-a .bench .band-bottom .band-bar .hp');
+        assert.equal(await page.locator('.trainer-a .active .band-top .band-bar .hp').count(), 1, 'the Active Pokémon is as before');
+        assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .details .energies').count(), 1, 'the bench energy is below');
+
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForSelector('.trainer-a .bench .band-top .band-bar .hp');
+        assert.equal(await page.locator('.trainer-a .bench .mon.mini:not([hidden]) .art .energies').count(), 1, 'back on the picture');
+      });
+
+      it('ignores a place it does not know, whatever a hand-written design says', async () => {
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], tile: { active: { hp: 'sideways', energy: 'below' }, bench: 'nope' } }));
+        await page.waitForSelector('.trainer-a .active .details .energies');
+        assert.equal(await page.locator('.trainer-a .active .band-top .band-bar .hp').count(), 1, 'the HP bar stays where it usually is');
+        assert.deepEqual(page.problems, []);
+      });
+    });
+
+    describe('with a picture on the prize cards', () => {
+      const backs = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => ({ taken: node.classList.contains('taken'), image: getComputedStyle(node).backgroundImage, size: getComputedStyle(node).backgroundSize })));
+      const rootClass = () => page.evaluate(() => [...document.documentElement.classList].filter((name) => name.startsWith('prize-')));
+      // what is painted on the first prize card of the other trainer that is still there, as a picture (so two looks can be told apart)
+      const paint = async () => { await wait(450); return page.locator('.trainer-b .prize:not(.taken)').first().screenshot(); };
+      // the pictures the stylesheet asks for as the back of a prize card: the file of the assets folder, then the drawing under it
+      const layers = () => page.$eval('.trainer-b .prize', (node) => [...getComputedStyle(node).backgroundImage.matchAll(/url\("([^"]+)"\)/g)].map((found) => found[1]));
+      // how wide a picture is once it has loaded (0 when it does not load)
+      const loadedWidth = (url) => page.evaluate((src) => new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image.naturalWidth);
+        image.onerror = () => resolve(0);
+        image.src = src;
+      }), url);
+      const styled = (style) => page.waitForFunction((name) => document.documentElement.classList.contains(`prize-${name}`), style);
+      // whether the assets folder has the card back (the maintainer adds them): 200 when it does, 204 when it does not
+      const fileStatus = (style) => page.evaluate((name) => fetch(`/assets/cardbacks/${name}`).then((response) => response.status), style);
+
+      beforeEach(async () => {
+        await send('action:trainerA', { action: 'prizeSet', count: 4 });
+        await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.taken').length === 2);
+      });
+
+      it('keeps the card back the design has, or the built-in one, until the design asks for another', async () => {
+        assert.deepEqual(await rootClass(), []);
+        const usual = await backs();
+        assert.equal(usual.length, 6);
+        assert.ok(usual.every((prize) => !prize.image.includes('cardbacks')), 'no card back file is asked for');
+        await wear({ name: 'Plain Prizes', colors: { '--accent': '#336699' } });
+        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#336699');
+        assert.deepEqual(await rootClass(), []);
+      });
+
+      for (const style of ['english', 'japanese', 'pokeball']) {
+        it(`prints the ${style} one on every prize card, the taken ones too (they only go gray)`, async () => {
+          await wear({ name: `Prizes ${style}`, prizeStyle: style });
+          await styled(style);
+          assert.deepEqual(await rootClass(), [`prize-${style}`]);
+
+          const all = [...await backs('a'), ...await backs('b')];
+          assert.equal(all.length, 12);
+          for (const prize of all) {
+            assert.match(prize.image, new RegExp(`^url\\("[^"]*/assets/cardbacks/${style}"\\), url\\("data:image/svg\\+xml`), `the picture of the assets folder first, a drawing under it: ${prize.image.slice(0, 120)}`);
+            assert.equal(prize.size, 'cover, cover');
+          }
+          const mine = await backs('a');
+          assert.deepEqual(mine.map((prize) => prize.taken), [false, false, false, false, true, true]);
+          // they fade over 0.4 s when they are taken: wait for the end of it
+          await page.waitForFunction(() => { const taken = getComputedStyle(document.querySelector('.trainer-a .prize.taken')); return taken.filter === 'grayscale(1)' && Number(taken.opacity) < 0.3; });
+          assert.equal(await page.$eval('.trainer-a .prize.taken', (node) => getComputedStyle(node).filter), 'grayscale(1)');
+          assert.ok(Number(await page.$eval('.trainer-a .prize.taken', (node) => getComputedStyle(node).opacity)) < 0.3, 'and faded');
+          assert.deepEqual(page.problems, []);
+        });
+      }
+
+      it('shows the card back that is in the assets folder (the file the maintainer added), and the drawing of its own for one that is not', async () => {
+        for (const style of ['english', 'japanese', 'pokeball']) {
+          await wear({ name: `Files ${style}`, prizeStyle: style });
+          await styled(style);
+          const [file, drawing] = await layers();
+          const status = await fileStatus(style);
+          assert.ok([200, 204].includes(status), `${style}: the file is there or it is not (${status})`);
+          assert.equal(await loadedWidth(file) > 0, status === 200, `${style}: the picture loads when the file is there`);
+          assert.ok(await loadedWidth(drawing) > 0, `${style}: the drawing under it always loads`);
+        }
+        assert.deepEqual(page.problems, [], 'a card back that is not there is no error');
+      });
+
+      it('draws a card back of its own for each when the file is not there, three different ones, without an error anywhere', async () => {
+        // as if the assets folder had none of them (the real folder may)
+        await page.route('**/assets/cardbacks/*', (route) => route.fulfill({ status: 204 }));
+        const looks = {};
+        for (const style of ['english', 'japanese', 'pokeball']) {
+          await wear({ name: `Drawn ${style}`, prizeStyle: style });
+          await styled(style);
+          looks[style] = await paint();
+        }
+        assert.ok(!looks.english.equals(looks.japanese) && !looks.english.equals(looks.pokeball) && !looks.japanese.equals(looks.pokeball), 'a blue one, a red one and a ball');
+
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForFunction(() => ![...document.documentElement.classList].some((name) => name.startsWith('prize-')));
+        const builtIn = await paint();
+        for (const style of ['english', 'japanese', 'pokeball']) assert.ok(!builtIn.equals(looks[style]), `${style} is not the built-in card back`);
+        assert.deepEqual(page.problems, []);
+      });
+
+      it('paints the file over the drawing when the file is there', async () => {
+        const status = await fileStatus('english');
+        if (status !== 200) return; // nothing to compare with: there is no English card back in the assets folder
+        // this page is told there is no file; another one, that opens afterwards, gets it (a page keeps what it learned of a picture, so a file
+        // that is added is there for the pages opened after that, which is what refreshing the overlay in OBS does)
+        await page.route('**/assets/cardbacks/english', (route) => route.fulfill({ status: 204 }));
+        await wear({ name: 'Drawn English', prizeStyle: 'english' });
+        await styled('english');
+        const drawn = await paint();
+
+        const second = await openPage(browser, `${server.base}/overlay`);
+        try {
+          await second.waitForFunction(() => document.documentElement.classList.contains('prize-english'));
+          await second.waitForFunction(() => { const prize = document.querySelector('.trainer-b .prize:not(.taken)'); return prize && prize.getBoundingClientRect().width > 0; });
+          await wait(450);
+          const file = await second.locator('.trainer-b .prize:not(.taken)').first().screenshot();
+          assert.ok(!file.equals(drawn), 'the picture of the file, not the drawing');
+          assert.deepEqual(second.problems, []);
+        } finally {
+          await second.context().close();
+        }
+        assert.deepEqual(page.problems, []);
+      });
+
+      it('shows a different drawing for each, and goes back to the usual look when the design is taken away', async () => {
+        const seen = {};
+        for (const style of ['english', 'japanese', 'pokeball']) {
+          await wear({ name: `Look ${style}`, prizeStyle: style });
+          await styled(style);
+          seen[style] = (await backs('b'))[0].image.split('), url(').pop();
+        }
+        assert.equal(new Set(Object.values(seen)).size, 3, 'three different drawings');
+
+        await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
+        await page.waitForFunction(() => ![...document.documentElement.classList].some((name) => name.startsWith('prize-')));
+        assert.ok((await backs('b')).every((prize) => !prize.image.includes('cardbacks')), 'the built-in card back again');
+      });
+
+      it('keeps the red mask of a penalty and the question mark of hidden prizes on top of the picture', async () => {
+        await wear({ name: 'Marked', prizeStyle: 'japanese' });
+        await styled('japanese');
+        await send('action:trainerB', { action: 'prizePenaltySet', count: 2 });
+        await page.waitForFunction(() => document.querySelectorAll('.trainer-a .prize.penalty').length === 2);
+        const mask = await page.$eval('.trainer-a .prize.penalty', (node) => getComputedStyle(node, '::before').backgroundColor);
+        assert.notEqual(mask, 'rgba(0, 0, 0, 0)', 'the red mask is still drawn');
+        await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
+        assert.equal(await page.$eval('.trainer-a .prize', (node) => getComputedStyle(node, '::after').content), '"?"');
+      });
+
+      it('ignores a picture it does not know, whatever a hand-written design says', async () => {
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'spanish' }));
+        await wait(100);
+        assert.deepEqual(await rootClass(), []);
+        await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'english' }));
+        assert.deepEqual(await rootClass(), ['prize-english']);
+        await page.evaluate(() => window.oto.applyTheme({ name: 'y', colors: {}, images: {}, sounds: [], prizeStyle: 'current' }));
+        assert.deepEqual(await rootClass(), [], 'and one design after another does not leave the last one behind');
+        assert.deepEqual(page.problems, []);
       });
     });
   });

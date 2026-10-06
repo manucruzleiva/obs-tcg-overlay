@@ -15,6 +15,13 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 - Producer control panel and OBS browser-source overlay, synced over Socket.io, both redesigned from scratch
 - Match state: trainers, prizes, active Pokémon, 2 to 8 bench slots, stadium, item and evolution locks, energy, stadium and supporter per-turn tokens, best-of-1/3/5 score, round label
 - Keyboard-first control: deploy (`A`), bench (`B`), attack announcement (`C`), damage (`D`), energy (`E`, as the turn's attachment or a special one), heal (`H`), item and evolution locks (`I`, `V`), knock out (`K`), stadium (`S`), supporter (`Shift+S`), abilities (`X`), Top Deck and Pass Turn announcements (`T`, `P`), pass the turn (`Space`), prizes (arrows), trainer focus (`1`, `2`), undo and redo (`Ctrl+Z`, `Ctrl+Y`), help (`?`)
+- Special conditions (Asleep, Burned, Confused, Paralyzed, Poisoned) and Trapped on the Active Pokémon, with icons from the assets folder; the GX attack and VSTAR Power as once-per-game markers (hidden by default, back at the end of each game)
+- Attacks and retreat costs come from the card; damage comes in tens; the attack dialog lists the Active's attacks and abilities
+- A penalty is a number of prize cards: that many of the other player's prizes show in red, and that player needs that many fewer to win. The victory is announced by itself when a player has taken the prizes they need, adds a game to their score, and **Next game** starts the next one
+- **Deck or GLC type** for each trainer, shown next to the record on the scoreboard, with the Pokémon it names (official artwork from the PokeAPI sprites, downloaded once and kept) or the icon of its energy type; another picture, or none, can be chosen
+- **Set prizes**: choose, with the card search, the card of each of a player's six prize cards. They show on the prize cards of the overlay (face down with a question mark while the prizes are hidden, faded when taken) and on the prize pips of the control panel, and start again for the next game
+- **Pause**: a banner in the middle of the overlay that stays, with everything else grayed out, until the game is resumed (`Shift+P`)
+- Drag and drop Pokémon between the Active spot and the bench (move or swap), right-click an energy to attach another, `Shift+B` and a button to put the bench back to 5 slots, prize arrows for the player whose turn it is, a Stadium that uses the playing player's Stadium play (or not), and undo and redo that say what they did
 - Ability tokens on each Pokémon: ready or used, once per turn (they reset when that trainer's turn begins) or once per game
 - Hype announcements as one-shot events: a new one replaces the one still showing; banner and effect durations are configurable
 - Card search with pictures, favorites and an evolution search; HP and abilities are taken from the chosen card
@@ -28,14 +35,20 @@ First public release of the project, named **OTO** (OBS TCG Overlay).
 - A visible share link in the control panel and tray menu, and `GET /api/network`
 
 **The overlay's look and sound**
-- Switches to show or hide every element of the overlay, with presets
+- Switches to show or hide every element of the overlay, with presets; the nationality can show as a flag emoji (a flag font is bundled, because Windows has none); an **All** column and an **All moments** row switch whole rows and columns of the announcements table
+- Pokémon shown as the art of their card (the whole card when a design asks) with the HP bar, attached energy, retreat cost and status icons placed on it, each editable per design; the Stadium shows as its art with its name below; a **design editor** with zoom, drag, a code view, crop and tile editors, and sample Stadium and Pokémon cards
+- The control panel shows the art of the Pokémon cards too, or the whole card as a choice of that browser
 - Sound effects for the moments of a match, off by default, each with its own switch and volume, a built-in sound for every cue, and your own files per cue
 - **Designs**: colors, seven picture slots, a font and sounds, edited in the Look tab and reaching the overlay live
+- **The picture on the prize cards**, chosen in each design (Tile tab): the design's own, an English or a Japanese Pokémon card back, or a Poké Ball. The card backs are files in `assets/cardbacks` (a PNG, JPG or WebP each), and a plain drawing shows when there is none
 - **`.oto` packages**: a design, its sounds and the producer's control settings in one compressed file, saved from the Look or General tab, installed from a picker, by drag and drop, or by double-clicking the file in the desktop app. The format is documented in [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md)
 - Designs saved by earlier builds (one JSON with the pictures inside) are converted automatically
 
 **Cards, offline**
-- A **card library** kept on the computer: Standard, Gym Leader Challenge and Expanded. Downloaded in the background with progress, retried and resumed when the card service fails, searched instantly and offline
+- A **card library** kept on the computer: Standard, Gym Leader Challenge and Expanded. Downloaded in the background with progress, retried and resumed when the card service fails, searched instantly and offline. Standard also holds the cards that have no regulation mark but are legal in Standard (reprints such as the Classic Collection)
+- Three card services: the Pokémon TCG API, **TCGdex** (no account, many languages, a fallback when the first does not answer) and **Scrydex** with your own account; API keys are kept on the computer and always shown masked. A library can be built from any of them (Standard from all three)
+- **Updating a library brings only what is new**: each part of it is counted on the card service and only the parts that changed are downloaded (the new cards first, from the Pokémon TCG API); cards that left the format after a rotation go; libraries saved by earlier builds are worked out from their cards. The Cards tab says where each library came from and when an update would download it again from another service
+- The card picker starts from your favorite cards, your most used and the ones saved on this computer
 - Card pictures saved on the computer the first time they are shown, with an option to save them ahead of time (including the newest sets, whose pictures are on a second image host)
 
 **The desktop app**

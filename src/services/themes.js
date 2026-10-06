@@ -18,11 +18,15 @@
  *     "font": "fonts/font.woff2",
  *     "sounds": { "damage": "sounds/damage.mp3" },
  *     "layout": { "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } },
- *     "crop": { "active": { "x": 0.07, "y": 0.115, "w": 0.86, "h": 0.385 } }
+ *     "crop": { "active": { "x": 0, "y": 0, "w": 1, "h": 1 } },
+ *     "tile": { "active": { "hp": "bottom" } },
+ *     "prizeStyle": "english"
  *   }
  *
  * "layout" moves and resizes pieces of the overlay (see BLOCKS in public/js/theme-options.js); "crop"
- * shows only part of the card picture for the Active Pokémon and the bench.
+ * shows only part of the card picture for the Active Pokémon, the bench and the Stadium (the artwork unless it says otherwise);
+ * "tile" says where the HP bar, the attached energy and the retreat cost go on that picture; "prizeStyle" is the picture on the prize
+ * cards: "english" or "japanese" card back, or a "pokeball" (left out, they keep the design's card back or the built-in one).
  *
  * Everything a design uses is a file inside its folder: nothing is fetched from the web while it is on
  * air, so it works offline, and a shared design can never make an overlay contact someone's server.
@@ -106,6 +110,12 @@ const sanitizeLayout = (input, options) => asThemeError(() => rules.sanitizeLayo
 
 // Which part of the card shows for the Active Pokémon and the bench
 const sanitizeCrop = (input, options) => asThemeError(() => rules.sanitizeCrop(input, options));
+
+// Where the HP bar, the attached energy and the retreat cost go on a Pokémon's tile
+const sanitizeTile = (input, options) => asThemeError(() => rules.sanitizeTile(input, options));
+
+// The picture on the prize cards (an empty string for the usual one)
+const sanitizePrize = (input, options) => asThemeError(() => rules.sanitizePrize(input, options));
 
 // ------------------------------------------------------------------------------------- files
 
@@ -272,8 +282,12 @@ class ThemeStore {
     if (description) design.description = description;
     const layout = sanitizeLayout(raw.layout);
     const crop = sanitizeCrop(raw.crop);
+    const tile = sanitizeTile(raw.tile);
+    const prizeStyle = sanitizePrize(raw.prizeStyle);
     if (Object.keys(layout).length) design.layout = layout;
     if (Object.keys(crop).length) design.crop = crop;
+    if (Object.keys(tile).length) design.tile = tile;
+    if (prizeStyle) design.prizeStyle = prizeStyle;
 
     for (const key of IMAGE_KEYS) {
       const ref = raw.images && raw.images[key];
@@ -302,7 +316,7 @@ class ThemeStore {
     return this.get(design.name);
   }
 
-  // Make a design, or change its colors, author, description, layout and crop. Pictures, font and sounds have their own calls.
+  // Make a design, or change its colors, author, description, layout, crop, tile and prize style. Pictures, font and sounds have their own calls.
   save(name, input = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ThemeError('A design must be an object');
     const clean = cleanName(name ?? input.name);
@@ -313,10 +327,14 @@ class ThemeStore {
     if ('description' in input) design.description = cleanText(input.description, MAX_DESCRIPTION) || undefined;
     if ('layout' in input) design.layout = sanitizeLayout(input.layout, { strict: true });
     if ('crop' in input) design.crop = sanitizeCrop(input.crop, { strict: true });
+    if ('tile' in input) design.tile = sanitizeTile(input.tile, { strict: true });
+    if ('prizeStyle' in input) design.prizeStyle = sanitizePrize(input.prizeStyle, { strict: true });
+    if (!design.prizeStyle) delete design.prizeStyle;
     if (!design.author) delete design.author;
     if (!design.description) delete design.description;
     if (design.layout && !Object.keys(design.layout).length) delete design.layout;
     if (design.crop && !Object.keys(design.crop).length) delete design.crop;
+    if (design.tile && !Object.keys(design.tile).length) delete design.tile;
     return this.store(design);
   }
 
@@ -442,6 +460,8 @@ class ThemeStore {
     const resolved = { name: design.name, colors: design.colors, images: {}, sounds: Object.keys(design.sounds) };
     if (design.layout) resolved.layout = design.layout;
     if (design.crop) resolved.crop = design.crop;
+    if (design.tile) resolved.tile = design.tile;
+    if (design.prizeStyle) resolved.prizeStyle = design.prizeStyle;
     for (const [key, ref] of Object.entries(design.images)) resolved.images[key] = url(ref);
     if (design.font) resolved.font = url(design.font);
     return resolved;
@@ -509,8 +529,12 @@ class ThemeStore {
       if (description) design.description = description;
       const layout = sanitizeLayout(parts.layout);
       const crop = sanitizeCrop(parts.crop);
+      const tile = sanitizeTile(parts.tile);
+      const prizeStyle = sanitizePrize(parts.prizeStyle);
       if (Object.keys(layout).length) design.layout = layout;
       if (Object.keys(crop).length) design.crop = crop;
+      if (Object.keys(tile).length) design.tile = tile;
+      if (prizeStyle) design.prizeStyle = prizeStyle;
 
       let total = 0;
       const put = (ref, buffer) => {
@@ -566,5 +590,5 @@ class ThemeStore {
 
 module.exports = {
   ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, MIME,
-  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, cleanName, cleanText, folderName
+  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, cleanName, cleanText, folderName
 };

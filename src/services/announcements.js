@@ -88,13 +88,32 @@ function build(state, type, params = {}) {
       break;
     }
 
+    // The game was paused and is going on: a short toast (the pause itself is not an announcement: its banner stays on the overlay for as
+    // long as the game is paused)
+    case 'resume':
+      spec = {
+        side: null,
+        title: 'GAME RESUMED',
+        subtitle: 'Back to the game',
+        toast: s.enablePauseToast,
+        animation: false
+      };
+      break;
+
     case 'win': {
       const side = sideOf(params.side);
       const label = side === 'trainerA' ? 'A' : 'B';
+      // The toast of a game that has just been won (the score is already up) says which it is, with the score: the game, or the match
+      // when that decided it. One announced by hand says the match.
+      const { trainerAWins, trainerBWins, bestOf } = state.matchScore;
+      const own = side === 'trainerA' ? trainerAWins : trainerBWins;
+      const other = side === 'trainerA' ? trainerBWins : trainerAWins;
       spec = {
         side,
         title: 'VICTORY!',
-        subtitle: `${nameOf(state, side)} wins the match!`,
+        subtitle: params.game
+          ? `${nameOf(state, side)} wins the ${own > bestOf / 2 ? 'match' : 'game'} (${own}–${other})`
+          : `${nameOf(state, side)} wins the match!`,
         toast: s[`enableTrainer${label}WinToast`],
         animation: s[`enableTrainer${label}WinAnimation`]
       };
