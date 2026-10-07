@@ -291,6 +291,7 @@ describe('the draft the producers share', () => {
     assert.equal(own.ack, undefined, 'and is not handed an answer to an action of Bob\'s');
 
     // Alice adds to the same draft
+    const bobTold = bob.expect('draft:state', (d) => d.changes.length === 3); // (his page is told on its own, not before Alice has her answer)
     const { draft: preview } = await alice.draftAct('action:trainerA', { action: 'setName', name: 'Drafted' });
     assert.equal(preview.preview.trainerA.prizes.count, 4);
     assert.equal(preview.preview.trainerA.name, 'Drafted');
@@ -299,7 +300,7 @@ describe('the draft the producers share', () => {
       ['Bob', 'Trainer A prizes −1 (4 left)'],
       ['Alice', 'Trainer A name → Drafted']
     ]);
-    const bobSees = bob.last('draft:state');
+    const bobSees = await bobTold;
     assert.equal(bobSees.changes.length, 3, 'and Bob sees it');
 
     // nothing is live
