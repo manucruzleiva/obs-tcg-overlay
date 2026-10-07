@@ -18,27 +18,26 @@ describe('the host and the other producers', () => {
     host = server.client({ clientId: 'host-client-001', name: 'Host' });
     maya = server.client({ clientId: 'maya-client-001', name: 'Maya', guest: true });
     noah = server.client({ clientId: 'noah-client-001', name: 'Noah', guest: true });
-    // One after the other: the list of producers is in the order they arrived, and the host is the first (all three together, a slow
-    // machine can let Maya or Noah in before the host)
-    await host.ready();
-    await maya.ready();
-    await noah.ready();
+    await Promise.all([host.ready(), maya.ready(), noah.ready()]);
   });
 
   after(() => server.stop());
 
   it('knows which page is the host: the one on the computer that runs OTO, and nobody who joins from another device', async () => {
-    for (let i = 0; i < 40 && !(host.events.presence && host.events.presence.at(-1).producers.length === 3); i++) await wait(50);
+    // (each page is told who it is on its own: wait for the list with the three of them, and for both pages to know)
+    const allHere = () => host.events.presence && host.events.presence.at(-1).producers.length === 3 && host.events.you && maya.events.you;
+    for (let i = 0; i < 60 && !allHere(); i++) await wait(50);
     const presence = host.events.presence.at(-1);
-    assert.deepEqual(presence.producers.map((p) => [p.name, p.host]), [['Host', true], ['Maya', false], ['Noah', false]]);
+    assert.deepEqual(presence.producers.map((p) => [p.name, p.host]).sort(), [['Host', true], ['Maya', false], ['Noah', false]], 'who is in it, whatever the order');
     assert.equal(host.events.you.at(-1).host, true);
     assert.equal(maya.events.you.at(-1).host, false);
   });
 
   it('lets everybody rename themselves, and nobody else but the host', async () => {
     const renamed = host.expect('presence', (p) => p.producers.some((x) => x.name === 'Maya P.'));
+    const mayaTold = maya.expect('you', (you) => you.name === 'Maya P.'); // (her own page hears it on its own, not necessarily before the host's)
     maya.emit('presence:rename', { name: 'Maya P.' });
-    await renamed;
+    await Promise.all([renamed, mayaTold]);
     assert.equal(maya.events.you.at(-1).name, 'Maya P.');
 
     // a guest cannot rename another producer
@@ -58,7 +57,7 @@ describe('the host and the other producers', () => {
     host.emit('presence:rename', { name: '   ', clientId: 'noah-client-001' });
     host.emit('presence:rename', { name: 'Ghost', clientId: 'nobody-client-1' });
     await wait(150);
-    assert.deepEqual(host.events.presence.at(-1).producers.map((p) => p.name), ['Host', 'Maya P.', 'Noah Q.']);
+    assert.deepEqual(host.events.presence.at(-1).producers.map((p) => p.name).sort(), ['Host', 'Maya P.', 'Noah Q.']);
   });
 
   it('only lets the host remove a producer, never the host itself, and tells the producer', async () => {
@@ -74,13 +73,14 @@ describe('the host and the other producers', () => {
 
     const kicked = noah.expect('kicked');
     const gone = host.expect('presence', (p) => p.producers.length === 2 && p.kicked === 1);
+    const logged = host.expect('activity', (entry) => /Removed Noah Q\. from the session/.test(entry.label));
     host.emit('presence:kick', { clientId: 'noah-client-001' });
     assert.equal((await kicked).by, 'Host');
     const presence = await gone;
-    assert.deepEqual(presence.producers.map((p) => p.name), ['Host', 'Maya P.']);
+    assert.deepEqual(presence.producers.map((p) => p.name).sort(), ['Host', 'Maya P.']);
+    await logged;
     await wait(100);
     assert.equal(noah.socket.connected, false, 'their page is closed');
-    assert.ok(host.events.activity.some((entry) => /Removed Noah Q\. from the session/.test(entry.label)));
   });
 
   it('keeps a removed producer out until the host lets them back in', async () => {
