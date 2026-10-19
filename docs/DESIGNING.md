@@ -181,7 +181,7 @@ The stage itself carries `portrait` (a tall screen), `bench-row` (the bench in a
 | Not allowed | Why |
 |-------------|-----|
 | `@import` and `@namespace`; `url()` with a web address, a `data:` address or anything but one of the design's files; `image-set()`, `cross-fade()`, `image()`, `element()`, `paint()` and `src()` | A design can only use the files it carries, so it works offline and never makes an overlay contact anyone's server |
-| `!important` | It could show what the producer switched off |
+| `!important`, and a transition of `display` (`allow-discrete`, in `transition` or `transition-behavior`) | Either could show what the producer switched off (a transition that is running wins over `!important`) |
 | Rules for `body`, `head`, `style`, `script`, `link`, `meta`, `title` or `iframe`; anything but custom properties in a rule for `:root` or `html` alone; a pseudo-element of the page (`:root::before`); `#stage + ...` and `#stage ~ ...` | Only the stage can be styled, and the page around it must stay see-through |
 | A rule inside another rule (CSS nesting) | Write each rule on its own |
 | `:has()` | It can make the overlay slow |
@@ -249,7 +249,7 @@ When something happens in the match, the overlay puts a class on the piece it ha
 - **Animate what is inside a piece, not a piece the layout moves.** The pieces you can move in the editor (the logo, the scoreboard, a trainer and its prize cards, turn tokens, locks, Active Pokémon and bench, the feature cards, the Stadium, the banners) keep where the design put them in their `transform`, and the stage keeps its scaling in its own. An animation of `transform` on one of them takes that away while it plays: the piece jumps back to where it was before it was moved, or the stage to its full size. Two moments land on such pieces: `moment-turn` (on `.trainer`) and `moment-enter` (on `.stadium`). Animate a piece inside them (`.trainer.moment-turn .active .art`, `.stadium.moment-enter .stadium-art`), a `::before` or `::after`, or another property. (The built-in shake of a knock out moves the stage with `margin-left`, not `transform`.)
 - **Keep animations short.** A moment's class goes when the moment is over (1.5 seconds unless you say otherwise), which cuts an animation that is longer. Several moments often come at once (a knock out comes with a prize card taken), and the same moment can come again and start over.
 - **Mind older OBS browsers.** OBS shows the overlay with a browser of its own, which can be older than the one you design in. CSS nesting and `:has()` are refused anyway. Something newer (`@container`, `@starting-style`, `color-mix()`...) may do nothing there: check it in OBS itself, and make sure the design still looks right without it (`@supports` can give it a rule of its own).
-- **The producer's choices win.** A piece the producer switched off stays off (that is why `!important` is refused), and the moments can be switched off: the design should look right without them.
+- **The producer's choices win.** A piece the producer switched off stays off (that is why `!important` and `allow-discrete` are refused, and the overlay stops any transition on a piece that is switched off), and the moments can be switched off: the design should look right without them.
 
 ### A complete example
 
