@@ -160,7 +160,7 @@ Right-click the tray icon, **Control panel password**, **Set a password…** (or
 
 ### Show and hide
 
-Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, Pokémon Tools (as the pictures of their cards, which is how they show; their names as text are a switch that is off), retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the benched Pokémon** are off until you switch them on.
+Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, Pokémon Tools (as the pictures of their cards, which is how they show; their names as text are a switch that is off), retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. **Design animations (damage, knock outs, prizes...)**, under *Announcements*, is for a design whose style sheet animates what happens in the match. It is on to begin with; switched off, those animations do not play and the rest of the design stays as it is. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the benched Pokémon** are off until you switch them on.
 
 The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out, pause): each can show a **banner**, a **full-screen effect**, or both, and you set how long they stay (1 to 30 seconds). The **All** column and the **All moments** row switch whole rows and columns at once. A new announcement replaces the one still showing; the pause banner stays until you resume.
 
@@ -174,7 +174,7 @@ Settings, **Sounds**. Sounds play from the overlay, so OBS picks them up as brow
 
 ### The look
 
-The **Look** tab changes colors, pictures, fonts and the position of everything. You can install a design made by an artist (a `.oto` file: drop it on the control panel or double-click it) or make your own: see the [design guide](DESIGNING.md).
+The **Look** tab changes colors, pictures, fonts and the position of everything. You can install a design made by an artist (a `.oto` file: drop it on the control panel or double-click it) or make your own: see the [design guide](DESIGNING.md). A design can also bring a style sheet that restyles the overlay and animates the moments of a match; the install dialog says so when it has one.
 
 ---
 
