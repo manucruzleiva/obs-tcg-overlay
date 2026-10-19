@@ -63,6 +63,11 @@ describe('designs and packages through the server', () => {
       const bad = await call('PUT', '/api/themes/Store%20League', { colors: { '--accent': 'red; background: url(x)' } });
       assert.equal(bad.status, 400);
       assert.match(bad.json.error, /Invalid value for --accent/);
+      for (const value of ['url(https://tracker.example/x.png)', 'image-set("https://tracker.example/x.png" 1x)']) {
+        const web = await call('PUT', '/api/themes/Store%20League', { colors: { '--bg-panel': value } });
+        assert.equal(web.status, 400, 'a color cannot make the overlay fetch something');
+        assert.match(web.json.error, /^Invalid value for --bg-panel: /);
+      }
       assert.equal((await call('PUT', '/api/themes/!!!', {})).status, 400);
       assert.equal((await call('PUT', '/api/themes/Store%20League', 'text')).status, 400);
     });

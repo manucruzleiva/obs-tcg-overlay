@@ -4,7 +4,8 @@
  * shows the same complaint while someone is typing). Loaded in the browser as OTO_THEME_RULES.
  *
  * Colors: the CSS values of a design's colors and shapes (unknown names are ignored; a value that could
- * carry anything but a color or a length is refused).
+ * carry anything but a color or a length is refused, and so is one that could point at a picture or a web address: each value
+ * is read the way the style sheet of a design is, by public/js/theme-css.js, which must be loaded first in the browser).
  * Layout: where each piece of the overlay is moved to and how big it is.
  *   { "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } }
  * Crop: which part of the card picture shows for the Active Pokémon, the bench and the Stadium, as fractions of the card (the picture of
@@ -20,9 +21,9 @@
  *   [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./theme-options'));
-  else root.OTO_THEME_RULES = factory(root.OTO_THEME);
-}(typeof self !== 'undefined' ? self : this, function (THEME) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./theme-options'), require('./theme-css'));
+  else root.OTO_THEME_RULES = factory(root.OTO_THEME, root.OTO_THEME_CSS);
+}(typeof self !== 'undefined' ? self : this, function (THEME, CSS) {
   const { COLOR_KEYS, BLOCK_KEYS, LAYOUT_LIMITS, CROP_KEYS, CROP_MIN_SIZE, CARD_ASPECT, ENERGY_CIRCLE, CROP_DEFAULT, STADIUM_CROP_DEFAULT, TILE_KEYS, tilePartsOf, TILE_DEFAULT, PRIZE_KEYS, PRIZE_DEFAULT, PRIZE_LAYOUT_KEYS, PRIZE_LAYOUT_DEFAULT, PRIZE_CROP_DEFAULT, ORIENTATION_KEYS, ORIENTATION_DEFAULT, SPACE_SHAPE_KEYS, SPACE_LIMITS, FONT_ROLE_KEYS, FONT_FAMILY_MAX } = THEME;
   const MAX_COLOR_LENGTH = 200;
 
@@ -34,6 +35,8 @@
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
   // The colors of a design. Always strict: one bad value is refused (the server drops them all when a file has one).
+  // A value is read as CSS: url() (or image-set() and the like, which take a web address as a string) is refused, since the overlay
+  // would fetch it; gradients are fine.
   function sanitizeColors(input) {
     const colors = {};
     for (const [key, value] of Object.entries(isObject(input) ? input : {})) {
@@ -41,7 +44,14 @@
       if (typeof value !== 'string' || value.length > MAX_COLOR_LENGTH || /[;{}<>\\]/.test(value)) {
         throw new RuleError(`Invalid value for ${key}`);
       }
-      if (value.trim()) colors[key] = value.trim();
+      if (!value.trim()) continue;
+      try {
+        CSS.checkValue(value);
+      } catch (error) {
+        if (error instanceof CSS.CssError) throw new RuleError(`Invalid value for ${key}: ${error.reason}`);
+        throw error;
+      }
+      colors[key] = value.trim();
     }
     return colors;
   }

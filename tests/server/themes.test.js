@@ -38,6 +38,14 @@ describe('what a design may hold', () => {
     }
   });
 
+  it('refuses values that would make the overlay load a picture, from the web or not, and keeps gradients', () => {
+    for (const bad of ['url(https://tracker.example/x.png)', 'url(//tracker.example/x)', 'URL(images/logoImage.png)', 'image-set("https://tracker.example/x.png" 1x)',
+      '-webkit-image-set(url(//tracker.example/a) 1x)', 'linear-gradient(red, blue), url(//tracker.example/b)', 'var(--x, url(//tracker.example/c))', 'red !important']) {
+      refuses(() => sanitizeColors({ '--bg-panel': bad }), /^Invalid value for --bg-panel: /);
+    }
+    assert.deepEqual(sanitizeColors({ '--bg-panel': 'linear-gradient(135deg, rgba(10,14,24,.9), transparent)' }), { '--bg-panel': 'linear-gradient(135deg, rgba(10,14,24,.9), transparent)' });
+  });
+
   it('needs a usable name, and tidies it', () => {
     refuses(() => cleanName(''), /at least one letter or digit/);
     refuses(() => cleanName('!!!'), /at least one letter or digit/);

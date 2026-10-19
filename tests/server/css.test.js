@@ -8,6 +8,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const CSS = require('../../public/js/theme-css');
+const RULES = require('../../public/js/theme-rules');
 const THEME = require('../../public/js/theme-options');
 const { CSS_SHEETS, CSS_ATTACKS } = require('../support/samples');
 
@@ -710,6 +711,15 @@ describe('the style sheet of a design', () => {
         assert.throws(() => checkValue(value), (error) => error instanceof CssError && pattern.test(error.message), value);
         assert.equal(checkValue(value, { strict: false }), null, value);
       }
+    });
+
+    it('closes the gap: a design\'s colors can no longer point at a web address', () => {
+      for (const value of ['url(https://evil.example/x.png)', 'image-set("https://evil.example/x.png" 1x)', '-webkit-image-set(url(//evil.example/a) 1x)', 'linear-gradient(red,blue), url(//evil.example/b)', 'url(data:image/png;base64,AAA)']) {
+        assert.throws(() => RULES.sanitizeColors({ '--bg-panel': value }), (error) => error instanceof RULES.RuleError && /^Invalid value for --bg-panel\b/.test(error.message), value);
+      }
+      assert.throws(() => RULES.sanitizeColors({ '--bg-panel': 'url(https://evil.example/x.png)' }), { message: 'Invalid value for --bg-panel: url() is not allowed here (a color or a size cannot point at a picture or a web address)' });
+      assert.deepEqual(RULES.sanitizeColors({ '--bg-panel': ' linear-gradient(180deg, rgba(0,0,0,.8), transparent) ', '--radius': '12px' }),
+        { '--bg-panel': 'linear-gradient(180deg, rgba(0,0,0,.8), transparent)', '--radius': '12px' });
     });
   });
 });
