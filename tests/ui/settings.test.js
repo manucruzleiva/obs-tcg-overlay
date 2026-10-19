@@ -396,6 +396,25 @@ describe('settings', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('saves a color typed a moment ago before the editor opens, so a save in the editor does not put the old one back', async () => {
+      await call('PUT', '/api/themes/Race', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Race' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Race")');
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      await page.locator('.image-row[data-role="styles"]').getByRole('button', { name: 'Edit the style sheet' }).click();
+      const editor = page.locator('.modal[aria-label="Design: Race"]');
+      await editor.waitFor();
+      await page.waitForFunction(() => window.oto.designEditor && window.oto.designEditor.tab === 'css');
+      assert.equal(await page.evaluate(() => window.oto.designEditor.model.draft.colors['--accent']), '#3344ff', 'the editor has the color just typed');
+      await editor.locator('.css-input').fill('.sb-name { letter-spacing: 2px; }');
+      await page.waitForFunction(() => window.oto.designEditor.model.dirty);
+      await editor.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.equal((await call('GET', '/api/themes/Race')).json.colors['--accent'], '#3344ff');
+      assert.deepEqual(page.problems, []);
+    });
+
     it('lists the design\'s sounds on the Sounds tab, and lets the producer\'s own sound win', async () => {
       await call('PUT', '/api/themes/Sound%20Check', {});
       await call('PUT', '/api/themes/Sound%20Check/sounds/damage', S.playableWav());

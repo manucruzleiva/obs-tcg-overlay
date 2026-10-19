@@ -522,6 +522,7 @@ function themesTab(app) {
 
   // The editor for a design opens over the settings (on one of its tabs, if `tab` says which); when it closes after saving, the design is read again
   const openEditor = async (designName, tab) => {
+    await save.flush(); // what was just typed goes up before the editor reads the design (its Save sends the colors it read)
     const editor = await openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
     if (editor && tab) editor.showTab(tab);
   };
