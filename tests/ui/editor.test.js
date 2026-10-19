@@ -405,6 +405,19 @@ describe('design editor', { skip }, () => {
     const input = () => page.locator('.code-input');
     const type = async (text) => { await input().fill(text); await wait(450); };
 
+    it('asks before closing when the text has a mistake (it is not in the design yet, but it is not saved either)', async () => {
+      await input().fill('{ "layout": ');
+      await wait(450);
+      assert.match(await page.locator('.code-status').textContent(), /The overlay keeps the last version that made sense/);
+      assert.match(await page.locator('.editor-status').textContent(), /^Unsaved changes/);
+      await editorModal('Code Test').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      const ask = page.locator('.modal[aria-label="Close without saving?"]');
+      await ask.waitFor();
+      await ask.getByRole('button', { name: 'Close without saving' }).click();
+      await editorModal('Code Test').waitFor({ state: 'detached' });
+      assert.deepEqual(page.problems, []);
+    });
+
     it('shows the design as text, with line numbers', async () => {
       const text = await input().inputValue();
       assert.deepEqual(JSON.parse(text), { author: '', description: '', colors: {}, layout: {}, crop: {}, tile: {} });
@@ -1630,6 +1643,56 @@ describe('design editor', { skip }, () => {
       await says(/^Applied\.$/);
       assert.equal(await input().getAttribute('aria-invalid'), null);
       await untilFrame(() => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === '3px');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is not thrown away without a question: text with a mistake, or typed just before Close, counts as a change that is not saved', async () => {
+      await openEditorFor('Sheet Unsaved');
+      await tab().click();
+      const close = () => editorModal('Sheet Unsaved').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      const ask = page.locator('.modal[aria-label="Close without saving?"]');
+      const editorStatus = () => page.locator('.editor-status').textContent();
+
+      // a rule with a mistake in it never reaches the draft, but it is not saved either
+      const mistake = '.scoreboard {\n  border-radius: 40px !important;\n  background: hotpink;\n}';
+      await input().fill(mistake);
+      await says(/!important is not allowed/);
+      assert.equal(await draftCss(), '');
+      assert.match(await editorStatus(), /^Unsaved changes/);
+      assert.equal(await page.getByRole('button', { name: 'Undo all changes' }).isDisabled(), false);
+      await close();
+      await ask.waitFor();
+      assert.match(await ask.locator('.confirm-text').textContent(), /style sheet has text with a mistake/);
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      await ask.waitFor({ state: 'detached' });
+      assert.equal(await input().inputValue(), mistake, 'the text is still there');
+
+      // "Undo all changes" takes it away, with what was said about it
+      await page.getByRole('button', { name: 'Undo all changes' }).click();
+      assert.equal(await input().inputValue(), '');
+      assert.equal(await status().textContent(), '');
+      assert.equal(await input().getAttribute('aria-invalid'), null);
+      assert.equal(await editorStatus(), 'Saved');
+
+      // what was typed a moment ago is read before the editor closes
+      await input().fill('.scoreboard { border-radius: 40px; }');
+      await close();
+      await ask.waitFor();
+      assert.equal(await draftCss(), '.scoreboard { border-radius: 40px; }');
+      await ask.getByRole('button', { name: 'Close without saving' }).click();
+      await editorModal('Sheet Unsaved').waitFor({ state: 'detached' });
+      await wait(500); // (nothing waits to be read after the editor has gone)
+      assert.equal((await api('GET', '/api/themes/Sheet%20Unsaved')).json.css, '');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is read before it is saved, even when Save comes right after the last key', async () => {
+      await openEditorFor('Sheet Quick');
+      await tab().click();
+      await input().fill(SPACED);
+      await page.evaluate(() => window.oto.designEditor.save());
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.equal((await api('GET', '/api/themes/Sheet%20Quick')).json.css, SPACED);
       assert.deepEqual(page.problems, []);
     });
 

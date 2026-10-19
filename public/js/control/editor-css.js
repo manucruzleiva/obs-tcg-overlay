@@ -35,21 +35,25 @@ const code = (text) => h('code', {}, text);
 
 export class CssPanel {
   // `canvas`: the EditorCanvas (it plays the moments). `assetUrl(ref)` is the address of a file of the design; `upload(key)` asks for a
-  // picture and puts it in the slot `key` ("css-<name>"); `removePicture(key)` takes it out.
-  constructor({ model, canvas, assetUrl, upload, removePicture }) {
+  // picture and puts it in the slot `key` ("css-<name>"); `removePicture(key)` takes it out. `onInput()` is told when the text in the
+  // box changes or is read (whether it is in the design is part of what is saved and what is not).
+  constructor({ model, canvas, assetUrl, upload, removePicture, onInput = () => {} }) {
     this.model = model;
     this.canvas = canvas;
     this.assetUrl = assetUrl;
     this.upload = upload;
     this.removePicture = removePicture;
+    this.onInput = onInput;
     this.timer = null;
     this.build();
     this.show();
     this.drawPictures();
-    // An undo, a redo or "Undo all changes" puts the style sheet of the draft in the box. A picture that came or went may be one the
-    // style sheet names, so what it says about the style sheet is said again.
+    // An undo, a redo or "Undo all changes" puts the style sheet of the draft in the box (and takes away text with a mistake, which
+    // the draft never had). A picture that came or went may be one the style sheet names, so what it says about the style sheet is
+    // said again.
     model.on((change) => {
-      if (change.source !== 'css' && this.model.draft.css !== this.shown) this.show();
+      const back = change.kind === 'history' || change.source === 'revert';
+      if (change.source !== 'css' && (this.model.draft.css !== this.shown || (back && this.unapplied))) this.show();
       if (change.kind === 'files' || change.kind === 'saved') {
         this.drawPictures();
         // (unless a mistake is being typed: the status says that until it is fixed)
@@ -65,7 +69,12 @@ export class CssPanel {
     });
     this.gutter = h('pre', { class: 'code-gutter', 'aria-hidden': 'true' });
     this.status = h('p', { class: 'code-status css-status', id: 'css-status', role: 'status' });
-    this.input.addEventListener('input', () => { this.numbers(); clearTimeout(this.timer); this.timer = setTimeout(() => this.apply(), 300); });
+    this.input.addEventListener('input', () => {
+      this.numbers();
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => { this.timer = null; this.apply(); }, 300);
+      this.onInput();
+    });
     this.input.addEventListener('scroll', () => { this.gutter.scrollTop = this.input.scrollTop; });
     this.input.addEventListener('keydown', (event) => this.onKeyDown(event));
 
@@ -131,9 +140,33 @@ export class CssPanel {
     this.gutter.textContent = Array.from({ length: count }, (_, index) => index + 1).join('\n');
   }
 
+  // Whether the box holds text the draft does not have: keys pressed a moment ago (`waiting` to be read), or a mistake. It is not saved.
+  get unapplied() {
+    return this.input.value !== this.shown;
+  }
+
+  get waiting() {
+    return this.timer !== null;
+  }
+
+  // Read what was typed and is still waiting to be read (Save and Close do this first, so the last key presses are not lost)
+  flush() {
+    if (this.timer === null) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.apply();
+  }
+
+  // The editor is closing: nothing is read after that
+  dispose() {
+    clearTimeout(this.timer);
+    this.timer = null;
+  }
+
   // Put the style sheet of the draft in the box (an undo, a revert)
   show() {
     clearTimeout(this.timer);
+    this.timer = null;
     this.shown = this.model.draft.css;
     this.input.value = this.shown;
     this.input.removeAttribute('aria-invalid');
@@ -180,12 +213,14 @@ export class CssPanel {
       this.input.setAttribute('aria-invalid', 'true');
       // (the complaint ends with its own full stop)
       this.say(`${result.error} The overlay keeps the last version that made sense.`, true);
+      this.onInput();
       return;
     }
     this.input.removeAttribute('aria-invalid');
     this.tell(result);
     this.shown = text;
     this.model.update({ css: text }, { source: 'css' });
+    this.onInput();
   }
 
   // ---- the pictures

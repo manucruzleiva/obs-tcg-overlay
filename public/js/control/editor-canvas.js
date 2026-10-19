@@ -104,6 +104,7 @@ export class EditorCanvas {
   }
 
   destroy() {
+    this.ready = false; // (the frame is gone: nothing is sent to it any more)
     window.removeEventListener('message', this.onMessage);
     window.removeEventListener('keyup', this.keyUp);
     this.resizer.disconnect();
