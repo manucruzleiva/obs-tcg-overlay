@@ -664,13 +664,14 @@
       const benchMons = [];
       for (let i = 0; i < MAX_BENCH; i++) {
         const mon = createMon(true);
+        mon.root.dataset.slot = String(i); // its place on the bench, 0 to 7 (as the game counts them), for a design to place each one
         benchMons.push(mon);
         bench.appendChild(mon.root);
       }
 
       [turnTag, top, active, bench].forEach((node) => root.appendChild(node));
       this.stage.appendChild(root);
-      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, activeMon, benchMons };
+      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, activeMon, bench, benchMons };
     }
 
     buildCenter() {
@@ -872,17 +873,28 @@
         if (PER_TURN.indexOf(key) !== -1) refs[key].root.classList.toggle('off-turn', !trainer.isTurn);
       });
 
-      // locks
+      // locks (data-lock says which, whatever the text: "item" or "evolution", for a design to draw each its own way)
       refs.locks.textContent = '';
-      if (trainer.locks.itemLock) refs.locks.appendChild(el('span', 'lock', 'ITEM LOCK'));
-      if (trainer.locks.evoLock) refs.locks.appendChild(el('span', 'lock', 'EVOLUTION LOCK'));
+      const lock = (kind, text) => {
+        const chip = el('span', 'lock', text);
+        chip.dataset.lock = kind;
+        refs.locks.appendChild(chip);
+      };
+      if (trainer.locks.itemLock) lock('item', 'ITEM LOCK');
+      if (trainer.locks.evoLock) lock('evolution', 'EVOLUTION LOCK');
       refs.locks.hidden = !(trainer.locks.itemLock || trainer.locks.evoLock);
 
-      // Pokémon
+      // Pokémon. The bench says how many places it has (data-size, 2 to 8) and how many have a Pokémon (data-count), so a design can lay
+      // out a bigger bench another way.
       renderMon(refs.activeMon, trainer.active);
+      let benched = 0;
       refs.benchMons.forEach((mon, index) => {
-        renderMon(mon, index < trainer.benchSize ? trainer.bench[index] : null);
+        const pokemon = index < trainer.benchSize ? trainer.bench[index] : null;
+        if (hasPokemon(pokemon)) benched++;
+        renderMon(mon, pokemon);
       });
+      refs.bench.dataset.size = String(trainer.benchSize);
+      refs.bench.dataset.count = String(benched);
     }
 
     renderCenter(state) {

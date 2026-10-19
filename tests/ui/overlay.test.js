@@ -273,6 +273,44 @@ describe('overlay', { skip }, () => {
       await page.waitForFunction(() => !document.querySelector('#stage.bench-row'));
       assert.deepEqual([...new Set((await looks('a')).map((mon) => Math.round(mon.box.left)))], [36]);
     });
+
+    it('says how many places it has and how many hold a Pokémon, and each Pokémon its place, so a design can lay out a bigger bench', async () => {
+      const hooks = (side) => page.$eval(`.trainer-${side} .bench`, (node) => ({
+        size: node.dataset.size, count: node.dataset.count, slots: [...node.querySelectorAll('.mon.mini')].map((mon) => mon.dataset.slot).join(' ')
+      }));
+      const counted = (side, size, count) => page.waitForFunction(([which, wanted]) => {
+        const bench = document.querySelector(`.trainer-${which} .bench`);
+        return `${bench.dataset.size}/${bench.dataset.count}` === wanted;
+      }, [side, `${size}/${count}`]);
+      assert.deepEqual(await hooks('a'), { size: '5', count: '0', slots: '0 1 2 3 4 5 6 7' }, 'the places are counted as the game counts them, from 0');
+      await fill('trainerA', 6, 8);
+      await counted('a', 8, 6);
+      assert.equal(await page.$eval('.trainer-a .bench .mon.mini[data-slot="5"] .mon-name', (node) => node.textContent), 'Gengar', 'the sixth place is 5');
+      assert.deepEqual(await hooks('b'), { size: '5', count: '0', slots: '0 1 2 3 4 5 6 7' }, 'each trainer has its own');
+
+      // a Pokémon that leaves the bench, and a bench that is made smaller (the Pokémon of the places that go are gone with them)
+      await send('action:trainerA', { action: 'clearSlot', slot: 1 });
+      await counted('a', 8, 5);
+      await send('action:trainerA', { action: 'benchSizeReset' });
+      await counted('a', 5, 4);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the locks', () => {
+    const locks = (side) => page.$$eval(`.trainer-${side} .lock`, (nodes) => nodes.map((node) => `${node.dataset.lock}:${node.textContent}`));
+
+    it('say which lock each is, whatever its text, so a design can draw each its own way', async () => {
+      assert.equal(await page.locator('.trainer-a .locks').isHidden(), true);
+      await send('action:trainerA', { action: 'toggleItemLock' });
+      await send('action:trainerA', { action: 'toggleEvoLock' });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock').length === 2);
+      assert.deepEqual(await locks('a'), ['item:ITEM LOCK', 'evolution:EVOLUTION LOCK']);
+      assert.deepEqual(await locks('b'), []);
+      await send('action:trainerA', { action: 'toggleItemLock' });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock').length === 1);
+      assert.deepEqual(await locks('a'), ['evolution:EVOLUTION LOCK']);
+    });
   });
 
   describe('what is used each turn', () => {

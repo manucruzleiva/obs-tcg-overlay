@@ -176,6 +176,17 @@ The `#stage` in front also gives your rule more weight than the built-in rule fo
 
 The stage itself carries `portrait` (a tall screen), `bench-row` (the bench in a row) and `is-paused` (the game is paused): write `#stage.is-paused .scoreboard`. Other pieces have classes for their state too, for example `.trainer.is-turn` (the trainer whose turn it is), `.prize.taken`, `.token.used`, and `.hp.warn` and `.hp.low` (an HP bar at half or less, at a quarter or less). To find the pieces and their classes, open the overlay (`http://localhost:6767/overlay`) in a browser and look with its developer tools, or read [`public/css/overlay.css`](../public/css/overlay.css).
 
+Some pieces also say what they are in an attribute, whatever their text says:
+
+| Attribute | On | Says |
+|-----------|----|------|
+| `data-lock` | `.lock` | Which lock it is: `item` (Item lock) or `evolution` (Evolution lock). Draw each its own way: `.lock[data-lock="item"]` |
+| `data-size` | `.bench` | How many places the bench has, from 2 to 8 (5 unless a card made it bigger or smaller) |
+| `data-count` | `.bench` | How many of those places have a Pokémon in them, from 0 |
+| `data-slot` | `.mon` of the bench | Its place on the bench, from 0 (the first) to 7, as the game counts them: `.bench .mon[data-slot="5"]` is the sixth place |
+
+So a bigger bench can have a layout of its own, for example smaller tiles when it has 6 places or more: `.bench[data-size="6"] .mon.mini, .bench[data-size="7"] .mon.mini, .bench[data-size="8"] .mon.mini { height: 72px; }`.
+
 ### What is not allowed, and why
 
 | Not allowed | Why |
