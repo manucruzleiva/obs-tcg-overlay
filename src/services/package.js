@@ -1,20 +1,22 @@
 /**
- * .oto packages: a design (colors, pictures, font and sounds) and the control settings (what the
+ * .oto packages: a design (colors, pictures, font, sounds and style sheet) and the control settings (what the
  * overlay shows, how long announcements stay, which sounds play) in one compressed file that can be
  * shared and installed in a click.
  *
  * A .oto file is a ZIP under another name:
  *
- *   manifest.json     what it is: { format: "oto", version: 1, name, app, created, contents }
- *   design.json       the colors, author and description of the design (optional)
- *   images/<slot>.png pictures: logoImage, backgroundImage, trainerAAvatar, ... (optional)
- *   fonts/font.woff2  the font (optional)
- *   sounds/<cue>.mp3  sounds for cues such as damage, ko, turn (optional)
- *   controls.json     { version: 1, settings: { display, sound, toastSeconds, ... } } (optional)
+ *   manifest.json       what it is: { format: "oto", version: 1, name, app, created, contents }
+ *   design.json         the colors, author and description of the design (optional)
+ *   images/<slot>.png   pictures: logoImage, backgroundImage, trainerAAvatar, ... (optional)
+ *   images/css-<name>.png pictures for the style sheet, with names of the designer's choosing (optional, 24 at most)
+ *   fonts/font.woff2    the font (optional)
+ *   sounds/<cue>.mp3    sounds for cues such as damage, ko, turn (optional)
+ *   styles.css          the design's style sheet, to restyle and animate the overlay (optional)
+ *   controls.json       { version: 1, settings: { display, sound, toastSeconds, ... } } (optional)
  *
- * Pictures, font and sounds are found by their names, so a package can be made by zipping a folder and
- * renaming it. Everything in a package is checked on the way in: it is only ever data, never code,
- * and nothing it names can reach outside of OTO's own folders.
+ * Pictures, font, sounds and the style sheet are found by their names, so a package can be made by zipping a
+ * folder and renaming it. Everything in a package is checked on the way in: it is only ever data and a checked
+ * style sheet, never scripts or web addresses, and nothing it names can reach outside of OTO's own folders.
  */
 
 const { createZip, readZip, ZipError, MB } = require('./zip');
@@ -23,7 +25,7 @@ const { ThemeError, cleanText, cleanName, folderName, sanitizeLayout, sanitizeCr
 const { MAX_SOUND_BYTES } = require('./sounds');
 const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
-const { IMAGE_KEYS } = require('../../public/js/theme-options');
+const { IMAGE_KEYS, CSS_FILE, CSS_MAX_BYTES, CSS_IMAGE_KEY, CSS_IMAGE_MAX } = require('../../public/js/theme-options');
 
 const FORMAT = 'oto';
 const VERSION = 1;
@@ -106,6 +108,7 @@ function pack({ name, design = null, controls = null, app = '' }) {
 // The most a file of this name may hold (unknown files are read, bounded, and then ignored)
 function limitFor(name) {
   if (['manifest.json', 'design.json', 'controls.json'].includes(name)) return MB;
+  if (name === CSS_FILE) return CSS_MAX_BYTES;
   if (name.startsWith('images/')) return MAX_IMAGE_BYTES;
   if (name.startsWith('fonts/')) return MAX_IMAGE_BYTES;
   if (name.startsWith('sounds/')) return MAX_SOUND_BYTES;
@@ -187,12 +190,26 @@ function unpack(buffer, defaults = null) {
       images: {},
       font: null,
       fonts: {},
-      sounds: {}
+      sounds: {},
+      css: null
     };
     const claimed = rawDesign.images && typeof rawDesign.images === 'object' ? rawDesign.images : {};
     for (const key of IMAGE_KEYS) {
       const data = findFile(files, 'images', key, IMAGE_EXTENSIONS, claimed[key]);
       if (data) design.images[key] = data;
+    }
+    // the pictures for the style sheet: images/css-<name>.<ext>, by the name each has (the first 24, in order of name; the others are not used)
+    const cssImages = [];
+    for (const entry of [...files.keys()].sort()) {
+      const match = /^images\/([^/]+)\.([^./]+)$/.exec(entry);
+      if (!match || !CSS_IMAGE_KEY.test(match[1]) || !IMAGE_EXTENSIONS.includes(match[2]) || cssImages.includes(match[1])) continue;
+      if (cssImages.length < CSS_IMAGE_MAX) cssImages.push(match[1]);
+    }
+    for (const key of cssImages) design.images[key] = findFile(files, 'images', key, IMAGE_EXTENSIONS, claimed[key]);
+    // the style sheet, next to design.json
+    if (files.has(CSS_FILE)) {
+      design.css = files.get(CSS_FILE);
+      used.add(CSS_FILE);
     }
     design.font = findFile(files, 'fonts', 'font', FONT_EXTENSIONS, rawDesign.font);
     const claimedFonts = rawDesign.fonts && typeof rawDesign.fonts === 'object' ? rawDesign.fonts : {};
@@ -211,7 +228,7 @@ function unpack(buffer, defaults = null) {
       if (!/^(images|fonts|sounds)\/[^/]+$/.test(entry)) continue;
       const [folder, file] = entry.split('/');
       const base = file.slice(0, file.lastIndexOf('.'));
-      const wanted = folder === 'images' ? IMAGE_KEYS.includes(base) : folder === 'fonts' ? base === 'font' || FONT_ROLE_KEYS.includes(base) : SOUND.KEYS.includes(base);
+      const wanted = folder === 'images' ? IMAGE_KEYS.includes(base) || cssImages.includes(base) : folder === 'fonts' ? base === 'font' || FONT_ROLE_KEYS.includes(base) : SOUND.KEYS.includes(base);
       if (wanted) used.add(entry);
     }
   }
@@ -310,7 +327,9 @@ class PackageService {
       design: design && {
         name: design.name,
         exists: Boolean(this.themes.get(design.name)),
-        images: Object.keys(design.images),
+        images: Object.keys(design.images).filter((key) => !CSS_IMAGE_KEY.test(key)),
+        css: design.css ? { bytes: design.css.length } : null,
+        cssImages: Object.keys(design.images).filter((key) => CSS_IMAGE_KEY.test(key)).length,
         font: Boolean(design.font),
         fonts: Object.keys(design.fonts || {}),
         fontFamilies: Object.keys(sanitizeFontFamilies(design.fontFamilies)),

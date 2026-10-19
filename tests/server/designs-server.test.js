@@ -63,6 +63,11 @@ describe('designs and packages through the server', () => {
       const bad = await call('PUT', '/api/themes/Store%20League', { colors: { '--accent': 'red; background: url(x)' } });
       assert.equal(bad.status, 400);
       assert.match(bad.json.error, /Invalid value for --accent/);
+      for (const value of ['url(https://tracker.example/x.png)', 'image-set("https://tracker.example/x.png" 1x)']) {
+        const web = await call('PUT', '/api/themes/Store%20League', { colors: { '--bg-panel': value } });
+        assert.equal(web.status, 400, 'a color cannot make the overlay fetch something');
+        assert.match(web.json.error, /^Invalid value for --bg-panel: /);
+      }
       assert.equal((await call('PUT', '/api/themes/!!!', {})).status, 400);
       assert.equal((await call('PUT', '/api/themes/Store%20League', 'text')).status, 400);
     });
@@ -363,6 +368,114 @@ describe('designs and packages through the server', () => {
     });
   });
 
+  describe('the style sheet of a design', () => {
+    const CSS = '/* Styled */\n.logo {\n  background: url(images/css-glow.png) center / contain;\n  animation: glow 2s infinite;\n}\n@keyframes glow { 50% { opacity: .5 } }\n';
+
+    it('is saved with the design, as it was written, and comes back to the editor with it', async () => {
+      const saved = await call('PUT', '/api/themes/Styled', { colors: { '--accent': '#123456' }, css: CSS });
+      assert.equal(saved.status, 200);
+      assert.equal(saved.json.css, CSS, 'the answer has the text, so the editor knows what was saved');
+      assert.equal(saved.json.styles, 'styles.css');
+      const read = (await call('GET', '/api/themes/Styled')).json;
+      assert.equal(read.css, CSS);
+      assert.deepEqual(read.colors, { '--accent': '#123456' });
+      assert.equal((await call('GET', '/api/themes/Store%20League')).json.css, '', 'a design without one has an empty one');
+      const other = await call('PUT', '/api/themes/Styled', { author: 'Mina' });
+      assert.equal(other.json.css, CSS, 'saving something else leaves it as it is');
+    });
+
+    it('is refused with the line of what is not allowed in it, and the one saved before is kept', async () => {
+      for (const [css, message] of [
+        ['.a { color: red }\n\n@import "https://tracker.example/x.css";', 'Line 3: @import is not allowed (a design can only use the files it carries).'],
+        ['.a {\n  background: url(https://tracker.example/a.png);\n}', 'Line 2: a web address is not allowed in url() (a design can only use its own pictures and fonts, as url(images/css-name.png)).'],
+        ['.a { display: block !important }', 'Line 1: !important is not allowed (it could show what the producer switched off).'],
+        ['body { background: #000 }', 'Line 1: rules for body are not allowed (the overlay\'s page must stay see-through).']
+      ]) {
+        const bad = await call('PUT', '/api/themes/Styled', { css });
+        assert.equal(bad.status, 400);
+        assert.equal(bad.json.error, message);
+      }
+      assert.equal((await call('PUT', '/api/themes/Styled', { css: 5 })).status, 400);
+      assert.equal((await call('GET', '/api/themes/Styled')).json.css, CSS);
+    });
+
+    it('takes pictures for it as files, with names of the designer\'s choosing, and answers with the design for the editor', async () => {
+      const saved = await call('PUT', '/api/themes/Styled/images/css-glow', S.PNG);
+      assert.equal(saved.status, 200);
+      assert.equal(saved.json.images['css-glow'], 'images/css-glow.png');
+      assert.equal(saved.json.css, CSS);
+      await call('PUT', '/api/themes/Styled/images/css-spare', S.JPG);
+      const removed = await call('DELETE', '/api/themes/Styled/images/css-spare');
+      assert.deepEqual(Object.keys(removed.json.images), ['css-glow']);
+      assert.equal(removed.json.css, CSS);
+      for (const key of ['css-Glow', 'css-', 'css-a.png', 'css_glow']) {
+        const bad = await call('PUT', `/api/themes/Styled/images/${encodeURIComponent(key)}`, S.PNG);
+        assert.equal(bad.status, 400, key);
+        assert.match(bad.json.error, /no such picture slot/);
+      }
+      const preview = await call('GET', '/api/themes/Styled/assets/images/css-glow.png');
+      assert.equal(preview.status, 200, 'the editor can show it');
+      assert.equal(preview.headers.get('content-type'), 'image/png');
+    });
+
+    it('is handed to the overlay inside the design it wears, checked, with the addresses of the design\'s own files, and the screens are told when it changes', async () => {
+      await call('POST', '/api/theme/active', { name: 'Styled' });
+      const theme = (await call('GET', '/api/theme')).json.theme;
+      assert.match(theme.css, /^#stage \.logo\{background:url\("\/api\/theme\/assets\/images\/css-glow\.png\?v=\d+"\) center \/ contain;animation:glow 2s infinite\}\n@keyframes glow\{\n50%\{opacity:\.5\}\n\}$/);
+      const address = /url\("([^"]+)"\)/.exec(theme.css)[1];
+      assert.equal(address, theme.images['css-glow']);
+      const picture = await call('GET', address);
+      assert.equal(picture.status, 200, 'the overlay can load it without signing in');
+      assert.deepEqual(picture.buffer, S.PNG);
+
+      const told = overlay.expect('theme:changed');
+      await call('PUT', '/api/themes/Styled', { css: '.logo { opacity: .5 }' });
+      await told;
+      assert.equal((await call('GET', '/api/theme')).json.theme.css, '#stage .logo{opacity:.5}');
+      const emptied = overlay.expect('theme:changed');
+      await call('PUT', '/api/themes/Styled', { css: '' });
+      await emptied;
+      assert.equal('css' in (await call('GET', '/api/theme')).json.theme, false);
+      await call('PUT', '/api/themes/Styled', { css: CSS });
+    });
+
+    it('is never served as a file, to the overlay or to anyone', async () => {
+      for (const route of ['/api/theme/assets/styles.css', '/api/theme/assets/x/styles.css', '/api/theme/assets/images/styles.css', '/api/themes/Styled/assets/styles.css', '/api/themes/Styled/assets/x/styles.css']) {
+        assert.equal((await call('GET', route)).status, 404, route);
+      }
+    });
+
+    it('goes in a package with the pictures for it, and comes out of one as it went in', async () => {
+      const file = await call('GET', '/api/packages/export?design=Styled');
+      const entries = readZip(file.buffer);
+      assert.deepEqual([...entries.keys()].sort(), ['design.json', 'images/css-glow.png', 'manifest.json', 'styles.css']);
+      assert.equal(entries.get('styles.css').toString('utf8'), CSS);
+      const info = (await call('POST', '/api/packages/inspect', file.buffer)).json;
+      assert.deepEqual(info.design.css, { bytes: Buffer.byteLength(CSS) });
+      assert.equal(info.design.cssImages, 1);
+      const installed = await call('POST', '/api/packages/install?controls=0&activate=0', file.buffer);
+      assert.equal(installed.status, 200);
+      const copy = (await call('GET', `/api/themes/${encodeURIComponent(installed.json.design.name)}`)).json;
+      assert.equal(copy.css, CSS);
+      assert.equal(copy.images['css-glow'], 'images/css-glow.png');
+      await call('DELETE', `/api/themes/${encodeURIComponent(installed.json.design.name)}`);
+    });
+
+    it('makes a package with a bad style sheet install nothing at all', async () => {
+      const before = (await call('GET', '/api/themes')).json.names;
+      const bad = createZip([
+        { name: 'design.json', data: Buffer.from('{"name":"Evil CSS"}') }, { name: 'images/logoImage.png', data: S.PNG },
+        { name: 'styles.css', data: Buffer.from('.t { background: url(//tracker.example/pixel) }') },
+        { name: 'controls.json', data: Buffer.from('{"settings":{"toastSeconds":31}}') }
+      ]);
+      const answer = await call('POST', '/api/packages/install', bad);
+      assert.equal(answer.status, 400);
+      assert.match(answer.json.error, /^Line 1: a web address is not allowed in url\(\)/);
+      assert.deepEqual((await call('GET', '/api/themes')).json.names, before);
+      assert.notEqual((await call('GET', '/api/state')).json.settings.toastSeconds, 31);
+    });
+  });
+
   describe('designs from an earlier version', () => {
     it('accepts a design in the old format (one JSON with the pictures inside)', async () => {
       const legacy = { name: 'Old League', colors: { '--accent': '#ff0000' }, images: { logoImage: `data:image/png;base64,${S.PNG.toString('base64')}`, backgroundImage: 'https://example.com/b.jpg' } };
@@ -404,8 +517,9 @@ describe('designs and packages through the server', () => {
       try {
         const get = (route, init) => fetch(`${locked.base}${route}`, init);
         for (const [method, route] of [
-          ['GET', '/api/themes'], ['PUT', '/api/themes/x'], ['POST', '/api/themes'], ['DELETE', '/api/themes/x'], ['POST', '/api/theme/active'],
-          ['PUT', '/api/themes/x/images/logoImage'], ['PUT', '/api/themes/x/font'], ['PUT', '/api/themes/x/sounds/damage'], ['GET', '/api/themes/x/assets/images/logoImage.png'],
+          ['GET', '/api/themes'], ['GET', '/api/themes/x'], ['PUT', '/api/themes/x'], ['POST', '/api/themes'], ['DELETE', '/api/themes/x'], ['POST', '/api/theme/active'],
+          ['PUT', '/api/themes/x/images/logoImage'], ['PUT', '/api/themes/x/images/css-glow'], ['DELETE', '/api/themes/x/images/css-glow'],
+          ['PUT', '/api/themes/x/font'], ['PUT', '/api/themes/x/sounds/damage'], ['GET', '/api/themes/x/assets/images/logoImage.png'],
           ['GET', '/api/packages/export?controls=1'], ['POST', '/api/packages/inspect'], ['POST', '/api/packages/install'], ['PUT', '/api/sounds/damage']
         ]) {
           assert.equal((await get(route, { method })).status, 401, `${method} ${route}`);

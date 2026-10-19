@@ -239,6 +239,7 @@ describe('serving the assets', () => {
     assert.equal(response.headers.get('content-type'), 'font/woff2');
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(path.join(ASSETS, 'fonts', 'TwemojiCountryFlags.woff2')));
     assert.match(response.headers.get('content-security-policy'), /font-src 'self'/, 'the page is allowed to load it');
+    assert.doesNotMatch(response.headers.get('content-security-policy'), /font-src[^;]*(https:|data:)/, 'and no font from anywhere else');
   });
 
   it('answers 204 only for the icons it knows by name: any other file that is not there is a 404', async () => {

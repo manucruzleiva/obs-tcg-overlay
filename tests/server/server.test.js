@@ -1002,7 +1002,7 @@ describe('server', () => {
     const assets = [
       '/js/control/app.js', '/js/control/library.js', '/js/control/settings.js', '/js/overlay.js', '/js/login.js', '/js/sfx.js',
       '/css/control.css', '/css/overlay.css', '/css/tokens.css', '/css/login.css',
-      '/js/display-options.js', '/js/game-data.js', '/js/countries.js', '/js/brand.js', '/js/sound-options.js', '/js/theme-options.js', '/socket.io/socket.io.js'
+      '/js/display-options.js', '/js/game-data.js', '/js/countries.js', '/js/brand.js', '/js/sound-options.js', '/js/theme-options.js', '/js/theme-css.js', '/js/theme-rules.js', '/socket.io/socket.io.js'
     ];
     for (const asset of assets) {
       assert.equal((await fetch(`${server.base}${asset}`)).status, 200, asset);
@@ -1016,6 +1016,8 @@ describe('server', () => {
     const csp = res.headers.get('content-security-policy');
     assert.match(csp, /default-src 'self'/);
     assert.doesNotMatch(csp, /upgrade-insecure-requests/, 'the app is served over plain http on a local network');
+    assert.match(csp, /(^|;)font-src 'self'(;|$)/, 'fonts only come from OTO itself: not from the web, and not from data: addresses');
+    assert.match(csp, /(^|;)img-src 'self' data: https:(;|$)/, 'card pictures can come from the web');
 
     assert.equal((await fetch(`${server.base}/api/cards/search`)).status, 400);
     assert.equal((await fetch(`${server.base}/api/evolution/search`)).status, 400);
