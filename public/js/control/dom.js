@@ -129,7 +129,9 @@ const PATHS = {
   // a list: three lines, each with its bullet
   list: 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01',
   tool: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6 2.4-2.4Z',
-  move: 'M5 12h14M13 6l6 6-6 6'
+  move: 'M5 12h14M13 6l6 6-6 6',
+  // two angle brackets: a style sheet, code
+  code: 'm8 7-5 5 5 5M16 7l5 5-5 5'
 };
 
 export function icon(name, size = 18) {
