@@ -2474,6 +2474,27 @@ describe('overlay', { skip }, () => {
         assert.deepEqual(page.problems, []);
       });
 
+      it('mark the stage when the knock out comes in one change with the Pokémon that takes the Active spot (a draft), and the tile plays the newcomer', async () => {
+        await animated();
+        const started = producer.expect('draft:state', (draft) => draft.active);
+        producer.emit('draft:start');
+        await started;
+        try {
+          await producer.draftAct('action:trainerA', { action: 'knockOut', slot: -1 });
+          await producer.draftAct('action:trainerA', { action: 'swapWithActive', slot: 0 });
+          producer.emit('draft:send', {});
+          await played(tile, 'moment-enter');
+          await played('#stage', 'moment-ko-a');
+          await played('.trainer-b .prize:nth-child(6)', 'moment-taken');
+          assert.deepEqual(await there(tile), ['moment-enter'], 'the tile plays the newcomer, not the knock out');
+          assert.equal(await page.locator(`${tile} .mon-name`).textContent(), 'Eevee');
+        } finally {
+          const closed = producer.expect('draft:state', (draft) => !draft.active, 2000).catch(() => null);
+          producer.emit('draft:discard');
+          await closed;
+        }
+      });
+
       it('let a Pokémon that comes into the slot take the tile at once', async () => {
         await animated();
         await send('action:trainerA', { action: 'knockOut', slot: -1 });

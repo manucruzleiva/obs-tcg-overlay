@@ -1092,10 +1092,32 @@
         }
       }
 
+      // the Pokémon that left the table: in none of the slots now (an evolution, or going back, in its own slot did not leave it)
+      const stays = is.filter(hasPokemon).map(occupantOf);
+      const gone = was.map((old, index) => {
+        if (!hasPokemon(old)) return false;
+        const at = stays.indexOf(occupantOf(old));
+        if (at !== -1) {
+          stays.splice(at, 1);
+          return false;
+        }
+        const now = is[index];
+        const stages = now && Array.isArray(now.stages) ? now.stages : [];
+        const oldStages = Array.isArray(old.stages) ? old.stages : [];
+        return !(hasPokemon(now) && ((stages.length === oldStages.length + 1 && sameCard(stages[stages.length - 1], old))
+          || (stages.length === oldStages.length - 1 && sameCard(oldStages[oldStages.length - 1], now))));
+      });
+
       tiles.forEach((mon, index) => {
         const old = was[index];
         const pokemon = is[index];
         const node = mon.root;
+        // A Pokémon knocked out in the same change as another one took its tile (a draft with the knock out and the next Active
+        // Pokémon): the stage says it was knocked out, and the tile plays the newcomer (it shows that one now)
+        if (gone[index] && prizesTaken && hasPokemon(pokemon) && SIDE_CLASS[side] && !this.switchedOff(node)) {
+          const name = `moment-ko-${SIDE_CLASS[side]}`;
+          if (!list.some((moment) => moment.node === this.stage && moment.name === name)) list.push({ node: this.stage, name });
+        }
         if (!hasPokemon(pokemon)) {
           if (!hasPokemon(old)) return;
           const moved = arrivals.indexOf(occupantOf(old));
