@@ -1,6 +1,6 @@
 /**
  * What the design editor is editing: a draft of one design (its author, description, colors, layout,
- * crop, tile, the picture on the prize cards, its screen and its reserved spaces), the design as last saved, and an undo history. The canvas, the code view and the crop selector
+ * crop, tile, the picture on the prize cards, its screen, its reserved spaces and its style sheet), the design as last saved, and an undo history. The canvas, the code view, the style sheet and the crop selector
  * all read and change this one thing, and tell each other through it.
  */
 
@@ -32,7 +32,8 @@ function editable(design) {
     prizeLayout: design.prizeLayout || '', // how the six are laid out; empty for the usual row
     orientation: design.orientation || '', // the screen; empty for the usual wide one
     spaces: clone(design.spaces || []), // the places kept clear for a camera feed or the like
-    fontFamilies: clone(design.fontFamilies || {}) // the fonts to use for each group of text
+    fontFamilies: clone(design.fontFamilies || {}), // the fonts to use for each group of text
+    css: typeof design.css === 'string' ? design.css : '' // the style sheet (styles.css), as it was written; empty for none
   };
 }
 
@@ -286,6 +287,26 @@ export class EditorModel {
     return ref ? ref.split('/').pop() : null;
   }
 
+  // The files the design holds, as they are named in it ("images/logoImage.png", "fonts/font.woff2"...)
+  fileRefs() {
+    return [...Object.values(this.files.images), this.files.font, ...Object.values(this.files.fonts)].filter(Boolean);
+  }
+
+  // The style sheet of the draft as the overlay gets it: what is not allowed is left out (it may be half typed), and each of the design's
+  // own pictures and fonts is at `designAssetUrl` (one it does not have is left out, as on the overlay). Kept until the text or the files
+  // change, as the editor asks for the design at every step of a drag.
+  previewCss(designAssetUrl) {
+    const text = this.draft.css;
+    if (!text) return '';
+    const held = this.fileRefs();
+    const key = JSON.stringify([this.name, this.version, held]);
+    if (this.cssPreview && this.cssPreview.text === text && this.cssPreview.key === key) return this.cssPreview.css;
+    const resolve = (ref) => (held.includes(ref) && /^(images|fonts)\//.test(ref) ? designAssetUrl(ref) : null);
+    const { css } = window.OTO_THEME_CSS.sanitizeCss(text, { resolve });
+    this.cssPreview = { text, key, css };
+    return css;
+  }
+
   // What the overlay needs to draw this draft: addresses for the pictures the design holds
   theme(designAssetUrl) {
     const images = {};
@@ -298,10 +319,12 @@ export class EditorModel {
     if (this.files.font) theme.font = designAssetUrl(this.files.font);
     if (Object.keys(this.files.fonts).length) theme.fonts = Object.fromEntries(Object.entries(this.files.fonts).map(([role, ref]) => [role, designAssetUrl(ref)]));
     if (Object.keys(this.draft.fontFamilies).length) theme.fontFamilies = this.draft.fontFamilies;
+    const css = this.previewCss(designAssetUrl);
+    if (css) theme.css = css;
     return theme;
   }
 
-  // The design as it is written in the code view (and in design.json), without the pictures
+  // The design as it is written in the code view (and in design.json), without the pictures and the style sheet (it has a tab of its own)
   toCode() {
     const code = { author: this.draft.author, description: this.draft.description, colors: this.draft.colors, layout: this.draft.layout, crop: this.draft.crop, tile: this.draft.tile };
     if (this.draft.prizeStyle) code.prizeStyle = this.draft.prizeStyle;

@@ -200,6 +200,13 @@ export class EditorCanvas {
     if (this.ready) this.frame.contentWindow.postMessage({ kind: 'banner', show }, window.location.origin);
   }
 
+  // Play a moment on the overlay as if it had happened, so the animations of the style sheet can be seen: `moment` is its kind ("damage",
+  // "ko"...), `side` "a" or "b", `target` the piece it plays on ("active", "prize0", "stadium"...) and `amount` the number it is about, if any
+  playMoment(moment, side, target, amount) {
+    if (!this.ready) return;
+    this.frame.contentWindow.postMessage({ kind: 'moment', moment, side, target, amount }, window.location.origin);
+  }
+
   // Ask the overlay where every piece is, and put the handles there
   measure() {
     const overlay = this.frame.contentWindow && this.frame.contentWindow.oto;

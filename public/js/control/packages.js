@@ -1,7 +1,7 @@
 /**
  * .oto packages in the control panel: installing one (from a file, a drop, or a double-click in the
- * desktop app) and saving one. A package holds a design (colors, pictures, font, sounds) and/or the
- * control settings (what the overlay shows, how long announcements stay, sound settings).
+ * desktop app) and saving one. A package holds a design (colors, pictures, font, sounds, a style sheet)
+ * and/or the control settings (what the overlay shows, how long announcements stay, sound settings).
  */
 import { h } from './dom.js';
 import { openModal, closeModal, toast } from './ui.js';
@@ -87,8 +87,10 @@ export async function openImportDialog(app, source, { onInstalled } = {}) {
   }
 
   const design = info.design;
+  // (the pictures for its style sheet are counted on their own: they are not among the pictures of the slots)
   const installDesign = design && choice('Install the design', true, [plural(design.images.length, 'picture'), design.font && 'a font', design.sounds.length && plural(design.sounds.length, 'sound'),
-    design.layout > 0 && `its own layout (${plural(design.layout, 'piece')} moved)`, design.crop.length > 0 && 'card crop'].filter(Boolean).join(', '));
+    design.layout > 0 && `its own layout (${plural(design.layout, 'piece')} moved)`, design.crop.length > 0 && 'card crop',
+    design.css && 'its own style sheet', design.cssImages > 0 && `${plural(design.cssImages, 'picture')} for ${design.css ? 'it' : 'a style sheet'}`].filter(Boolean).join(', '));
   const activate = design && choice('Put it on the overlay now', true);
   const useControls = info.controls && choice('Use its control settings', true, 'You can undo this afterwards with Ctrl+Z');
 
@@ -153,7 +155,7 @@ export async function openExportDialog(app, { design = null } = {}) {
     hasOwnSounds = Object.values(sounds.custom).some((sound) => sound.source === 'custom');
   } catch (error) { /* the option is simply not offered */ }
 
-  const withDesign = design && choice(`The design "${design}"`, true, 'Colors, pictures, font and the sounds that belong to it');
+  const withDesign = design && choice(`The design "${design}"`, true, 'Colors, pictures, font, style sheet and the sounds that belong to it');
   const withOwnSounds = design && hasOwnSounds && choice('My own sounds as well', false, 'The ones set on the Sounds tab. They replace the design\'s sounds in the file.');
   const withControls = choice('My control settings', true, 'What the overlay shows, how long announcements stay and which sounds play. Never the card API key or the password.');
 
