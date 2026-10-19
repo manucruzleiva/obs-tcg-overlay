@@ -190,6 +190,8 @@ The stage itself carries `portrait` (a tall screen), `bench-row` (the bench in a
 | `@charset` | A style sheet is always read as UTF-8 |
 | Anything else that is not in the lists of [the package format](PACKAGE-FORMAT.md#stylescss-the-style-sheet) (`@property`, `@page`, `::backdrop`, `:host`...) | A design can use what is listed there, which has the exact rules |
 
+**What the checks do not stop: a slow overlay.** A style sheet that is allowed can still be heavy to draw. A few `drop-shadow()` or `blur()` filters stacked on many pieces, with an animation that redraws them, can make the overlay slow or stop it drawing at all, and so can an SVG picture of the design with stacked filters and an animation in it. Keep filters few and small, and check the design in OBS. Install designs only from people you trust. If a design makes the overlay slow, choose another design (or the built-in look) in the Look tab, then refresh the browser source in OBS.
+
 ### Pictures for the style sheet
 
 Besides the pictures of the slots, a design can have up to **24 pictures of its own** for its style sheet, each with a name you choose: `css-` and then up to 32 lowercase letters, digits and dashes, starting with a letter or a digit (`css-texture`, `css-ko-burst`). Each is a file like the other pictures, `images/css-texture.png` (PNG, JPG, GIF, WebP or SVG), up to 4.5 MB, checked by what is inside it and counted in the 40 MB of the design. In the editor they are under **Pictures for the style sheet**, on the **Style sheet** tab.
@@ -327,7 +329,7 @@ A **`.oto` file** puts a design, its sounds and (if you choose) the producer's c
 
 - **Save one:** Look tab, **Save as .oto** (with or without the control settings: what the overlay shows or hides, how long announcements stay, which sounds are on; never an API key or password).
 - **Install one:** Look tab, **Install a .oto**, or drop the file on the control panel, or double-click it with the desktop app. You are shown what is inside first (a style sheet too) and choose what to install.
-- A `.oto` is an ordinary **ZIP file with another name**, so you can open one to see inside. It can only ever hold pictures, fonts, sounds, settings and a style sheet that is checked before anything is installed, never scripts, and a damaged or tricky file (a style sheet with something not allowed in it too) is refused without installing any of it.
+- A `.oto` is an ordinary **ZIP file with another name**, so you can open one to see inside. It can only ever hold pictures, fonts, sounds, settings and a style sheet that is checked before anything is installed, never scripts, and a damaged or tricky file (a style sheet with something not allowed in it too) is refused without installing any of it. A design can still make the overlay slow to draw (see [what the checks do not stop](#what-is-not-allowed-and-why)): install designs from people you trust.
 
 ---
 

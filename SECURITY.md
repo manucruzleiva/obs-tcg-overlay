@@ -30,6 +30,7 @@ A `.oto` package or a design can come from anyone, so it is handled as untrusted
 - While a trainer's prize cards are face down, the overlay does not put the pictures of the cards chosen for them on the prize cards, so a style sheet cannot show them.
 - Design files are served as pictures, fonts and sounds with a `Content-Security-Policy` that stops them running anything even if opened directly.
 - A package is installed completely or not at all, and the control settings it can set are limited to a short list (never the card API key, the password or anything specific to one computer).
+- **Known limit: a design can make the overlay slow.** Nothing above stops a design from being heavy to draw: a small style sheet that is allowed (a few stacked `drop-shadow()` or `blur()` filters on many pieces, with an animation), or an SVG picture with stacked filters and an animation, can make the overlay, and the design editor's preview, slow or stop drawing. It cannot contact a server, run code, make the page around the stage opaque or show what the producer hid. Install designs only from people you trust. To recover, choose another design or the built-in look in the Look tab (it shows no overlay), then refresh the browser source in OBS.
 
 ### What is stored on your computer
 
