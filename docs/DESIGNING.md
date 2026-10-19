@@ -230,7 +230,7 @@ When something happens in the match, the overlay puts a class on the piece it ha
 | `moment-ability` | `.mon` | An ability was marked used | |
 | `moment-taken` | `.prize` | Each prize card that was just taken | |
 | `moment-turn` | `.trainer` | That trainer's turn started | |
-| `moment-used` | `.token` | A turn counter or a marker was used: energy, Stadium, Supporter, GX or VSTAR | |
+| `moment-used` | `.token` | A turn counter or a marker was used: energy, Stadium, Supporter, GX or VSTAR | The counters of what is used each turn are hidden for the trainer who does not have the turn (`.token.off-turn`), so theirs shows only for the trainer who has it; **Try a moment** plays it on the GX or VSTAR marker for the other one |
 | `moment-enter` | `.stadium` | A Stadium came into play, where there was none or another one | |
 | `moment-point` | `.sb-wins` | That trainer won a game (the games won, on the scoreboard) | |
 

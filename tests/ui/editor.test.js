@@ -1852,6 +1852,21 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('plays "Supporter played" on a tracker that is drawn, for the trainer who does not have the turn too', async () => {
+      await openEditorFor('Sheet Used');
+      await tab().click();
+      await input().fill(':root { --oto-moment-ms: 10000; }\n.token.moment-used { outline: 6px solid rgb(255, 0, 0); }');
+      await says(/^Applied\.$/);
+      await page.locator('select[aria-label="The moment to play"]').selectOption('used');
+      for (const side of ['a', 'b']) {
+        await page.locator('select[aria-label="The trainer it happens to"]').selectOption(side);
+        await page.locator('.css-try').getByRole('button', { name: 'Play' }).click();
+        await untilFrame((which) => document.querySelector(`.trainer-${which} .token.moment-used`), side);
+        assert.deepEqual(await overlayFrame().$$eval(`.trainer-${side} .token.moment-used`, (nodes) => nodes.map((node) => getComputedStyle(node).visibility)), ['visible'], `Trainer ${side.toUpperCase()}`);
+      }
+      assert.deepEqual(page.problems, []);
+    });
+
     it('reaches the live overlay once the design is on air: cleaned, on the stage, with its pictures from the overlay\'s own address', async () => {
       const overlay = await openPage(browser, `${server.base}/overlay`);
       await overlay.waitForSelector('.scoreboard');

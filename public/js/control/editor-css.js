@@ -271,6 +271,20 @@ export class CssPanel {
 
   play() {
     const entry = MOMENTS.find((item) => item.key === this.moment.value);
-    if (entry) this.canvas.playMoment(entry.moment || entry.key, this.side.value, entry.target, entry.amount);
+    if (!entry) return;
+    const side = this.side.value;
+    let target = entry.target;
+    // The trackers of what is used each turn are hidden for the trainer who does not have the turn (.token.off-turn): a Supporter
+    // played by that one is tried on a marker that is drawn, the GX or the VSTAR one
+    if (entry.key === 'used') {
+      const state = this.canvas.sample ? this.canvas.sample() : null;
+      const trainer = state && state[side === 'a' ? 'trainerA' : 'trainerB'];
+      const display = (state && state.settings && state.settings.display) || {};
+      if (!(trainer && trainer.isTurn && display.supporterCounter !== false)) {
+        if (display.gxMarker !== false) target = 'token-gx';
+        else if (display.vstarMarker !== false) target = 'token-vstar';
+      }
+    }
+    this.canvas.playMoment(entry.moment || entry.key, side, target, entry.amount);
   }
 }
