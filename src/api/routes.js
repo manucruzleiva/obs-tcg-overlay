@@ -335,7 +335,7 @@ module.exports = (services) => {
   });
   protectedRouter.post('/config/import', handle((req, res) => {
     try {
-      session.commit('Configuration imported (API)', (gs) => gs.importState(body(req)));
+      session.commit('Configuration imported (API)', (gs) => gs.importState(body(req)), undefined, { whole: true });
     } catch (error) {
       return res.status(400).json({ error: 'Invalid config file' });
     }

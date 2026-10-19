@@ -883,6 +883,7 @@ const CARD = {
 
 const SETTINGS = {
   import: {
+    whole: true, // (a game that replaces the one there: see resolve)
     targets: () => ['*'],
     run: (gs, side, p) => {
       if (!p.config || typeof p.config !== 'object' || Array.isArray(p.config)) throw new ActionError('config must be an object');
@@ -918,6 +919,7 @@ const SETTINGS_UPDATE = {
 };
 
 const RESET = {
+  whole: true,
   run: (gs) => gs.fullReset(),
   targets: () => ['*'],
   label: () => 'Everything reset'
@@ -1018,6 +1020,9 @@ function resolve(event, payload) {
     action,
     side,
     silent: Boolean(spec.silent),
+    // It replaces the whole game (an import, a full reset): the overlays get it as state:full, which they draw as it is, instead of
+    // playing the difference between two games that have nothing to do with each other as moments
+    whole: Boolean(spec.whole),
     // Parts of the game this touches, or null for "last writer wins" changes
     targets: () => (spec.targets ? spec.targets(side, payload) : null),
     // Applies the action to `gs` and returns the announcements it triggers (what follows from it by itself is `automatic`, below)

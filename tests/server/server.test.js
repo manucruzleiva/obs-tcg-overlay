@@ -988,6 +988,48 @@ describe('server', () => {
     assert.equal(state.trainerA.name, 'Export Me');
   });
 
+  // An overlay plays the difference between two states as moments (a knock out, prize cards taken): a whole game that replaces the one
+  // there is sent as state:full, which it draws as it is
+  it('sends a game that replaces the whole of the one there (an import, a full reset, and undoing or redoing one) as state:full', async () => {
+    const overlay = server.client({ clientId: 'whole-game-overlay', role: 'overlay' });
+    await overlay.ready();
+    try {
+      const exported = await (await fetch(`${server.base}/api/config/export`)).json();
+      const named = (name) => ({ ...exported, trainerA: { ...exported.trainerA, name } });
+      const updates = [];
+      const stop = overlay.watch('state:update', () => true, (state) => updates.push(state.trainerA.name));
+
+      let whole = overlay.expect('state:full', (state) => state.trainerA.name === 'Over the API');
+      const res = await fetch(`${server.base}/api/config/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(named('Over the API')) });
+      assert.equal(res.status, 200);
+      await whole;
+      whole = overlay.expect('state:full', (state) => state.trainerA.name === 'From the panel');
+      assert.equal((await producer.act('action:settings', { action: 'import', config: named('From the panel') })).ok, true);
+      await whole;
+      whole = overlay.expect('state:full', (state) => state.trainerA.name === 'Over the API');
+      assert.equal((await producer.act('action:undo', {})).ok, true);
+      await whole;
+      whole = overlay.expect('state:full', (state) => state.trainerA.name === 'From the panel');
+      assert.equal((await producer.act('action:redo', {})).ok, true);
+      await whole;
+      whole = overlay.expect('state:full', (state) => state.trainerA.name === '' || state.trainerA.name === 'Trainer A');
+      assert.equal((await producer.act('action:reset', { action: 'full', confirm: 'FULL_RESET' })).ok, true);
+      await whole;
+      assert.deepEqual(updates, [], 'none of them as an update');
+
+      // an ordinary change is an update, and so is undoing it
+      const update = overlay.expect('state:update', (state) => state.trainerA.name === 'Changed');
+      await trainer('trainerA', { action: 'setName', name: 'Changed' });
+      await update;
+      const undone = overlay.expect('state:update', (state) => state.trainerA.name !== 'Changed');
+      await producer.act('action:undo', {});
+      await undone;
+      stop();
+    } finally {
+      overlay.socket.close();
+    }
+  });
+
   it('serves the control panel, the overlay and their assets', async () => {
     const root = await fetch(`${server.base}/`, { redirect: 'manual' });
     assert.equal(root.status, 302);

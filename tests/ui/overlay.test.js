@@ -2481,6 +2481,30 @@ describe('overlay', { skip }, () => {
       await played('.trainer-a .active .mon', 'moment-damage', { amount: 10 });
     });
 
+    it('play nothing for a configuration that is imported: it is another game, drawn as it is, and no Pokémon of the last one stays', async () => {
+      await wear(':root{--oto-moment-ms:2000}#stage .mon.moment-ko{opacity:.6}');
+      await benched(0, 'Eevee');
+      const config = await live();
+      config.trainerA.active = { ...config.trainerA.active, cardId: '', name: '', image: '' };
+      config.trainerA.bench = config.trainerA.bench.map((slot) => ({ ...slot, cardId: '', name: '', image: '' }));
+      config.trainerB.prizes = { ...config.trainerB.prizes, count: 3 };
+      config.trainerB.isTurn = true;
+      for (const importing of [
+        () => send('action:settings', { action: 'import', config }),
+        () => fetch(`${server.base}/api/config/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) })
+      ]) {
+        await importing();
+        await page.waitForFunction(() => window.oto.state.trainerA.active.name === '' && window.oto.state.trainerB.prizes.count === 3);
+        assert.equal(await page.locator('.trainer-a .active .mon').isHidden(), true, 'the tile goes at once');
+        await wait(150);
+        await nothing();
+        await send('action:reset', { action: 'full', confirm: 'FULL_RESET' });
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+        await benched(0, 'Eevee');
+      }
+      await nothing();
+    });
+
     it('play nothing while the design animations are switched off, on the overlay or on one screen', async () => {
       assert.equal(await page.evaluate(() => window.OTO_DISPLAY.DEFAULTS.moments), true, 'they are on unless switched off');
       await send('action:settings', { action: 'update', display: { moments: false } });
