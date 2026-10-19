@@ -158,7 +158,7 @@ The overlay is drawn on a **stage**, `#stage`: the 1920 × 1080 box (1080 × 192
 
 The `#stage` in front also gives your rule more weight than the built-in rule for the same piece, so yours wins without `!important`. The built-in rules that name the stage themselves weigh more: those for a tall screen (`#stage.portrait .trainer`) and for the bench in a row (`#stage.bench-row .bench`). To change those, write the same selector: yours comes after the built-in one, so it wins. What the overlay writes on a piece itself (the width of an HP bar, the scaling of the stage) wins over your rules; only an animation goes over it while it plays (see [the tips](#tips-for-the-style-sheet)).
 
-**The page around the stage** must stay see-through for OBS. A rule for `:root` or `html` alone can only set custom properties (`--name: value`), and anything else in it is refused. That is the place for `--oto-moment-ms` (see [the moments](#the-moments)) and for variables of your own, which every piece can then use (`box-shadow: var(--glow)`):
+**The page around the stage** must stay see-through for OBS. A rule for `:root` or `html` alone can only set custom properties (`--name: value`), and anything else in it is refused. That is the place for `--oto-moment-ms` (see [the moments](#the-moments)), for variables of your own, which every piece can then use (`box-shadow: var(--glow)`), and for the design's own colors and pictures: a rule for `:root` comes after them, so `:root { --accent: #ff00aa; }` wins over the design's highlight color. (Write it for `:root`: a rule for `html` weighs less than the variables of the built-in look and of the design, so it only sets variables of your own.)
 
 ```css
 :root { --oto-moment-ms: 1200; --glow: 0 0 12px #7c8cff; }

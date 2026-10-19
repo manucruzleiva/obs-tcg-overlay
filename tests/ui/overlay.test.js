@@ -576,11 +576,11 @@ describe('overlay', { skip }, () => {
       assert.equal(below, true, 'the name is under the picture');
 
       await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { stadium: { x: 0, y: 0, w: 1, h: 1 } } }));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '1');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--sa-w') === '1');
       const whole = await box();
       assert.ok(Math.abs(whole.h - 300 * 1.393333) < 1, `the whole card: ${whole.h}`);
       await page.evaluate(() => window.oto.applyTheme(null));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--sa-w') === '');
       assert.ok(Math.abs((await box()).h - 300 * 1.393333 * 0.37 / 0.836) < 1, 'back to the picture window');
       assert.deepEqual(page.problems, []);
     });
@@ -753,11 +753,11 @@ describe('overlay', { skip }, () => {
       await screens([screen({ design: 'Phone Screen' })]);
       const phone = await open();
       assert.deepEqual(await stage(phone), { w: 1080, h: 1920, portrait: true });
-      assert.equal(await phone.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '#445566');
+      assert.equal(await phone.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '#445566');
       assert.equal(await phone.locator('.trainer-a .sb-name, .sb-a .sb-name').first().textContent(), 'Ash', 'the same game');
       // the main overlay is as it was
       assert.deepEqual(await stage(page), { w: 1920, h: 1080, portrait: false });
-      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+      assert.equal(await page.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '');
 
       // what the game does, both show
       await send('action:trainerA', { action: 'setName', name: 'Misty' });
@@ -771,12 +771,12 @@ describe('overlay', { skip }, () => {
       await api('PUT', '/api/themes/On%20Air', { colors: { '--accent': '#112233' } });
       await screens([screen()]);
       const other = await open('vertical', { width: 1280, height: 720 });
-      assert.equal(await other.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+      assert.equal(await other.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '');
       await api('POST', '/api/theme/active', { name: 'On Air' });
-      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
+      await other.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '#112233');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '#112233');
       await api('POST', '/api/theme/active', { name: null });
-      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '');
+      await other.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '');
     });
 
     it('changes its design when the settings say so, without being reloaded, and goes back when the design is taken off', async () => {
@@ -824,7 +824,7 @@ describe('overlay', { skip }, () => {
   describe('a font for each group of text', () => {
     const wear = (extra) => page.evaluate((more) => window.oto.applyTheme({ name: 'type', colors: {}, images: {}, sounds: [], ...more }), extra);
     const family = (selector) => page.$eval(selector, (node) => getComputedStyle(node).fontFamily);
-    const variable = (name) => page.evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+    const variable = (name) => page.evaluate((key) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(key).trim(), name);
 
     it('is the main font for every group, until a design says otherwise', async () => {
       const main = await family('.sb-name');
@@ -861,7 +861,7 @@ describe('overlay', { skip }, () => {
     it('loads the font file of a group, and puts it first in the list of fonts of that group', async () => {
       // (a font that is part of the app: the flag font)
       await wear({ fonts: { names: '/assets/fonts/TwemojiCountryFlags.woff2' }, fontFamilies: { names: 'Georgia' } });
-      await page.waitForFunction(() => /OTO Theme names/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /OTO Theme names/.test(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await variable('--font-names'), /^"OTO Theme names", Georgia, var\(--font-display\)$/);
       assert.equal(await page.evaluate(() => [...document.fonts].some((face) => face.family.replace(/"/g, '') === 'OTO Theme names')), true);
       await page.evaluate(() => window.oto.applyTheme(null));
@@ -870,7 +870,7 @@ describe('overlay', { skip }, () => {
 
     it('keeps the fonts that were listed when the font file cannot be had, and the main font when nothing was', async () => {
       await wear({ fonts: { names: '/api/theme/assets/fonts/missing.woff2' }, fontFamilies: { names: 'Georgia' } });
-      await page.waitForFunction(() => /^Georgia/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /^Georgia/.test(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await family('.sb-name'), /^Georgia/);
       await wear({ fonts: { numbers: '/api/theme/assets/fonts/missing.woff2' } });
       await wait(400);
@@ -978,10 +978,10 @@ describe('overlay', { skip }, () => {
       const height = () => page.$eval('.trainer-a .active .tool-card', (node) => node.getBoundingClientRect().height);
       assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1);
       await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { tool: { x: 0, y: 0, w: 1, h: 1 } } }));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '1');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '1');
       assert.ok(Math.abs(await height() - 104 * 1.393333) < 1, 'the whole card');
       await page.evaluate(() => window.oto.applyTheme(null));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '');
       assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1, 'back to the usual');
       assert.deepEqual(page.problems, []);
     });
@@ -1625,7 +1625,7 @@ describe('overlay', { skip }, () => {
         return { w: rect.width, h: rect.height, imgW: img.width, imgH: img.height, left: img.left - rect.left, top: img.top - rect.top };
       });
       const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1, `${label}: ${actual} is not ${expected}`);
-      const cropped = (variable, value) => page.waitForFunction(([name, wanted]) => document.documentElement.style.getPropertyValue(name) === wanted, [variable, value]);
+      const cropped = (variable, value) => page.waitForFunction(([name, wanted]) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(name) === wanted, [variable, value]);
 
       beforeEach(async () => {
         await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60 });
@@ -1669,7 +1669,7 @@ describe('overlay', { skip }, () => {
         near(bench.left, -104 * 0.2 / 0.6, 'left');
         const active = await mon('a', '.active');
         near(active.h, 300 * 1.3933 * ART.h / ART.w, 'the Active Pokémon keeps the art');
-        assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--ca-w')), '', 'and is not given numbers of its own');
+        assert.equal(await page.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w')), '', 'and is not given numbers of its own');
       });
 
       it('goes back to the art when the design on air is taken away', async () => {
@@ -1677,7 +1677,7 @@ describe('overlay', { skip }, () => {
         await cropped('--ca-w', '1');
         near((await mon('a', '.active')).h, 418, 'whole card');
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w') === '');
         near((await mon('a', '.active')).h, 300 * 1.3933 * ART.h / ART.w, 'the art again');
       });
 
@@ -1847,7 +1847,7 @@ describe('overlay', { skip }, () => {
 
       it('shows just the part of the card the design chooses, and the prize card takes the shape of it', async () => {
         await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         const [width, height] = await size();
         assert.equal(width, 40);
         assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `as tall as the part that shows: ${height}`);
@@ -1857,7 +1857,7 @@ describe('overlay', { skip }, () => {
         // the back of the prize cards, the other trainer's included, is as big as the part too
         assert.ok(Math.abs((await page.$eval('.trainer-b .prize', (node) => node.getBoundingClientRect().height)) - height) < 0.1);
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '');
         assert.deepEqual(await size(), [40, 56]);
       });
 
@@ -1867,7 +1867,7 @@ describe('overlay', { skip }, () => {
         await page.route('**/art/flat-prize.svg', (route) => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: flat }));
         await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('flat-prize')] });
         await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         await wait(500);
         const shot = await page.locator('.trainer-a .prize').first().screenshot();
         // the picture is a PNG: read its middle pixel and a pixel near each corner inside the border, in the page
@@ -1914,7 +1914,7 @@ describe('overlay', { skip }, () => {
         assert.equal(usual.length, 6);
         assert.ok(usual.every((prize) => prize.image.includes('/assets/cardbacks/english')), 'the English card back is asked for');
         await wear({ name: 'Plain Prizes', colors: { '--accent': '#336699' } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#336699');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent') === '#336699');
         assert.deepEqual(await rootClass(), ['prize-english'], 'a design that says nothing');
 
         // a design with a prize card back picture of its own: that one
@@ -2103,6 +2103,24 @@ describe('overlay', { skip }, () => {
       await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.2}}');
       assert.ok(await page.evaluate(() => window.sheetWrites) > 0, 'a change is written');
       await page.evaluate(() => window.oto.applyTheme(null));
+    });
+
+    it('comes after the design\'s own colors and pictures, so a rule for :root changes them', async () => {
+      const looks = () => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), getComputedStyle(document.querySelector('.scoreboard')).outlineColor,
+        getComputedStyle(document.documentElement).getPropertyValue('--bg-panel').trim()]);
+      const colors = { '--accent': '#ff0000', '--bg-panel': '#123456' };
+      await wear(':root { --accent: #ff00aa; }\n.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#ff00aa', 'rgb(255, 0, 170)', '#123456'], 'what the style sheet names is its own, the rest stays the design\'s');
+      await wear(':root.has-logo, :root { --accent: #00ff00; }\n.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#00ff00', 'rgb(0, 255, 0)', '#123456']);
+      await wear('.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#ff0000', 'rgb(255, 0, 0)', '#123456'], 'without such a rule, the design\'s colors');
+      // (a value stays a value: it cannot end its rule and start another one)
+      await page.evaluate(() => window.oto.applyTheme({ name: 'Odd', colors: { '--accent': 'red}body{background:#000' }, images: {} }));
+      assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgba(0, 0, 0, 0)');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg-panel').trim() !== '#123456'), true, 'and they go with the design');
+      assert.deepEqual(page.problems, []);
     });
 
     // OBS needs the page around the stage see-through: it is there whenever the browser source is not the shape of the stage. Designs

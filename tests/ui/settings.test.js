@@ -351,14 +351,14 @@ describe('settings', { skip }, () => {
       await overlay.waitForFunction(() => document.documentElement.classList.contains('has-logo'));
       // the design's sound has been fetched and decoded by the overlay's audio engine, ready to play
       await overlay.waitForFunction(() => window.oto.sfx.buffers.has('damage'));
-      assert.equal(await overlay.evaluate(() => document.documentElement.style.getPropertyValue('--accent')), '#ff00aa');
-      const url = await overlay.evaluate(() => /url\("(.*)"\)/.exec(document.documentElement.style.getPropertyValue('--logoImage'))[1]);
+      assert.equal(await overlay.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent')), '#ff00aa');
+      const url = await overlay.evaluate(() => /url\("(.*)"\)/.exec(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--logoImage'))[1]);
       assert.match(url, /^\/api\/theme\/assets\/images\/logoImage\.png\?v=\d+$/);
       assert.equal(await overlay.evaluate((src) => new Promise((resolve) => { const image = new Image(); image.onload = () => resolve(image.naturalWidth); image.onerror = () => resolve(0); image.src = src; }), url), 1, 'the picture really loads');
 
       // an edit shows up on the overlay by itself
       await page.locator('.color-row').first().locator('input[type=text]').fill('#00ffcc');
-      await overlay.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#00ffcc');
+      await overlay.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent') === '#00ffcc');
 
       await page.locator('.theme-item', { hasText: 'Built-in look' }).click();
       await overlay.waitForFunction(() => !document.documentElement.classList.contains('has-logo'));

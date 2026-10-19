@@ -851,7 +851,7 @@ describe('design editor', { skip }, () => {
         await page.locator('.crop-panel .btn[data-preset="art"]').click();
         assert.deepEqual(await prizeCrop(), ART);
         await drawn();
-        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .prize').getBoundingClientRect().height);
         assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `the prize card is as tall as the art: ${height}`);
         assert.deepEqual(await crop(), { prize: ART }, 'and the Pokémon are as they were');
@@ -877,7 +877,7 @@ describe('design editor', { skip }, () => {
       it('shows the whole card on the tools of the canvas when asked, written down, and goes back to the picture', async () => {
         await page.locator('.crop-panel .btn[data-preset="full"]').click();
         assert.deepEqual(await toolCrop(), { x: 0, y: 0, w: 1, h: 1 });
-        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--ct-w') === '1');
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '1');
         const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .active .tool-card').getBoundingClientRect().height);
         assert.ok(Math.abs(height - 104 * 1.393333) < 1, `the tool is as tall as the whole card: ${height}`);
         assert.deepEqual(await crop(), { tool: { x: 0, y: 0, w: 1, h: 1 } }, 'and the Pokémon are as they were');
@@ -1037,7 +1037,7 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(design.crop.active, { x: 0, y: 0, w: 1, h: 1 });
       assert.deepEqual(design.tile, { active: { hp: 'bottom' } });
       await overlay.waitForSelector('.scoreboard.moved');
-      await overlay.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '1');
+      await overlay.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w') === '1');
       await overlay.waitForSelector('.trainer-a .active .band-bottom .band-bar .hp', { state: 'attached' });
       assert.match(await page.locator('.toast-success').first().textContent(), /on the overlay, so you see it on stream/);
       assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true, 'nothing left to save');
@@ -1484,7 +1484,7 @@ describe('design editor', { skip }, () => {
     const tab = () => page.locator('.editor-side .tab[data-tab="fonts"]');
     const row = (role) => page.locator(`.font-row[data-role="${role}"]`);
     const draftFamilies = () => page.evaluate(() => JSON.parse(JSON.stringify(window.oto.designEditor.model.draft.fontFamilies)));
-    const frameVar = (name) => overlayFrame().evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+    const frameVar = (name) => overlayFrame().evaluate((key) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(key).trim(), name);
 
     it('has a row for the main font and for each group of text, with what each is for', async () => {
       await openEditorFor('Type Test');
@@ -1500,7 +1500,7 @@ describe('design editor', { skip }, () => {
       await tab().click();
       await row('names').locator('input').fill('Impact, "Arial Black", sans-serif');
       assert.deepEqual(await draftFamilies(), { names: 'Impact, "Arial Black", sans-serif' });
-      await page.waitForFunction(() => /^Impact/.test(document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /^Impact/.test(document.querySelector('.editor-frame').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await overlayFrame().$eval('.sb-name', (node) => getComputedStyle(node).fontFamily), /^Impact/);
 
       await row('numbers').locator('input').fill('url(http://x.example/f.woff)');
@@ -1516,7 +1516,7 @@ describe('design editor', { skip }, () => {
       await tab().click();
       await row('names').locator('input').fill('');
       assert.deepEqual(await draftFamilies(), { numbers: 'Georgia' });
-      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names') === '');
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names') === '');
       assert.equal(await frameVar('--font-names'), '');
     });
 

@@ -425,6 +425,14 @@
       this.themeGeneration = 0;
       this.toastTimers = {};
       this.effectNodes = [];
+      // The colors of the design that is on, the addresses of its pictures and its other variables (see applyTheme), in a rule for :root
+      // of their own: after the built-in style sheets, and before the design's style sheet, so that a rule of the style sheet for :root
+      // or html changes them. (Each is set with setProperty, so a value can never end the rule and start another.)
+      this.designVars = document.createElement('style');
+      this.designVars.id = 'oto-design-vars';
+      document.head.appendChild(this.designVars);
+      this.designVars.sheet.insertRule(':root {}', 0);
+      this.varsDecl = this.designVars.sheet.cssRules[0].style;
       // the style sheet of the design that is on (see applyTheme), after the built-in ones so that it wins when both say something
       this.designCss = document.createElement('style');
       this.designCss.id = 'oto-design-css';
@@ -1355,7 +1363,7 @@
 
     applyTheme(theme) {
       const root = document.documentElement;
-      this.themeProps.forEach((name) => root.style.removeProperty(name));
+      this.themeProps.forEach((name) => this.varsDecl.removeProperty(name));
       this.themeProps = [];
 
       const rootClasses = ['has-logo', 'has-avatar-a', 'has-avatar-b', 'has-energy-sprite', 'has-status-sprite', 'has-backdrop']
@@ -1400,7 +1408,7 @@
       if (!theme) return;
 
       const set = (name, value) => {
-        root.style.setProperty(name, value);
+        this.varsDecl.setProperty(name, value);
         this.themeProps.push(name);
       };
 
