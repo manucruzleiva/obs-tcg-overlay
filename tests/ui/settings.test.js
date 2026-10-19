@@ -415,6 +415,52 @@ describe('settings', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('keeps a color typed while the design is being read again', async () => {
+      await call('PUT', '/api/themes/Reread', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Reread' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Reread")');
+      // the design is read again (a click on it in the list), and that answer is held back while the producer types
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      let reads = 0;
+      await page.route('**/api/themes/Reread', async (route) => {
+        if (route.request().method() === 'GET') { reads += 1; await held; }
+        await route.continue();
+      });
+      await page.locator('.theme-item', { hasText: 'Reread' }).click();
+      while (reads === 0) await wait(20);
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      release();
+      await page.waitForFunction(() => document.querySelector('.save-status').textContent === 'Saved');
+      assert.equal((await call('GET', '/api/themes/Reread')).json.colors['--accent'], '#3344ff', 'the color typed during the read is the one saved');
+      assert.equal(await page.locator('.color-row').first().locator('input[type=text]').inputValue(), '#3344ff', 'and the box still shows it');
+      await page.unroute('**/api/themes/Reread');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('waits for a save of the Look tab that is on its way before the editor reads the design', async () => {
+      await call('PUT', '/api/themes/Slow', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Slow' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Slow")');
+      // the Look tab's own save is held back by the network, so it is still on its way when the editor opens
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      await page.route('**/api/themes/Slow', async (route) => {
+        if (route.request().method() === 'PUT') await held;
+        await route.continue();
+      });
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      await page.waitForFunction(() => document.querySelector('.save-status').textContent === 'Saving…');
+      await page.locator('.image-row[data-role="styles"]').getByRole('button', { name: 'Edit the style sheet' }).click();
+      setTimeout(() => release(), 600);
+      await page.locator('.modal[aria-label="Design: Slow"]').waitFor();
+      assert.equal(await page.evaluate(() => window.oto.designEditor.model.draft.colors['--accent']), '#3344ff', 'the editor read the design after the save had landed');
+      await page.unroute('**/api/themes/Slow');
+      assert.deepEqual(page.problems, []);
+    });
+
     it('lists the design\'s sounds on the Sounds tab, and lets the producer\'s own sound win', async () => {
       await call('PUT', '/api/themes/Sound%20Check', {});
       await call('PUT', '/api/themes/Sound%20Check/sounds/damage', S.playableWav());

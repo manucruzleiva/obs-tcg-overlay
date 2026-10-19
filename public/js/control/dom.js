@@ -53,15 +53,23 @@ export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
 // Call `fn` once things have been quiet for `ms`. `.flush()` runs a waiting call right now (so nothing
-// typed is lost when the person moves on); it returns what `fn` returned.
+// typed is lost when the person moves on); it returns what `fn` returned. When nothing is waiting but a
+// call that returned a promise is still on its way, `.flush()` returns a promise that settles when it ends,
+// so whoever reads next reads what that call sent.
 export function debounce(fn, ms) {
   let timer = null;
   let waiting = null;
+  let running = null;
   const run = () => {
     timer = null;
     const args = waiting;
     waiting = null;
-    return fn(...args);
+    const result = fn(...args);
+    if (result && typeof result.then === 'function') {
+      const call = Promise.resolve(result).then(() => {}, () => {}).then(() => { if (running === call) running = null; });
+      running = call;
+    }
+    return result;
   };
   const debounced = (...args) => {
     waiting = args;
@@ -69,7 +77,7 @@ export function debounce(fn, ms) {
     timer = setTimeout(run, ms);
   };
   debounced.flush = () => {
-    if (!timer) return undefined;
+    if (!timer) return running || undefined;
     clearTimeout(timer);
     return run();
   };

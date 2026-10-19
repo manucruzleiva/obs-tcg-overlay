@@ -365,7 +365,10 @@ function themesTab(app) {
     names = data.names;
     active = data.active;
     selected = select !== undefined ? select : (names.includes(selected) ? selected : (active || names[0] || null));
-    theme = selected ? await json('GET', `/api/themes/${encodeURIComponent(selected)}`) : null;
+    const loaded = selected ? await json('GET', `/api/themes/${encodeURIComponent(selected)}`) : null;
+    // what was typed while the same design was being read again stays: it goes up with the next save
+    const typing = pending && loaded && theme && theme.name === loaded.name;
+    theme = typing ? { ...loaded, colors: theme.colors, author: theme.author, description: theme.description, fontFamilies: theme.fontFamilies } : loaded;
     try {
       own = Object.fromEntries(Object.entries((await json('GET', '/api/sounds')).custom).filter(([, sound]) => sound.source === 'custom'));
     } catch (error) { own = {}; }
