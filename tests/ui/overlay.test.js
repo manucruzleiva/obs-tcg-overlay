@@ -462,6 +462,25 @@ describe('overlay', { skip }, () => {
       assert.match(await front('a', 0), /\/art\/one\.svg/);
     });
 
+    it('does not give the pictures of the cards to the prize cards while the prizes are hidden, so no design can show them', async () => {
+      const pictures = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.style.getPropertyValue('--prize-face')));
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one'), card('two')] });
+      await waitFaces('a', 2);
+      assert.deepEqual(await pictures(), ['', '', '', '', '', ''], 'face down: the pictures are not there');
+      // (a design's style sheet that would paint them on the prize cards has nothing to paint)
+      await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, css: '#stage .prize.has-face::after{content:"";background-image:var(--prize-face)}' }));
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').backgroundImage), 'none');
+
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .prize').style.getPropertyValue('--prize-face') !== '');
+      assert.deepEqual(await pictures(), ['url("/art/one.svg")', 'url("/art/two.svg")', '', '', '', '']);
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
+      assert.deepEqual(await pictures(), ['', '', '', '', '', ''], 'and gone again when they are hidden again');
+      await page.evaluate(() => window.oto.applyTheme(null));
+    });
+
     it('fades the ones that are taken with their card still on them, and keeps the red mask of a penalty over the card', async () => {
       await send('action:trainerA', { action: 'prizeCardsSet', cards: ['one', 'two', 'three', 'four', 'five', 'six'].map(card) });
       await send('action:trainerA', { action: 'prizeSet', count: 3 });

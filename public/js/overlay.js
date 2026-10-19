@@ -829,17 +829,19 @@
       // of the ones still there are marked red
       const opponent = state[side === 'trainerA' ? 'trainerB' : 'trainerA'];
       const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
-      // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden)
+      // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden: then the picture of the card is not given to
+      // the prize card at all, so no style sheet can show a card that is face down)
       const faces = trainer.prizes.cards || [];
+      const faceDown = Boolean(trainer.prizes.hidden);
       refs.prizeNodes.forEach((node, index) => {
         node.classList.toggle('taken', index >= trainer.prizes.count);
         node.classList.toggle('penalty', index < penalty);
         const face = faces[index] && faces[index].image;
         node.classList.toggle('has-face', Boolean(face));
-        if (face) node.style.setProperty('--prize-face', cssUrl(face));
+        if (face && !faceDown) node.style.setProperty('--prize-face', cssUrl(face));
         else node.style.removeProperty('--prize-face');
       });
-      refs.prizes.classList.toggle('is-hidden', Boolean(trainer.prizes.hidden));
+      refs.prizes.classList.toggle('is-hidden', faceDown);
       refs.prizes.classList.toggle('pulse', penalty > 0 && state.settings.showPenaltyAnimation !== false);
       refs.prizeFlag.textContent = penalty > 0 ? 'PENALTY' : '';
 
