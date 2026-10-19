@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Face-down prize cards no longer carry the picture of the card chosen for them on the overlay page (only the built-in style kept it from showing), so a design's style sheet cannot show them
 - The content security policy allows fonts from OTO itself only (`font-src 'self'`), behind the check of the style sheet
+- The overlay clips the stage to its own box (a frame around it that no design can style), so nothing a design draws can cover the see-through page around the stage when the OBS source is not the stage's shape: a shadow, an outline or a filter of the stage, a piece bigger than it or fixed to the page, an animation of the stage's scaling, or a shadow color with a second shadow behind it
 
 ## [1.0.0] - 2026-10-07
 

@@ -154,7 +154,7 @@ A style sheet is checked when it is saved and when a design is installed, and ag
 
 ### Every rule is for the stage
 
-The overlay is drawn on a **stage**, `#stage`: the 1920 × 1080 box (1080 × 1920 on a tall screen) that OBS shows. Every rule is put on it: OTO writes `.scoreboard { ... }` as `#stage .scoreboard { ... }`. So you write the classes of the pieces as they are, and nothing outside the stage can be styled.
+The overlay is drawn on a **stage**, `#stage`: the 1920 × 1080 box (1080 × 1920 on a tall screen) that OBS shows. Every rule is put on it: OTO writes `.scoreboard { ... }` as `#stage .scoreboard { ... }`. So you write the classes of the pieces as they are, and nothing outside the stage can be styled. Nothing is drawn outside it either: what goes past the edge of the stage (a shadow or an outline of `#stage`, a piece moved or grown past it, a `position: fixed` piece) is cut off there, so the page around the stage stays see-through when the browser source in OBS is not the shape of the stage.
 
 The `#stage` in front also gives your rule more weight than the built-in rule for the same piece, so yours wins without `!important`. The built-in rules that name the stage themselves weigh more: those for a tall screen (`#stage.portrait .trainer`) and for the bench in a row (`#stage.bench-row .bench`). To change those, write the same selector: yours comes after the built-in one, so it wins. What the overlay writes on a piece itself (the width of an HP bar, the scaling of the stage) wins over your rules; only an animation goes over it while it plays (see [the tips](#tips-for-the-style-sheet)).
 
