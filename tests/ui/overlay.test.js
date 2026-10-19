@@ -1997,6 +1997,377 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  // A design can bring a style sheet of its own (checked by the server or the editor before it is sent): it is put in the page as it comes
+  describe('the style sheet of a design', () => {
+    const sheet = () => page.evaluate(() => {
+      const node = document.getElementById('oto-design-css');
+      return { text: node.textContent, count: document.querySelectorAll('#oto-design-css').length, last: document.head.lastElementChild === node, tag: node.tagName };
+    });
+    const spacing = () => page.$eval('.sb-a .sb-name', (node) => getComputedStyle(node).letterSpacing);
+    const wear = (css, extra = {}) => page.evaluate(([text, more]) => window.oto.applyTheme({ name: 'Styled', colors: {}, images: {}, css: text, ...more }), [css, extra]);
+
+    it('is put in the page after the built-in style sheets, and taken away with the design', async () => {
+      const plain = await spacing();
+      assert.deepEqual(await sheet(), { text: '', count: 1, last: true, tag: 'STYLE' }, 'there is none without a design');
+      await wear('#stage .sb-name{letter-spacing:7px}');
+      assert.deepEqual(await sheet(), { text: '#stage .sb-name{letter-spacing:7px}', count: 1, last: true, tag: 'STYLE' });
+      assert.equal(await spacing(), '7px');
+
+      // another design, without one
+      await page.evaluate(() => window.oto.applyTheme({ name: 'Plain', colors: {}, images: {} }));
+      assert.equal((await sheet()).text, '');
+      assert.equal(await spacing(), plain);
+      // no design at all
+      await wear('#stage .sb-name{letter-spacing:3px}');
+      assert.equal(await spacing(), '3px');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.deepEqual(await sheet(), { text: '', count: 1, last: true, tag: 'STYLE' });
+      assert.equal(await spacing(), plain);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is written again only when it changed, so what it animates does not start over at every change of the design', async () => {
+      await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.4}}');
+      await page.evaluate(() => {
+        window.sheetWrites = 0;
+        new MutationObserver((changes) => { window.sheetWrites += changes.length; })
+          .observe(document.getElementById('oto-design-css'), { childList: true, characterData: true, subtree: true });
+      });
+      const glow = () => page.evaluate(() => document.getAnimations().filter((animation) => animation.animationName === 'oto-glow').map((animation) => animation.currentTime));
+      await wait(400);
+      const before = await glow();
+      assert.equal(before.length, 2, 'it runs on both names');
+      // (the design editor sends the design again at every step of a drag)
+      for (let y = 10; y <= 30; y += 10) {
+        await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.4}}', { layout: { scoreboard: { x: 0, y, scale: 1 } } });
+      }
+      await page.waitForSelector('.scoreboard.moved');
+      const after = await glow();
+      assert.equal(await page.evaluate(() => window.sheetWrites), 0, 'not written again');
+      assert.ok(after[0] > before[0], `the animation went on (${before[0]} ms, then ${after[0]} ms)`);
+
+      await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.2}}');
+      assert.ok(await page.evaluate(() => window.sheetWrites) > 0, 'a change is written');
+      await page.evaluate(() => window.oto.applyTheme(null));
+    });
+  });
+
+  // What happens in the game is marked for a while on the piece it happened to ("moments": classes a design's style sheet can animate), and
+  // on the stage with its kind and side
+  describe('moments', () => {
+    const MS = 700; // (how long they last, as the design says)
+    const wear = (css = '') => page.evaluate((text) => window.oto.applyTheme({ name: 'Moments', colors: {}, images: {}, css: text }), `:root{--oto-moment-ms:${MS}}${css}`);
+    beforeEach(async () => {
+      await page.evaluate(() => window.oto.loadTheme()); // (the page has asked for the design on air: that answer is in before this design is put on)
+      await wear();
+    });
+    const marks = () => page.$eval('#stage', (node) => Array.from(node.classList).filter((name) => name.indexOf('moment-') === 0).sort());
+    const anywhere = () => page.locator('[class*="moment-"]').count();
+    const on = (selector) => page.waitForSelector(selector, { state: 'attached', timeout: 5000 });
+    // the moment's class is on that piece, and goes after the time the design says: how long it stayed
+    const lasts = async (selector) => {
+      await on(selector);
+      const from = Date.now();
+      await page.waitForSelector(selector, { state: 'detached', timeout: MS * 5 });
+      return Date.now() - from;
+    };
+    const hpText = (text) => page.waitForFunction((wanted) => document.querySelector('.trainer-a .active .hp-text').textContent === wanted, text);
+    const bench = (slot, name, extra = {}) => send('action:trainerA', { action: 'setBench', slot, cardId: `b-${slot}`, name, image: IMG, hp: 60, ...extra });
+    // a Pokémon on the bench, once its moment is over
+    const benched = async (slot, name) => {
+      await bench(slot, name);
+      await on(`.trainer-a .bench .mon:nth-child(${slot + 1}).moment-enter`);
+      await page.waitForSelector('[class*="moment-"]', { state: 'detached', timeout: MS * 4 });
+    };
+
+    it('mark a Pokémon that takes damage, with how much, and the stage with the side, for as long as the design says', async () => {
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      const tile = '.trainer-a .active .mon.moment-damage';
+      await on(tile);
+      assert.deepEqual(await page.$eval(tile, (node) => [node.dataset.amount, node.style.getPropertyValue('--moment-amount')]), ['30', '30']);
+      assert.deepEqual(await marks(), ['moment-damage-a']);
+      const stayed = await lasts(tile);
+      assert.ok(stayed > MS - 200 && stayed < MS + 600, `it stayed ${stayed} ms`);
+      assert.equal(await anywhere(), 0, 'the stage too');
+      assert.equal(await page.$eval('.trainer-a .active .mon', (node) => node.hasAttribute('data-amount') || node.style.getPropertyValue('--moment-amount') !== ''), false, 'the number goes with it');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('mark a heal, and damage on the bench, on the tile it happened to', async () => {
+      await send('action:trainerA', { action: 'activeDamage', amount: 40 });
+      await on('.trainer-a .active .mon.moment-damage');
+      await send('action:trainerA', { action: 'activeDamage', amount: -10 });
+      await on('.trainer-a .active .mon.moment-heal[data-amount="10"]');
+      assert.deepEqual(await marks(), ['moment-damage-a', 'moment-heal-a']);
+
+      await bench(1, 'Eevee');
+      await on('.trainer-a .bench .mon:nth-child(2).moment-enter');
+      await send('action:trainerB', { action: 'setActive', cardId: 'g-1', name: 'Gengar', image: IMG, hp: 120 });
+      await send('action:trainerA', { action: 'benchDamage', slot: 1, amount: 20 });
+      await on('.trainer-a .bench .mon:nth-child(2).moment-damage[data-amount="20"]');
+      await send('action:trainerB', { action: 'activeHeal' }); // (nothing to heal: nothing plays)
+      await send('action:trainerB', { action: 'activeDamage', amount: 50 });
+      await on('.trainer-b .active .mon.moment-damage[data-amount="50"]');
+      assert.ok((await marks()).includes('moment-damage-b'));
+      assert.equal(await page.locator('.trainer-a .active .mon.moment-damage[data-amount="50"]').count(), 0, 'only on the Pokémon that took it');
+    });
+
+    it('do not take a change of the maximum HP for a hit', async () => {
+      await send('action:trainerA', { action: 'setMaxHP', slot: -1, max: 130 });
+      await hpText('100/130');
+      await wait(100);
+      assert.equal(await anywhere(), 0);
+    });
+
+    it('start again when the same thing happens again before they are over, and last their whole time again', async () => {
+      await wear('#stage .mon.moment-damage{animation:oto-hit 5s linear}@keyframes oto-hit{from{opacity:.5}to{opacity:1}}');
+      const tile = '.trainer-a .active .mon.moment-damage';
+      const running = () => page.evaluate(() => document.getAnimations().filter((animation) => animation.animationName === 'oto-hit').map((animation) => animation.currentTime));
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await on(tile);
+      const first = Date.now();
+      await wait(MS * 0.6);
+      assert.ok((await running())[0] >= MS * 0.5, 'the animation of the design runs');
+      await send('action:trainerA', { action: 'activeDamage', amount: 20 });
+      await on('.trainer-a .active .mon.moment-damage[data-amount="20"]');
+      const again = await running();
+      assert.equal(again.length, 1);
+      assert.ok(again[0] < MS * 0.4, `it started over (${again[0]} ms in)`);
+      await wait(Math.max(0, first + MS * 1.2 - Date.now()));
+      assert.equal(await page.locator(tile).count(), 1, 'still there after the time of the first one');
+      await page.waitForSelector(tile, { state: 'detached', timeout: MS * 3 });
+    });
+
+    it('run the animations of the design on them', async () => {
+      await wear('#stage .mon.moment-damage{animation:oto-hit 1s}@keyframes oto-hit{from{opacity:.5}to{opacity:1}}');
+      const tile = '.trainer-a .active .mon';
+      assert.equal(await page.$eval(tile, (node) => getComputedStyle(node).animationName), 'none');
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await on(`${tile}.moment-damage`);
+      assert.equal(await page.$eval(tile, (node) => getComputedStyle(node).animationName), 'oto-hit');
+      assert.deepEqual(await page.evaluate(() => document.getAnimations().filter((animation) => animation.animationName === 'oto-hit').map((animation) => animation.playState)), ['running']);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('mark a Pokémon that comes into play, on the bench or in the Active spot, and one that takes the place of another', async () => {
+      await bench(0, 'Eevee');
+      await on('.trainer-a .bench .mon:nth-child(1).moment-enter');
+      assert.deepEqual(await marks(), ['moment-enter-a']);
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Mew', image: IMG, hp: 70 });
+      await on('.trainer-a .active .mon.moment-enter');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Mew');
+      // moved to a slot that was empty: it comes into that one, and nothing plays where it was
+      await page.waitForSelector('.moment-enter', { state: 'detached' });
+      await send('action:trainerA', { action: 'moveSlot', from: 0, to: 2 });
+      await on('.trainer-a .bench .mon:nth-child(3).moment-enter');
+      assert.equal(await page.locator('.trainer-a .bench .mon:nth-child(1)[class*="moment-"]').count(), 0);
+    });
+
+    it('mark both Pokémon of a switch', async () => {
+      await benched(0, 'Eevee');
+      await send('action:trainerA', { action: 'swapWithActive', slot: 0 });
+      await on('.trainer-a .active .mon.moment-switch');
+      await on('.trainer-a .bench .mon:nth-child(1).moment-switch');
+      assert.deepEqual(await marks(), ['moment-switch-a']);
+      assert.equal(await page.locator('.moment-enter').count(), 0, 'nobody came into play');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Eevee');
+    });
+
+    it('mark an evolution, and going back', async () => {
+      await send('action:card', { action: 'select', target: 'trainerA-active', cardId: 'a-2', evolve: true, cardData: { id: 'a-2', name: 'Raichu', hp: '120', images: { small: IMG, large: IMG }, abilities: [], attacks: [], retreat: 1 } });
+      await on('.trainer-a .active .mon.moment-evolve');
+      assert.deepEqual(await marks(), ['moment-evolve-a']);
+      assert.equal(await page.locator('.moment-enter').count(), 0);
+      await send('action:trainerA', { action: 'devolve', slot: -1 });
+      await on('.trainer-a .active .mon.moment-devolve');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Pikachu');
+    });
+
+    it('mark energy that is attached (how many), a tool, a status condition (which) and an ability that is used', async () => {
+      const tile = '.trainer-a .active .mon';
+      await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'grass', count: 2 });
+      await on(`${tile}.moment-energy[data-amount="2"]`);
+      await send('action:trainerA', { action: 'attachTool', slot: -1, name: 'Choice Belt' });
+      await on(`${tile}.moment-tool`);
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
+      await on(`${tile}.moment-status[data-status="poisoned"]`);
+      assert.deepEqual(await marks(), ['moment-energy-a', 'moment-status-a', 'moment-tool-a']);
+      await page.waitForSelector(`${tile}[data-status]`, { state: 'detached', timeout: MS * 3 });
+      assert.equal(await page.locator('.trainer-a .active .status-chip[data-status="poisoned"]').count(), 1, 'the condition itself stays');
+
+      await bench(0, 'Pichu', { abilities: ['Baby Rush'] });
+      await on('.trainer-a .bench .mon:nth-child(1).moment-enter');
+      await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: true });
+      await on('.trainer-a .bench .mon:nth-child(1).moment-ability');
+      await page.waitForSelector('.moment-ability', { state: 'detached', timeout: MS * 3 });
+      await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: false });
+      await page.waitForSelector('.trainer-a .bench .ability:not(.used)');
+      await wait(100);
+      assert.equal(await page.locator('.moment-ability').count(), 0, 'getting it back is not using it');
+    });
+
+    it('mark the prize cards that are taken, the turn that starts, what is used, a Stadium that comes into play and a game won', async () => {
+      await send('action:trainerA', { action: 'prizeMinus' });
+      await on('.trainer-a .prize:nth-child(6).moment-taken');
+      assert.equal(await page.locator('.prize.moment-taken').count(), 1);
+      await send('action:trainerB', { action: 'prizeSet', count: 3 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.moment-taken').length === 3);
+      assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => node.classList.contains('moment-taken'))), [false, false, false, true, true, true]);
+      assert.deepEqual(await marks(), ['moment-taken-a', 'moment-taken-b']);
+
+      await send('action:match', { action: 'toggleTurn' });
+      await on('.trainer-a.moment-turn');
+      assert.equal(await page.locator('.trainer-b.moment-turn').count(), 0);
+      await send('action:trainerA', { action: 'supporterPlus' });
+      await on('.trainer-a .token[data-kind="supporter"].moment-used');
+      await send('action:card', { action: 'setStadium', cardId: 's-1', name: 'Area Zero', image: IMG });
+      await on('.stadium.moment-enter');
+      await on('.trainer-a .token[data-kind="stadium"].moment-used');
+      assert.ok((await marks()).includes('moment-enter-a'), 'played by the trainer whose turn it is');
+      await send('action:match', { action: 'trainerBMatchWin' });
+      await on('.sb-b .sb-wins.moment-point');
+      assert.ok((await marks()).includes('moment-point-b'));
+      assert.equal(await page.locator('.sb-a .sb-wins.moment-point').count(), 0);
+    });
+
+    describe('for a knock out', () => {
+      const tile = '.trainer-a .active .mon';
+      beforeEach(async () => {
+        await benched(0, 'Eevee'); // (so the trainer still has a Pokémon)
+      });
+
+      it('keep the Pokémon on its tile, as it was, while the design animates it, and hide it then', async () => {
+        await wear('#stage .mon.moment-ko{opacity:.5}');
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await page.waitForSelector(`${tile}.moment-ko`); // (visible)
+        const from = Date.now();
+        assert.equal((await live()).trainerA.active.name, '', 'the slot is empty');
+        assert.equal(await page.locator(`${tile} .mon-name`).textContent(), 'Pikachu', 'as it was');
+        assert.equal(await page.$eval(tile, (node) => getComputedStyle(node).opacity), '0.5');
+        await on('.trainer-b .prize:nth-child(6).moment-taken');
+        assert.deepEqual(await marks(), ['moment-ko-a', 'moment-taken-b']);
+
+        // something else changes meanwhile: the tile stays
+        await send('action:trainerB', { action: 'setName', name: 'Misty' });
+        await page.waitForFunction(() => document.querySelector('.sb-b .sb-name').textContent === 'Misty');
+        assert.equal(await page.locator(tile).isVisible(), true);
+        await page.waitForSelector(tile, { state: 'hidden', timeout: MS * 4 });
+        const stayed = Date.now() - from;
+        assert.ok(stayed > MS - 200, `it stayed ${stayed} ms`);
+        assert.equal(await page.locator('.mon.moment-ko').count(), 0);
+        await wait(300);
+        assert.equal(await page.locator(tile).isHidden(), true, 'and stays hidden');
+        assert.deepEqual(page.problems, []);
+      });
+
+      it('let a Pokémon that comes into the slot take the tile at once', async () => {
+        await wear('#stage .mon.moment-ko{opacity:.5}');
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await page.waitForSelector(`${tile}.moment-ko`);
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-7', name: 'Raichu', image: IMG, hp: 120 });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .mon-name').textContent === 'Raichu');
+        assert.deepEqual(await page.$eval(tile, (node) => [node.hidden, node.classList.contains('moment-ko'), node.classList.contains('moment-enter')]), [false, false, true]);
+        assert.equal(await page.$eval(tile, (node) => getComputedStyle(node).opacity), '1');
+        assert.equal(await page.locator(`${tile} .hp-text`).textContent(), '120/120');
+        await wait(MS + 300);
+        assert.equal(await page.locator(tile).isVisible(), true, 'the knock out does not hide the newcomer');
+        assert.equal(await page.locator(`${tile} .mon-name`).textContent(), 'Raichu');
+      });
+
+      it('hide the tile at once when the design does not animate a knock out, and when a Pokémon is only taken off the table', async () => {
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await page.waitForFunction(() => document.getElementById('stage').classList.contains('moment-ko-a'));
+        assert.equal(await page.locator(tile).isHidden(), true, 'nothing would show it');
+        assert.equal(await page.locator(`${tile}.moment-ko`).count(), 1, 'the moment is there all the same');
+
+        await page.waitForSelector('.moment-ko', { state: 'detached', timeout: MS * 3 });
+        await wear('#stage .mon.moment-ko{opacity:.5}');
+        await send('action:trainerA', { action: 'clearSlot', slot: 0 });
+        await page.waitForSelector('.trainer-a .bench .mon:nth-child(1)', { state: 'hidden' });
+        await wait(100);
+        assert.equal(await page.locator('.moment-ko').count(), 0, 'no prize card was taken: it was not knocked out');
+      });
+    });
+
+    it('play nothing for the game sent whole when the page reconnects, nor for the same state drawn again', async () => {
+      await page.evaluate(() => window.oto.socket.disconnect());
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await send('action:trainerB', { action: 'prizeMinus' });
+      await bench(0, 'Eevee');
+      await page.evaluate(() => window.oto.socket.connect());
+      await hpText('70/100');
+      await wait(150);
+      assert.equal(await anywhere(), 0, 'what happened while the page was away is not played');
+      await page.evaluate(() => window.oto.update(window.oto.state));
+      assert.equal(await anywhere(), 0);
+      // and the next change plays
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await on('.trainer-a .active .mon.moment-damage[data-amount="10"]');
+    });
+
+    it('play nothing while the design animations are switched off, on the overlay or on one screen', async () => {
+      assert.equal(await page.evaluate(() => window.OTO_DISPLAY.DEFAULTS.moments), true, 'they are on unless switched off');
+      await send('action:settings', { action: 'update', display: { moments: false } });
+      await page.waitForFunction(() => window.oto.state.settings.display.moments === false);
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await hpText('70/100');
+      await wait(150);
+      assert.equal(await anywhere(), 0);
+
+      await send('action:settings', { action: 'update', display: { moments: true } });
+      await send('action:settings', { action: 'update', screens: [{ id: 'quiet', name: 'Quiet', display: { moments: false } }] });
+      const quiet = await openPage(browser, `${server.base}/overlay?screen=quiet`, { viewport: { width: 960, height: 540 } });
+      try {
+        await quiet.waitForSelector('.trainer-a .active .mon:not([hidden])');
+        await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+        await on('.trainer-a .active .mon.moment-damage');
+        await quiet.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '60/100');
+        await wait(150);
+        assert.equal(await quiet.locator('[class*="moment-"]').count(), 0, 'the screen that switched them off plays none');
+      } finally {
+        await quiet.context().close();
+      }
+    });
+
+    it('last as long as the design says, between a fifth of a second and ten seconds, and a second and a half when it says nothing', async () => {
+      const lasting = (value) => page.evaluate((text) => {
+        const root = document.documentElement;
+        if (text === null) root.style.removeProperty('--oto-moment-ms');
+        else root.style.setProperty('--oto-moment-ms', text);
+        const ms = window.oto.momentDuration();
+        root.style.removeProperty('--oto-moment-ms');
+        return ms;
+      }, value);
+      assert.equal(await lasting('2500'), 2500);
+      assert.equal(await lasting('1.2s'), 1200);
+      assert.equal(await lasting('800ms'), 800);
+      assert.equal(await lasting('50'), 200);
+      assert.equal(await lasting('60000'), 10000);
+      assert.equal(await lasting('soon'), 1500);
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await lasting(null), 1500);
+    });
+
+    it('can be played on a piece as if they had happened, without hiding a knocked out Pokémon', async () => {
+      assert.equal(await page.evaluate(() => window.oto.playMoment('damage', 'a', 'active', 60)), true);
+      await on('.trainer-a .active .mon.moment-damage[data-amount="60"]');
+      assert.deepEqual(await marks(), ['moment-damage-a']);
+      assert.equal(await page.evaluate(() => window.oto.playMoment('taken', 'b', 'prize2')), true);
+      await on('.trainer-b .prize:nth-child(3).moment-taken');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('enter', 'b', 'stadium')), true);
+      await on('.stadium.moment-enter');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('used', 'a', 'token-supporter')), true);
+      await on('.trainer-a .token[data-kind="supporter"].moment-used');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('ko', 'a', 'active')), true);
+      await on('.trainer-a .active .mon.moment-ko');
+      await page.waitForSelector('.moment-ko', { state: 'detached', timeout: MS * 3 });
+      assert.equal(await page.locator('.trainer-a .active .mon').isVisible(), true, 'the tile stays');
+      for (const [moment, side, target] of [['boom', 'a', 'active'], ['damage', 'c', 'active'], ['damage', 'a', 'bench9'], ['damage', 'a', 'toString']]) {
+        assert.equal(await page.evaluate((args) => window.oto.playMoment(...args), [moment, side, target]), false, `${moment} ${side} ${target}`);
+      }
+    });
+  });
+
   describe('inside the design editor', () => {
     let editor;
     beforeEach(async () => {
@@ -2052,6 +2423,35 @@ describe('overlay', { skip }, () => {
       const moved = await editor.evaluate(() => window.oto.blockRects().scoreboard);
       assert.ok(Math.abs(moved.w - rects.scoreboard.w / 2) < 3, 'measured as it looks, so it is half as wide');
       assert.ok(moved.y > rects.scoreboard.y + 150, 'and lower');
+    });
+
+    it('plays a moment it is asked for on the piece it names, as if it had happened, and says when it has', async () => {
+      await editor.evaluate(() => {
+        window.drawn = 0;
+        window.addEventListener('message', (event) => { if (event.data && event.data.kind === 'drawn') window.drawn++; });
+      });
+      await tell({ kind: 'state', state: await live() });
+      await tell({ kind: 'design', theme: { name: 'Draft', colors: {}, images: {}, css: ':root{--oto-moment-ms:400}#stage .mon.moment-ko{opacity:.3}' } });
+      await editor.waitForSelector('.trainer-a .active .mon:not([hidden])');
+      await editor.waitForFunction(() => window.drawn === 2);
+
+      await tell({ kind: 'moment', moment: 'damage', side: 'a', target: 'active', amount: 60 });
+      await editor.waitForSelector('.trainer-a .active .mon.moment-damage[data-amount="60"]');
+      assert.equal(await editor.evaluate(() => document.getElementById('stage').classList.contains('moment-damage-a')), true);
+      await editor.waitForFunction(() => window.drawn === 3);
+      await editor.waitForSelector('.moment-damage', { state: 'detached' });
+
+      // a knock out plays on the tile as it is, and the tile stays (the made-up match is not changed)
+      await tell({ kind: 'moment', moment: 'ko', side: 'a', target: 'active' });
+      await editor.waitForSelector('.trainer-a .active .mon.moment-ko');
+      assert.equal(await editor.$eval('.trainer-a .active .mon', (node) => getComputedStyle(node).opacity), '0.3');
+      await editor.waitForSelector('.moment-ko', { state: 'detached' });
+      await wait(200);
+      assert.equal(await editor.locator('.trainer-a .active .mon').isVisible(), true);
+
+      await tell({ kind: 'moment', moment: 'status', side: 'b', target: 'trainer' });
+      await editor.waitForSelector('.trainer-b.moment-status');
+      assert.deepEqual(editor.problems, []);
     });
 
     it('can show a banner that stays, and take it away', async () => {
