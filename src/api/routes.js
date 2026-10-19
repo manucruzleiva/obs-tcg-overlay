@@ -405,10 +405,11 @@ module.exports = (services) => {
     designChanged(saved.name);
     res.status(201).json(saved);
   }));
+  // (whether an overlay wears it is known before it goes: removing the one on air takes it off air)
   protectedRouter.delete('/themes/:name', handle((req, res) => {
-    const wasActive = themes.isActive(req.params.name);
+    const wasInUse = themes.isActive(req.params.name) || designsInUse().includes(folderName(req.params.name));
     if (!themes.remove(req.params.name)) return res.status(404).json({ error: 'Design not found' });
-    if (wasActive) {
+    if (wasInUse) {
       io.emit('theme:changed');
       io.emit('sounds:changed');
     }
