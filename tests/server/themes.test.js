@@ -232,6 +232,24 @@ describe('the folder a design lives in', () => {
       assert.deepEqual(design.sounds, {});
     });
 
+    it('leaves out only the color that is not allowed any more, and keeps the others when the design is saved again', () => {
+      // (a design saved before url() was refused in its colors, by OTO itself or by hand)
+      store.save('Neon League', { colors: { '--accent': '#ff4d6d' }, author: 'Mina' });
+      const file = path.join(store.folderFor('Neon League'), 'design.json');
+      const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+      written.colors = {
+        '--accent': '#ff4d6d', '--trainer-a': '#3b82f6', '--trainer-b': '#ef4444',
+        '--bg-panel': 'url(https://cdn.example/panel-texture.png) center / cover', '--bg-card': 'red; display: none'
+      };
+      fs.writeFileSync(file, JSON.stringify(written));
+      const kept = { '--accent': '#ff4d6d', '--trainer-a': '#3b82f6', '--trainer-b': '#ef4444' };
+      assert.deepEqual(store.get('Neon League').colors, kept);
+      assert.deepEqual(store.save('Neon League', { author: 'Mina K' }).colors, kept, 'saving something else keeps them');
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).colors, kept);
+      store.setImage('Neon League', 'logoImage', S.PNG);
+      assert.deepEqual(store.get('Neon League').colors, kept);
+    });
+
     it('can use a name Windows would not allow as a folder', () => {
       store.save('CON', { colors: { '--accent': '#123456' } });
       assert.equal(path.basename(store.folderFor('CON')), 'con-design');
@@ -719,6 +737,8 @@ describe('the folder a design lives in', () => {
       assert.deepEqual(Object.keys(design.images), ['logoImage', 'prizeCardBack']);
       assert.equal(store.importLegacy(legacy({ colors: { '--accent': '#0000ff' } })).colors['--accent'], '#0000ff', 'importing again replaces it');
       assert.equal(store.list().length, 1);
+      assert.deepEqual(store.importLegacy(legacy({ colors: { '--accent': '#0000ff', '--bg-panel': 'url(https://cdn.example/x.png)' } })).colors, { '--accent': '#0000ff' },
+        'a color that is not allowed any more is left out on its own');
       refuses(() => store.importLegacy('nope'), /must be an object/);
       refuses(() => store.importLegacy({ colors: {} }), /needs a name/);
     });

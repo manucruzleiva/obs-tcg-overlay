@@ -202,6 +202,22 @@ function checkSound(buffer, label = 'The sound') {
   return kind;
 }
 
+// The colors of a design written before (in its folder, or in the old format): a value that is not allowed (written by hand, or before
+// the rules were tightened, like a url() in a color) is left out on its own, and the others stay. What is sent to be saved or installed
+// is checked whole with sanitizeColors, which says what is wrong.
+function readColors(input) {
+  const colors = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return colors;
+  for (const [key, value] of Object.entries(input)) {
+    try {
+      Object.assign(colors, sanitizeColors({ [key]: value }));
+    } catch {
+      /* only this color is left out */
+    }
+  }
+  return colors;
+}
+
 // A style sheet that came as a file (from a package): plain UTF-8 text, and nothing in it that is not allowed. Returns the text.
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 function checkCss(buffer) {
@@ -326,7 +342,7 @@ class ThemeStore {
     let name;
     try { name = cleanName(raw.name); } catch { return null; }
     const design = { name, colors: {}, images: {}, sounds: {}, version: Math.round(stats.mtimeMs) };
-    try { design.colors = sanitizeColors(raw.colors); } catch { /* a bad color is dropped */ }
+    design.colors = readColors(raw.colors);
     const author = cleanText(raw.author, MAX_AUTHOR);
     const description = cleanText(raw.description, MAX_DESCRIPTION);
     if (author) design.author = author;
@@ -782,7 +798,7 @@ class ThemeStore {
       const buffer = IMAGE_KEYS.includes(key) ? decode(value) : null;
       if (buffer) images[key] = buffer;
     }
-    return this.addDesign({ name: legacy.name, colors: legacy.colors, images, font: decode(legacy.font) }, { replace: true });
+    return this.addDesign({ name: legacy.name, colors: readColors(legacy.colors), images, font: decode(legacy.font) }, { replace: true });
   }
 }
 
