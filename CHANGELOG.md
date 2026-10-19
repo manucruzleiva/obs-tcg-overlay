@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Moments for a design to animate**: the overlay marks what just happened in the match with a class on that piece for a short while (`moment-damage`, `moment-ko`, `moment-taken`, `moment-turn` and more, with `data-damage`, `data-heal` and `data-energy` for their numbers), and the stage with the kind and the side (`moment-ko-a`); `--oto-moment-ms` says how long. A knocked out Pokémon stays on its tile for its moment when the style sheet names `moment-ko`. Producers can switch them off (Settings, Overlay, *Design animations*), and the editor's **Try a moment** plays one
 
 ### Fixed
+- Deleting a design that an extra overlay wears (but that is not on air) now tells that overlay at once, instead of leaving the deleted design on it until OBS reloads it
+- The design editor asks before it closes when its Code or Style sheet box holds text with a mistake, or keys pressed a moment before, instead of losing them while it said "Saved"; Save reads those last keys first. `Ctrl+M` lets Tab move on from those boxes to the controls after them
+- A color typed in the Look tab just before opening the design editor is saved first, so the editor's Save no longer puts the old one back
 - A design's colors could hold a web address (`url(https://...)`, `image-set("https://..." 1x)`), and the overlay would fetch it. Colors are now read the way a style sheet is read: `url()` and the functions that load a picture are refused, and gradients stay. A design saved before with such a color keeps its other colors: only that one is left out
 
 ### Security
