@@ -483,6 +483,16 @@ describe('the style sheet of a design', () => {
       assert.ok(THEME.isImageKey('css-glow') && THEME.isImageKey('logoImage') && !THEME.isImageKey('css-') && !THEME.isImageKey('__proto__') && !THEME.isImageKey(5));
     });
 
+    it('finds which of the files a design holds a url() names, whatever the ending it is written with, and only in the same folder', () => {
+      const held = ['images/css-photo.jpg', 'images/logoImage.png', 'fonts/font.woff2', 'sounds/damage.mp3'];
+      assert.equal(CSS.heldFile('images/logoImage.png', held), 'images/logoImage.png');
+      assert.equal(CSS.heldFile('images/css-photo.png', held), 'images/css-photo.jpg');
+      assert.equal(CSS.heldFile('fonts/font.ttf', held), 'fonts/font.woff2');
+      for (const ref of ['images/css-other.png', 'images/css-photo', 'sounds/damage.mp3', 'images/damage.png', 'fonts/css-photo.ttf', '../images/css-photo.png', 'images/css-pho.png']) {
+        assert.equal(CSS.heldFile(ref, held), null, ref);
+      }
+    });
+
     it('writes one of the design\'s files as it is when it is not told where the files are', () => {
       assert.equal(strict('.a { background: url(images/css-glow.png) } .b { background: url( "fonts/font.woff2" ) }').css,
         '#stage .a{background:url("images/css-glow.png")}\n#stage .b{background:url("fonts/font.woff2")}');

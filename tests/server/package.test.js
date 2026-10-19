@@ -576,6 +576,19 @@ describe('the package service', () => {
       assert.equal(themes.addDesign({ name: 'Added', css: Buffer.alloc(0) }).styles, undefined);
     });
 
+    it('finds the files its style sheet names whatever their ending, as each is kept under the type it really is', () => {
+      const css = '.scoreboard { background: url(images/css-photo.png) }\n.logo { background: var(--css-photo) }\n.toast { background: url(images/css-ok.png) }\n'
+        + '@font-face { font-family: X; src: url(fonts/font.ttf) }\n.sb-name { background: url(images/css-none.png) }';
+      const result = service.install(zip({ 'design.json': { name: 'Mismatch' }, 'images/css-photo.png': S.JPG, 'images/css-ok.png': S.PNG, 'fonts/font.ttf': S.WOFF2, 'styles.css': css }));
+      const installed = themes.get(result.design.name);
+      assert.deepEqual([installed.images['css-photo'], installed.images['css-ok'], installed.font], ['images/css-photo.jpg', 'images/css-ok.png', 'fonts/font.woff2']);
+      const served = themes.resolved(installed.name).css;
+      assert.match(served, /#stage \.scoreboard\{background:url\("\/api\/theme\/assets\/images\/css-photo\.jpg\?v=\d+"\)\}/);
+      assert.match(served, /#stage \.toast\{background:url\("\/api\/theme\/assets\/images\/css-ok\.png\?v=\d+"\)\}/);
+      assert.match(served, /@font-face\{font-family:X;src:url\("\/api\/theme\/assets\/fonts\/font\.woff2\?v=\d+"\)\}/);
+      assert.match(served, /#stage \.sb-name\{\}/, 'a picture the design does not have is still left out');
+    });
+
     it('installs nothing at all when the style sheet of a package has something not allowed in it', () => {
       for (const [css, pattern] of [
         ['.a { color: red }\n@import url(https://tracker.example/x.css);', /^Line 2: @import is not allowed \(a design can only use the files it carries\)\.$/],

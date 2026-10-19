@@ -652,7 +652,11 @@ class ThemeStore {
       const key = [design.version, byName, stats.mtimeMs, stats.size, ...held].join('|');
       const kept = this.cssCache.get(`${file}|${byName}`);
       if (kept && kept.key === key) return kept.css;
-      const resolve = (ref) => (held.includes(ref) && /^(images|fonts)\//.test(ref) ? url(ref) : null);
+      // (a file is found whatever ending the style sheet gives it: each is kept under the type it really is)
+      const resolve = (ref) => {
+        const stored = cssRules.heldFile(ref, held);
+        return stored ? url(stored) : null;
+      };
       const { css } = cssRules.sanitizeCss(this.stylesOf(design), { resolve });
       this.cssCache.set(`${file}|${byName}`, { key, css });
       return css;

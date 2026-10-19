@@ -19,6 +19,7 @@
  *   checkValue(text, { strict }) -> the value as it is, when it is fine for one property (no url() at all); otherwise a CssError, or
  *     null without `strict`
  *   isOwnRef(ref) -> whether a url() names one of the files a design can hold (images/<slot>.<ext>, fonts/font.<ext>, fonts/<group>.<ext>)
+ *   heldFile(ref, held) -> the file among those a design holds that a url() names, whatever its ending (or null)
  *
  * Every rule is put on the stage: ".logo" is written "#stage .logo", and a rule that starts with :root or html (which can carry the
  * classes OTO puts on the page: ":root.has-logo .logo") is written ":root.has-logo #stage .logo". A rule for :root or html alone can
@@ -90,6 +91,19 @@
     if (image) return THEME.isImageKey(image[1]);
     const font = OWN_FONT.exec(ref);
     return Boolean(font) && (font[1] === 'font' || EXTRA_FONT_ROLES.indexOf(font[1]) !== -1);
+  }
+
+  // The file a design holds that url(ref) names (`held`: the files it holds, "images/css-glow.jpg"...), or null. A file is found by its
+  // folder and name whatever the ending it is written with: OTO keeps each file under the type it really is (a picture named .png that
+  // is a JPEG is images/css-glow.jpg), and a style sheet names it as it was named in the package or the folder.
+  function heldFile(ref, held) {
+    if (!isOwnRef(ref) || !Array.isArray(held)) return null;
+    if (held.indexOf(ref) !== -1) return ref;
+    const base = ref.slice(0, ref.lastIndexOf('.') + 1); // "images/css-glow."
+    for (const file of held) {
+      if (typeof file === 'string' && file.indexOf(base) === 0 && file.indexOf('.', base.length) === -1 && file.indexOf('/', base.length) === -1) return file;
+    }
+    return null;
   }
 
   // A complaint that can be shown to a person as it is: "Line 12: @import is not allowed (...)." (`line` is null for the whole file)
@@ -1196,5 +1210,5 @@
     return readTokens(preprocess(String(text), () => {})).tokens;
   }
 
-  return { CssError, sanitizeCss, checkValue, isOwnRef, tokenize, MAX_ITEMS, MAX_AT_DEPTH, MAX_DEPTH };
+  return { CssError, sanitizeCss, checkValue, isOwnRef, heldFile, tokenize, MAX_ITEMS, MAX_AT_DEPTH, MAX_DEPTH };
 }));

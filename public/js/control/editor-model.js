@@ -301,7 +301,10 @@ export class EditorModel {
     const held = this.fileRefs();
     const key = JSON.stringify([this.name, this.version, held]);
     if (this.cssPreview && this.cssPreview.text === text && this.cssPreview.key === key) return this.cssPreview.css;
-    const resolve = (ref) => (held.includes(ref) && /^(images|fonts)\//.test(ref) ? designAssetUrl(ref) : null);
+    const resolve = (ref) => {
+      const stored = window.OTO_THEME_CSS.heldFile(ref, held); // (whatever ending the style sheet gives it, as on the overlay)
+      return stored ? designAssetUrl(stored) : null;
+    };
     const { css } = window.OTO_THEME_CSS.sanitizeCss(text, { resolve });
     this.cssPreview = { text, key, css };
     return css;

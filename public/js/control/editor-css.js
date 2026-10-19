@@ -156,7 +156,7 @@ export class CssPanel {
     const held = this.model.fileRefs();
     const missing = [];
     try {
-      CSS.sanitizeCss(text, { strict: true, resolve: (ref) => { if (!held.includes(ref) && !missing.includes(ref)) missing.push(ref); return ref; } });
+      CSS.sanitizeCss(text, { strict: true, resolve: (ref) => { if (!CSS.heldFile(ref, held) && !missing.includes(ref)) missing.push(ref); return ref; } });
     } catch (error) {
       if (error instanceof CSS.CssError) return { error: error.message };
       throw error;

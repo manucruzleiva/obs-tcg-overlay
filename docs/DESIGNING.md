@@ -197,7 +197,7 @@ Besides the pictures of the slots, a design can have up to **24 pictures of its 
 Use one in either of two ways:
 
 - **`var(--css-texture)`.** OTO sets a custom property for each picture of the design, with its name: `--css-texture`, and `--logoImage`, `--backgroundImage`, `--spaceFrame1`... for the pictures of the slots. It works whatever kind of file the picture is. Give it a fallback in case the picture is missing (`var(--css-texture, none)`): a `var()` with nothing behind it makes the whole declaration void, and the piece loses its built-in background too.
-- **`url(images/css-texture.png)`**: the file as it is in the design folder, with its type. The pictures of the slots work too (`url(images/logoImage.png)`). A file the design does not have is left out, with its declaration. Nothing else can be named: no web address, no `data:`, no `..`, nothing after a `?` or a `#`.
+- **`url(images/css-texture.png)`**: the file as it is in the design folder. OTO keeps each file under the type it really is (a `.png` that is really a JPEG becomes `css-texture.jpg`), and finds it by its name whatever type you write. The pictures of the slots work too (`url(images/logoImage.png)`). A file the design does not have is left out, with its declaration. Nothing else can be named: no web address, no `data:`, no `..`, nothing after a `?` or a `#`.
 
 ```css
 .scoreboard { background: var(--css-texture, none) center / cover, var(--bg-panel); }
