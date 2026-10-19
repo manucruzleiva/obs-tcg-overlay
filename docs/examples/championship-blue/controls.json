@@ -1,6 +1,9 @@
 {
   "version": 1,
   "settings": {
-    "display": { "benchAttacks": true, "turnIndicator": false }
+    "display": {
+      "benchAttacks": true,
+      "turnIndicator": false
+    }
   }
 }
