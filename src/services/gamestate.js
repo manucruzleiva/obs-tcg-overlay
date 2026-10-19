@@ -79,6 +79,9 @@ function cleanStages(list) {
 
 const emptyPokemon = (slot) => ({
   slot,
+  // who this Pokémon is, from the moment it is put on the table until it leaves it (it moves with it, and stays when it evolves): the
+  // overlay tells two copies of one card apart by it
+  uid: '',
   cardId: '',
   name: '',
   image: '',
@@ -251,6 +254,7 @@ class GameStateService {
         pokemon.stages = cleanStages(pokemon.stages);
         pokemon.evolvesFrom = typeof pokemon.evolvesFrom === 'string' ? pokemon.evolvesFrom.slice(0, 80) : '';
         pokemon.status = GAME.cleanStatus(pokemon.status);
+        pokemon.uid = typeof pokemon.uid === 'string' ? pokemon.uid.slice(0, 64) : ''; // (none before it existed)
       }
       // The penalty used to be an on/off flag: it is a number of prize cards now
       const prizes = merged[side].prizes;
@@ -462,6 +466,8 @@ class GameStateService {
       pokemon.stages = [];
     }
 
+    // a Pokémon put on the table is a new one; an evolution, or going back, is the same one
+    if (!keep || !pokemon.uid) pokemon.uid = randomUUID();
     Object.assign(pokemon, { cardId, name, image });
     pokemon.evolvesFrom = typeof evolvesFrom === 'string' ? evolvesFrom.slice(0, 80) : '';
     // A different card, an evolution too, has no special conditions (the rules cure them when a Pokémon evolves)

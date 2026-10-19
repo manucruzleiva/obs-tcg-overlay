@@ -84,10 +84,12 @@
 
   // ------------------------------------------------------------------ moments
 
-  // Who the Pokémon in a slot is, to tell whether the slot still holds the same one ('' for an empty slot). A Pokémon on the table has no
-  // id of its own, so two copies of one card look the same.
+  // Who the Pokémon in a slot is, to tell whether the slot still holds the same one ('' for an empty slot): the id the game gives each
+  // Pokémon put on the table (it moves with it and stays when it evolves), so two copies of one card are told apart; its card for a game
+  // saved before there were ids.
   function occupantOf(pokemon) {
-    return hasPokemon(pokemon) ? `${pokemon.cardId || ''}|${pokemon.name || ''}` : '';
+    if (!hasPokemon(pokemon)) return '';
+    return pokemon.uid ? `#${pokemon.uid}` : `${pokemon.cardId || ''}|${pokemon.name || ''}`;
   }
 
   function sameCard(a, b) {
@@ -1122,7 +1124,7 @@
           this.queueShown(list, node, 'devolve', side);
           return;
         }
-        if (occupantOf(pokemon) !== occupantOf(old) || stages.length !== oldStages.length) {
+        if (occupantOf(pokemon) !== occupantOf(old) || !sameCard(pokemon, old) || stages.length !== oldStages.length) {
           this.queueShown(list, node, 'enter', side, { fresh: true });
           return;
         }

@@ -405,6 +405,36 @@ describe('GameStateService', () => {
     assert.deepEqual(fresh.abilities, []);
   });
 
+  it('gives each Pokémon put on the table an id of its own, that moves with it and stays when it evolves or goes back', () => {
+    put(gs, 'trainerA', -1, { cardId: 'a-1', name: 'Pikachu' });
+    put(gs, 'trainerA', 0, { cardId: 'a-1', name: 'Pikachu' });
+    const first = gs.state.trainerA.active.uid;
+    const second = gs.state.trainerA.bench[0].uid;
+    assert.match(first, /^[0-9a-f-]{36}$/);
+    assert.notEqual(first, second, 'two copies of one card are two Pokémon');
+    assert.equal(gs.state.trainerA.bench[1].uid, '', 'an empty slot has none');
+
+    gs.swapWithActive('trainerA', 0);
+    assert.deepEqual([gs.state.trainerA.active.uid, gs.state.trainerA.bench[0].uid], [second, first]);
+    gs.moveSlot('trainerA', 0, 3);
+    assert.equal(gs.state.trainerA.bench[3].uid, first);
+    gs.setPokemon('trainerA', -1, { cardId: 'a-2', name: 'Raichu', image: IMG, hp: 120 }, { keep: true });
+    assert.equal(gs.state.trainerA.active.uid, second, 'an evolution is the same Pokémon');
+    gs.devolve('trainerA', -1);
+    assert.equal(gs.state.trainerA.active.uid, second);
+    put(gs, 'trainerA', -1, { cardId: 'a-1', name: 'Pikachu' });
+    assert.notEqual(gs.state.trainerA.active.uid, second, 'another card put in the slot is another Pokémon, even the same card');
+    gs.clearSlot('trainerA', 3);
+    assert.equal(gs.state.trainerA.bench[3].uid, '');
+
+    // a game saved before there were ids has none, and one that has them keeps them
+    const saved = gs.snapshot();
+    delete saved.trainerA.active.uid;
+    saved.trainerA.bench[0].uid = 42;
+    gs.importState(saved);
+    assert.deepEqual([gs.state.trainerA.active.uid, gs.state.trainerA.bench[0].uid], ['', '']);
+  });
+
   it('switches a bench Pokémon with the active one', () => {
     put(gs, 'trainerA', -1, { hp: 60 });
     put(gs, 'trainerA', 2, { hp: 90 });

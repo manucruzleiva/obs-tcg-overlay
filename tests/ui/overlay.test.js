@@ -2343,6 +2343,44 @@ describe('overlay', { skip }, () => {
       assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Eevee');
     });
 
+    it('tell two copies of the same card apart: they change places, nobody is hit or healed', async () => {
+      const copy = (slot) => send('action:trainerA', { action: 'setBench', slot, cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+      await send('action:trainerA', { action: 'activeDamage', amount: 50 });
+      await copy(0);
+      await copy(1);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .bench .mon:not([hidden])').length === 2);
+      await over();
+      await forget();
+
+      await send('action:trainerA', { action: 'swapWithActive', slot: 0 });
+      await played('.trainer-a .active .mon', 'moment-switch');
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-switch');
+      await hpText('100/100');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-switch', 'moment-switch'], 'no damage, heal or energy');
+      assert.deepEqual(await there('#stage'), ['moment-switch-a']);
+
+      // two copies on the bench change places: each comes into the other's slot
+      await over();
+      await forget();
+      await send('action:trainerA', { action: 'moveSlot', from: 0, to: 1 });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      await played('.trainer-a .bench .mon:nth-child(2)', 'moment-enter');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-enter', 'moment-enter']);
+
+      // and the same card played again in a slot is another Pokémon, at full HP: it comes in, it is not healed
+      await over();
+      await forget();
+      await send('action:trainerA', { action: 'activeDamage', amount: 20 });
+      await played('.trainer-a .active .mon', 'moment-damage', { amount: 20 });
+      await forget();
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+      await played('.trainer-a .active .mon', 'moment-enter');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-enter']);
+    });
+
     it('mark an evolution, and going back', async () => {
       await send('action:card', { action: 'select', target: 'trainerA-active', cardId: 'a-2', evolve: true, cardData: { id: 'a-2', name: 'Raichu', hp: '120', images: { small: IMG, large: IMG }, abilities: [], attacks: [], retreat: 1 } });
       await played('.trainer-a .active .mon', 'moment-evolve');
