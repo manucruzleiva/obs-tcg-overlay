@@ -1,12 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="80" height="112" viewBox="0 0 40 56">
-  <defs>
-    <linearGradient id="n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a4a9e"/><stop offset="0.5" stop-color="#0a2a78"/><stop offset="1" stop-color="#04185c"/></linearGradient>
-    <radialGradient id="w" cx="0.4" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e8fb"/></radialGradient>
-  </defs>
-  <rect width="40" height="56" fill="url(#n)"/>
-  <rect x="1.5" y="1.5" width="37" height="53" rx="3" fill="none" stroke="#6fb0f0" stroke-opacity="0.55" stroke-width="1"/>
-  <circle cx="20" cy="28" r="13" fill="url(#w)"/>
-  <rect x="7" y="26.4" width="26" height="3.2" fill="#0a2a78"/>
-  <circle cx="20" cy="28" r="5.6" fill="#0a2a78"/>
-  <circle cx="20" cy="28" r="3.2" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 40 40">
+  <defs><radialGradient id="w" cx="0.38" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d3e6fb"/></radialGradient></defs>
+  <circle cx="20" cy="20" r="18.5" fill="url(#w)"/>
+  <rect x="1.5" y="18.2" width="37" height="3.6" fill="#0a2a78"/>
+  <circle cx="20" cy="20" r="7.2" fill="#0a2a78"/>
+  <circle cx="20" cy="20" r="4.2" fill="#ffffff"/>
 </svg>

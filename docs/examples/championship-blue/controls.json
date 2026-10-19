@@ -3,7 +3,8 @@
   "settings": {
     "display": {
       "benchAttacks": true,
-      "turnIndicator": false
+      "turnIndicator": true,
+      "moments": true
     }
   }
 }

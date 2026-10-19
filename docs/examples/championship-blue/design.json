@@ -1,18 +1,18 @@
 {
   "name": "Championship Blue",
   "author": "OTO",
-  "description": "Two blue columns that frame a top-down table camera, in the style of big tournament streams.",
+  "description": "Two blue columns that frame a top-down table camera, in the style of big tournament streams, with animations.",
   "colors": {
     "--accent": "#8ad4ff",
     "--accent-hover": "#b5e4ff",
     "--trainer-a": "#ffffff",
     "--trainer-b": "#ffffff",
-    "--ability": "#ef5466",
-    "--tool": "#b18cff",
+    "--ability": "#ea4f61",
+    "--tool": "#9b6dff",
     "--stadium": "#5ad6ff",
     "--supporter": "#ffb547",
     "--bg-panel": "linear-gradient(180deg, #17448f 0%, #0a2a74 45%, #031a5e 100%)",
-    "--bg-card": "linear-gradient(90deg, #0a2064 0%, #11296c 40%, #22407f 100%)",
+    "--bg-card": "linear-gradient(180deg, #213f8a 0%, #17337a 100%)",
     "--bg-primary": "#071a40",
     "--bg-secondary": "#0d2a5e",
     "--bg-tertiary": "#163a7a",
@@ -23,7 +23,7 @@
     "--warning": "#f2c230",
     "--danger": "#f67b22",
     "--info": "#5ab8ff",
-    "--border": "rgba(140, 196, 250, 0.7)",
+    "--border": "rgba(140, 196, 250, 0.45)",
     "--shadow": "rgba(0, 12, 48, 0.5)",
     "--radius": "10px",
     "--radius-sm": "6px"
@@ -33,85 +33,25 @@
   },
   "tile": {
     "active": {
-      "hp": "bottom",
-      "energy": "bottom-left",
-      "retreat": "bottom-right",
-      "status": "top-right"
+      "hp": "below"
     },
     "bench": {
-      "hp": "bottom",
-      "energy": "top-left",
-      "status": "top-right"
+      "hp": "below"
     }
   },
   "crop": {
+    "active": {
+      "x": 0.07,
+      "y": 0.12,
+      "w": 0.86,
+      "h": 0.315
+    },
     "stadium": {
       "x": 0.082,
-      "y": 0.19,
+      "y": 0.29,
       "w": 0.836,
-      "h": 0.11
+      "h": 0.07
     }
   },
-  "layout": {
-    "trainerA": {
-      "x": 0,
-      "y": 0,
-      "scale": 1.25
-    },
-    "trainerA.prizes": {
-      "x": 143,
-      "y": -30,
-      "scale": 0.8
-    },
-    "trainerA.active": {
-      "x": -68,
-      "y": -109,
-      "scale": 0.52
-    },
-    "trainerA.bench": {
-      "x": 81,
-      "y": -129,
-      "scale": 1.0
-    },
-    "trainerA.tokens": {
-      "x": 16,
-      "y": 682,
-      "scale": 0.736
-    },
-    "trainerB": {
-      "x": 0,
-      "y": 0,
-      "scale": 1.25
-    },
-    "trainerB.prizes": {
-      "x": -143,
-      "y": -30,
-      "scale": 0.8
-    },
-    "trainerB.active": {
-      "x": 57,
-      "y": -109,
-      "scale": 0.52
-    },
-    "trainerB.bench": {
-      "x": -81,
-      "y": -129,
-      "scale": 1.0
-    },
-    "trainerB.tokens": {
-      "x": -16,
-      "y": 682,
-      "scale": 0.736
-    },
-    "scoreboard": {
-      "x": 0,
-      "y": 964,
-      "scale": 0.66
-    },
-    "stadium": {
-      "x": 0,
-      "y": -945,
-      "scale": 0.86
-    }
-  }
+  "styles": "styles.css"
 }
