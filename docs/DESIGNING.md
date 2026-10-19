@@ -216,13 +216,13 @@ When something happens in the match, the overlay puts a class on the piece it ha
 
 | Class | On | When | Extra |
 |-------|----|------|-------|
-| `moment-damage` | `.mon`, the tile of a Pokémon (the Active one or one on the bench) | The same Pokémon took damage (not when its maximum HP changed in the same change) | `data-amount` and `--moment-amount`: how much |
-| `moment-heal` | `.mon` | The same Pokémon was healed (not when its maximum HP changed in the same change) | `data-amount` and `--moment-amount`: how much |
+| `moment-damage` | `.mon`, the tile of a Pokémon (the Active one or one on the bench) | The same Pokémon took damage (not when its maximum HP changed in the same change) | `data-damage` and `--moment-damage`: how much |
+| `moment-heal` | `.mon` | The same Pokémon was healed (not when its maximum HP changed in the same change) | `data-heal` and `--moment-heal`: how much |
 | `moment-ko` | `.mon` | The Pokémon left the table in the same change as the opponent took prize cards | See *Knock outs* below |
 | `moment-enter` | `.mon` | A Pokémon came into the slot: put in play, moved there from another slot, or another Pokémon in its place (not an evolution, a going back or a switch) | |
 | `moment-switch` | `.mon` | The Active Pokémon and a benched one changed places (both tiles) | |
 | `moment-evolve`, `moment-devolve` | `.mon` | The Pokémon evolved, or went back a stage | |
-| `moment-energy` | `.mon` | Energy was attached (basic or Special) | `data-amount` and `--moment-amount`: how many |
+| `moment-energy` | `.mon` | Energy was attached (basic or Special) | `data-energy` and `--moment-energy`: how many |
 | `moment-tool` | `.mon` | A Pokémon Tool was attached | |
 | `moment-status` | `.mon` | A special condition came | `data-status`: which one (`asleep`, `burned`, `confused`, `paralyzed`, `poisoned` or `trapped`) |
 | `moment-ability` | `.mon` | An ability was marked used | |
@@ -236,7 +236,7 @@ When something happens in the match, the overlay puts a class on the piece it ha
 
 **How long.** A moment lasts 1.5 seconds, unless the style sheet says otherwise with `--oto-moment-ms` in a rule for `:root`: a number of milliseconds (`1200`), or with its unit (`1200ms`, `1.2s`), from 200 to 10000 (a number outside is brought to the nearest end). OTO reads it each time moments start. Written as a plain number, it can time your animations too: `animation: fade calc(var(--oto-moment-ms) * 1ms)`. A moment that happens again on the same piece before it is over starts again from the beginning (its class is taken away and put back, which starts a CSS animation over) and lasts its whole time again.
 
-**The numbers.** `data-amount` (an attribute of the tile) and `--moment-amount` (a custom property on it) say how much damage or healing, or how many Energy were attached. Show it with `content: "-" attr(data-amount)` on the tile itself (`.mon.moment-damage::after`), or, on a piece inside the tile, with a counter, since the custom property reaches it: `counter-reset: amount var(--moment-amount); content: "-" counter(amount);`. They go when the moment that wrote them ends. `data-status` names the condition that came: `.mon.moment-status[data-status="poisoned"]`.
+**The numbers.** Each numbered moment writes its number under its own name, as an attribute of the tile and a custom property on it: `data-damage` and `--moment-damage` (how much damage), `data-heal` and `--moment-heal` (how much healing), `data-energy` and `--moment-energy` (how many Energy were attached). So a Pokémon that takes damage and gets Energy in the same change shows both numbers. Show one with `content: "-" attr(data-damage)` on the tile itself (`.mon.moment-damage::after`), or, on a piece inside the tile, with a counter, since the custom property reaches it: `counter-reset: amount var(--moment-damage); content: "-" counter(amount);`. Each goes when the moment that wrote it ends. `data-status` names the condition that came: `.mon.moment-status[data-status="poisoned"]`.
 
 **Knock outs.** When your style sheet names `moment-ko` somewhere (a rule for `.mon.moment-ko`, or for `#stage.moment-ko-a` or `#stage.moment-ko-b`; a comment does not count), the tile of a knocked out Pokémon stays on the overlay as it was, with its picture, name and HP, for as long as the moment lasts, and then goes: you can animate it on its way out. A Pokémon that comes into the slot meanwhile takes the tile at once. When another Pokémon takes the slot in the same change (a draft sent with the knock out and the next Active Pokémon), only the stage gets `moment-ko-a` or `moment-ko-b`: the tile shows the newcomer, and plays its `moment-enter`. When the style sheet does not name `moment-ko`, the tile goes at once, as in the built-in look; the stage still gets `moment-ko-a` or `moment-ko-b`.
 
@@ -269,7 +269,7 @@ With a picture for the style sheet named `css-texture`: the scoreboard on that p
 /* damage: the picture shakes, and the amount rises over it */
 .mon.moment-damage .art { animation: shake 0.4s ease-out; }
 .mon.moment-damage .art::after {
-  counter-reset: amount var(--moment-amount);
+  counter-reset: amount var(--moment-damage);
   content: "-" counter(amount);
   position: absolute;
   left: 0;

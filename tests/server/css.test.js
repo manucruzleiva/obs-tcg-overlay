@@ -224,7 +224,7 @@ describe('the style sheet of a design', () => {
       const neon = written(CSS_SHEETS[0].css);
       assert.ok(neon.includes('#stage .scoreboard{background:linear-gradient(135deg, rgba(10, 14, 24, .9) 0%, rgba(40, 20, 80, .85) 100%), var(--css-texture);'));
       assert.ok(neon.includes('@keyframes shake{\n0%,100%{transform:translateX(0)}\n20%{transform:translateX(-6px) rotate(-1deg)}'));
-      assert.ok(neon.includes('#stage .mon[data-amount]::after{content:"-" attr(data-amount);position:absolute;'));
+      assert.ok(neon.includes('#stage .mon[data-damage]::after{content:"-" attr(data-damage);position:absolute;'));
       assert.ok(neon.includes('@media (max-width: 1280px) and (orientation: landscape){\n#stage .scoreboard{transform:scale(.9)}\n}'));
       assert.ok(neon.startsWith(':root{--oto-moment-ms:1800;--glow:0 0 12px rgba(124, 140, 255, .8)}'));
       const paper = written(CSS_SHEETS[1].css);

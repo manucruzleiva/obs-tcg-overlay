@@ -1834,7 +1834,7 @@ describe('design editor', { skip }, () => {
       await page.locator('select[aria-label="The trainer it happens to"]').selectOption('b');
       await play.click();
       await untilFrame(() => document.querySelector('.trainer-b .active .mon.moment-damage'));
-      assert.deepEqual(await overlayFrame().$eval('.trainer-b .active .mon', (node) => [node.dataset.amount, getComputedStyle(node).outlineColor, getComputedStyle(node).outlineWidth]), ['30', 'rgb(255, 0, 0)', '6px']);
+      assert.deepEqual(await overlayFrame().$eval('.trainer-b .active .mon', (node) => [node.dataset.damage, getComputedStyle(node).outlineColor, getComputedStyle(node).outlineWidth]), ['30', 'rgb(255, 0, 0)', '6px']);
       assert.equal(await overlayFrame().evaluate(() => document.getElementById('stage').classList.contains('moment-damage-b')), true);
       assert.equal(await overlayFrame().locator('.trainer-a .moment-damage').count(), 0, 'only for the trainer chosen');
 

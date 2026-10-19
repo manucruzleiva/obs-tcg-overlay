@@ -43,6 +43,9 @@
   const MOMENT_MAX_MS = 10000;
   // the moments there are (each is the class moment-<kind>; see markMoments for when each one happens)
   const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point'];
+  // the moments that write something on their piece while they play: a number (data-damage and --moment-damage for moment-damage...),
+  // or the condition that came (data-status). Each its own, so two at once never take each other's.
+  const MOMENT_WRITES = ['damage', 'heal', 'energy', 'status'];
   const STATUS = {};
   const STATUS_INDEX = {};
   GAME.STATUS_CONDITIONS.forEach((condition, index) => { STATUS[condition.key] = condition; STATUS_INDEX[condition.key] = index; });
@@ -109,16 +112,11 @@
       delete node.moments[name];
     }
     node.classList.remove(name);
-    // the number and the status condition that this moment wrote on the node go with it
-    const owners = node.momentOwners || {};
-    if (owners.amount === name) {
-      delete owners.amount;
-      node.removeAttribute('data-amount');
-      node.style.removeProperty('--moment-amount');
-    }
-    if (owners.status === name) {
-      delete owners.status;
-      node.removeAttribute('data-status');
+    // what this moment wrote on the node goes with it (see MOMENT_WRITES)
+    const kind = name.slice('moment-'.length);
+    if (MOMENT_WRITES.indexOf(kind) !== -1) {
+      node.removeAttribute(`data-${kind}`);
+      node.style.removeProperty(`--moment-${kind}`);
     }
   }
 
@@ -1002,10 +1000,11 @@
 
     // What just happened in the game, found by comparing the state before with the state now, as classes on the pieces it happened to for
     // a short while (see playMoments), so a design's style sheet can animate them:
-    //   on a Pokémon's tile (.mon): moment-damage and moment-heal (data-amount and --moment-amount say how much), moment-ko (knocked out),
-    //   moment-enter (a Pokémon came into the slot: played, moved there, or another one in its place), moment-switch (the Active Pokémon
-    //   and a benched one changed places: both tiles), moment-evolve, moment-devolve, moment-energy (data-amount: how many were attached),
-    //   moment-tool, moment-status (data-status: the condition that came) and moment-ability (an ability was used);
+    //   on a Pokémon's tile (.mon): moment-damage and moment-heal (data-damage and --moment-damage, data-heal and --moment-heal say how
+    //   much), moment-ko (knocked out), moment-enter (a Pokémon came into the slot: played, moved there, or another one in its place),
+    //   moment-switch (the Active Pokémon and a benched one changed places: both tiles), moment-evolve, moment-devolve, moment-energy
+    //   (data-energy and --moment-energy: how many were attached), moment-tool, moment-status (data-status: the condition that came) and
+    //   moment-ability (an ability was used);
     //   moment-taken on each prize card that was just taken, moment-turn on the trainer whose turn it is now, moment-used on a tracker or
     //   a marker that was used, moment-enter on a Stadium that came into play and moment-point on the games won of a trainer.
     // Each also marks the stage with its kind and side (moment-damage-a, moment-taken-b...), for effects over the whole stage.
@@ -1219,16 +1218,12 @@
       void this.stage.offsetWidth; // (one layout for all of them)
       list.forEach((moment) => {
         const node = moment.node;
-        const owners = node.momentOwners || (node.momentOwners = {});
-        if (Number.isFinite(moment.amount)) {
-          node.setAttribute('data-amount', String(moment.amount));
-          node.style.setProperty('--moment-amount', String(moment.amount));
-          owners.amount = moment.name;
+        const kind = moment.name.slice('moment-'.length);
+        if (Number.isFinite(moment.amount) && MOMENT_WRITES.indexOf(kind) !== -1) {
+          node.setAttribute(`data-${kind}`, String(moment.amount));
+          node.style.setProperty(`--moment-${kind}`, String(moment.amount));
         }
-        if (moment.status) {
-          node.setAttribute('data-status', moment.status);
-          owners.status = moment.name;
-        }
+        if (moment.status) node.setAttribute('data-status', moment.status);
         node.classList.add(moment.name);
         const playing = { end: moment.end, timer: 0 };
         playing.timer = setTimeout(() => {

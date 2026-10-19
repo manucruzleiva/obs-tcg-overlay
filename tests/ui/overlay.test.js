@@ -44,8 +44,11 @@ describe('overlay', { skip }, () => {
         const before = (change.oldValue || '').split(/\s+/);
         Array.prototype.forEach.call(node.classList, (name) => {
           if (name.indexOf('moment-') !== 0 || before.indexOf(name) !== -1 || now.some((entry) => entry.node === node && entry.name === name)) return;
+          // (the number of a moment is in data-<kind> and --moment-<kind>: data-damage for moment-damage...)
+          const kind = name.slice('moment-'.length);
+          const numbered = ['damage', 'heal', 'energy'].indexOf(kind) !== -1;
           now.push({
-            node, name, amount: node.getAttribute('data-amount'), variable: node.style.getPropertyValue('--moment-amount'), status: node.getAttribute('data-status'),
+            node, name, amount: numbered ? node.getAttribute(`data-${kind}`) : null, variable: numbered ? node.style.getPropertyValue(`--moment-${kind}`) : '', status: node.getAttribute('data-status'),
             // and how the piece looks then
             hidden: node.hidden, opacity: getComputedStyle(node).opacity, text: node.querySelector('.mon-name') ? node.querySelector('.mon-name').textContent : null
           });
@@ -2253,13 +2256,43 @@ describe('overlay', { skip }, () => {
       await watch(`${tile}.moment-damage`);
       await send('action:trainerA', { action: 'activeDamage', amount: 30 });
       await played(tile, 'moment-damage', { amount: 30 });
-      assert.deepEqual(await page.evaluate(() => window.played.filter((entry) => entry.name === 'moment-damage').map((entry) => entry.variable)), ['30'], 'and in --moment-amount');
+      assert.deepEqual(await page.evaluate(() => window.played.filter((entry) => entry.name === 'moment-damage').map((entry) => entry.variable)), ['30'], 'and in --moment-damage');
       assert.deepEqual(await there('#stage'), ['moment-damage-a']);
       const stayed = await lasted();
       assert.ok(stayed > MS - 100 && stayed < MS + 1000, `it stayed ${stayed} ms`);
       await over(); // (the stage's too)
-      assert.equal(await page.$eval(tile, (node) => node.hasAttribute('data-amount') || node.style.getPropertyValue('--moment-amount') !== ''), false, 'the number goes with it');
+      assert.equal(await page.$eval(tile, (node) => node.hasAttribute('data-damage') || node.style.getPropertyValue('--moment-damage') !== ''), false, 'the number goes with it');
       assert.deepEqual(page.problems, []);
+    });
+
+    it('give each number a name of its own, so damage and energy in one change, or one after the other, each say theirs', async () => {
+      await wear('#stage .mon.moment-damage::after{content:"-" attr(data-damage)}#stage .mon.moment-energy::before{content:"+" attr(data-energy) " energy"}:root{--oto-moment-ms:4000}');
+      const tile = '.trainer-a .active .mon';
+      const labels = () => page.$eval(tile, (node) => [node.dataset.damage, node.dataset.energy, node.style.getPropertyValue('--moment-damage'), node.style.getPropertyValue('--moment-energy'),
+        getComputedStyle(node, '::after').content, getComputedStyle(node, '::before').content]);
+      const started = producer.expect('draft:state', (draft) => draft.active);
+      producer.emit('draft:start');
+      await started;
+      try {
+        await producer.draftAct('action:trainerA', { action: 'activeDamage', amount: 50 });
+        await producer.draftAct('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'fire', count: 2 });
+        producer.emit('draft:send', {});
+        await played(tile, 'moment-damage', { amount: 50 });
+        await played(tile, 'moment-energy', { amount: 2 });
+        assert.deepEqual(await labels(), ['50', '2', '50', '2', '"-50"', '"+2 energy"']);
+      } finally {
+        const closed = producer.expect('draft:state', (draft) => !draft.active, 2000).catch(() => null);
+        producer.emit('draft:discard');
+        await closed;
+      }
+      await page.waitForSelector(`${tile}.moment-damage`, { state: 'detached', timeout: 8000 });
+      assert.deepEqual((await labels()).slice(0, 4), [undefined, undefined, '', ''], 'each goes with its moment');
+
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await played(tile, 'moment-damage', { amount: 30 });
+      await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'water', count: 1 });
+      await played(tile, 'moment-energy', { amount: 1 });
+      assert.deepEqual(await labels(), ['30', '1', '30', '1', '"-30"', '"+1 energy"'], 'the energy does not take the number of the hit');
     });
 
     it('mark a heal, and damage on the bench, on the tile it happened to', async () => {
@@ -2306,7 +2339,7 @@ describe('overlay', { skip }, () => {
       assert.ok(started[1].at - started[0].at >= 550, `the animation started over (${Math.round(started[1].at - started[0].at)} ms after it first did)`);
       const stayed = await lasted();
       assert.ok(stayed >= long + 450, `and the moment lasted its whole time again: ${stayed} ms in all`);
-      assert.equal(await page.$eval(tile, (node) => node.getAttribute('data-amount')), null);
+      assert.equal(await page.$eval(tile, (node) => node.getAttribute('data-damage')), null);
     });
 
     it('run the animations of the design on them', async () => {
@@ -2593,7 +2626,7 @@ describe('overlay', { skip }, () => {
       const off = { hpBars: false, statusConditions: false, turnIndicator: false, matchScore: false, attachments: false, abilityTokens: false, toolCards: false, prizes: false, energyCounter: false, stadiumCounter: false, supporterCounter: false, stadium: false };
       const noTrace = () => page.evaluate(() => ({
         classes: Array.from(document.querySelectorAll('[class*="moment-"]')).map((node) => node.className),
-        numbers: Array.from(document.querySelectorAll('[data-amount], .mon[data-status]')).map((node) => node.className)
+        numbers: Array.from(document.querySelectorAll('[data-damage], [data-heal], [data-energy], .mon[data-status]')).map((node) => node.className)
       }));
       await bench(0, 'Pichu', { abilities: ['Baby Rush'] });
       await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');

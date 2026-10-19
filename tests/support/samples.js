@@ -23,7 +23,7 @@ const CSS_SHEETS = [
 }
 .mon.moment-damage { animation: shake .4s cubic-bezier(.36,.07,.19,.97) both; }
 .mon.moment-ko .art { animation: fade-out calc(var(--oto-moment-ms) * 1ms) ease-in forwards; }
-.mon[data-amount]::after { content: "-" attr(data-amount); position: absolute; top: -1em; right: 0; font: 700 28px/1 var(--font-numbers); color: #ff4d6d; }
+.mon[data-damage]::after { content: "-" attr(data-damage); position: absolute; top: -1em; right: 0; font: 700 28px/1 var(--font-numbers); color: #ff4d6d; }
 @keyframes shake { 0%, 100% { transform: translateX(0) } 20% { transform: translateX(-6px) rotate(-1deg) } 40% { transform: translateX(6px) rotate(1deg) } }
 @keyframes fade-out { from { opacity: 1; filter: none } to { opacity: 0; filter: grayscale(1) blur(2px) } }
 @media (max-width: 1280px) and (orientation: landscape) { .scoreboard { transform: scale(.9) } }
