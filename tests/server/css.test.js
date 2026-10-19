@@ -698,6 +698,25 @@ describe('the style sheet of a design', () => {
       assert.equal(written('.a { --x: \\31 0px; --y: 1\\65 3px; --z: -\\31; --w: \\- }'), '#stage .a{--x:\\31 0px;--y:1\\65 3px;--z:-\\31 ;--w:\\-}');
       assert.equal(written('.a { --x: a/**/b; --y: 1/**/px; --z: -/**/1; --w: //**/*; --v: a/**/-b }'), '#stage .a{--x:a/**/b;--y:1/**/px;--z:-/**/1;--w://**/*;--v:a/**/-b}', 'tokens that would run together are kept apart');
     });
+
+    it('never writes "-->" for a name that is "--" with a ">" after it, so what it writes reads as the same rule again', () => {
+      for (const [text, out] of [
+        ['.-- > .t{color:red}', '#stage .-\\->.t{color:red}'],
+        ['.--/**/>.t{color:red}', '#stage .-\\->.t{color:red}'],
+        ['\\-->.t{color:red}', '#stage -\\->.t{color:red}'],
+        ['-\\->.t{color:red}', '#stage -\\->.t{color:red}'],
+        ['.t:not(.-- > .t){color:blue}', '#stage .t:not(.-\\->.t){color:blue}'],
+        ['@media (--/**/>5){.t{color:red}}', '@media (-\\->5){\n#stage .t{color:red}\n}']
+      ]) {
+        const once = strict(text).css;
+        assert.equal(once, out, text);
+        assert.doesNotMatch(once, /-->/, text);
+        assert.equal(strict(once).css, once, `${text}: written the same again`);
+        assert.deepEqual(plainTokens(strict(once).css), plainTokens(once));
+      }
+      assert.ok(tokenize('#stage .-\\->.t').some((token) => token.type === 'ident' && token.value === '--'), 'and "-\\-" is still the name "--"');
+      assert.equal(written('.a{width:1--}'), '#stage .a{width:1-\\-}', 'a unit too');
+    });
   });
 
   describe('one value: a color of a design', () => {

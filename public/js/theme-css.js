@@ -406,6 +406,8 @@
       else if ((c >= 1 && c <= 0x1f) || c === 0x7f || c === 0x3c || c === 0x3e
         || (asIdent && k === 0 && isDigit(c)) || (asIdent && k === 1 && isDigit(c) && value.charCodeAt(0) === 0x2d)) out += `\\${c.toString(16)} `;
       else if (asIdent && k === 0 && c === 0x2d && value.length === 1) out += '\\-';
+      // (the name "--" is written "-\-": with a ">" after it, "-->" would be read as the end of an HTML comment)
+      else if (asIdent && k === 1 && c === 0x2d && value.length === 2 && value.charCodeAt(0) === 0x2d) out += '\\-';
       else if (c >= 0x80 || c === 0x2d || c === 0x5f || isDigit(c) || isLetter(c)) out += value[k];
       else out += `\\${value[k]}`;
     }
