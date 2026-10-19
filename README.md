@@ -84,6 +84,7 @@ A **design** is the look of the overlay: colors, logo, background, avatars, card
 - **Reserve spaces** for a camera feed (up to six: rectangle, rounded or oval) and draw your own frame over each.
 - **Crop the cards** (just the art, the whole card, or any rectangle), place the HP bar, energy, retreat cost and status icons, choose the picture on the prize cards and how they are laid out.
 - **Bring sounds** for any of the moments of a match.
+- **Restyle and animate it with CSS.** A design can carry a style sheet that restyles any piece and animates the moments of a match (damage, a knock out, a prize card taken, a turn that starts). It is checked, so it can only use the design's own files.
 - **Share it.** *Save as .oto* gives a ZIP-based file that carries the design, its sounds and, if you like, your control settings. You can also make one by hand by zipping a folder.
 
 **Learn more:** [the design guide](docs/DESIGNING.md) walks through making a design, and [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md) is the exact file format.
