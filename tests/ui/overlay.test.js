@@ -2506,6 +2506,53 @@ describe('overlay', { skip }, () => {
       }
     });
 
+    it('play nothing about a piece the producer switched off, so no design can show what it would have shown', async () => {
+      const off = { hpBars: false, statusConditions: false, turnIndicator: false, matchScore: false, attachments: false, abilityTokens: false, toolCards: false, prizes: false, energyCounter: false, stadiumCounter: false, supporterCounter: false, stadium: false };
+      const noTrace = () => page.evaluate(() => ({
+        classes: Array.from(document.querySelectorAll('[class*="moment-"]')).map((node) => node.className),
+        numbers: Array.from(document.querySelectorAll('[data-amount], .mon[data-status]')).map((node) => node.className)
+      }));
+      await bench(0, 'Pichu', { abilities: ['Baby Rush'] });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      await over();
+      await forget();
+      try {
+        await send('action:settings', { action: 'update', display: off });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp').classList.contains('opt-off'));
+        await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+        await send('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
+        await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'grass', count: 1 });
+        await send('action:trainerA', { action: 'attachTool', slot: -1, name: 'Choice Belt' });
+        await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: true });
+        await send('action:match', { action: 'toggleTurn' });
+        await send('action:trainerA', { action: 'supporterPlus' });
+        await send('action:trainerB', { action: 'prizeMinus' });
+        await send('action:card', { action: 'setStadium', cardId: 's-1', name: 'Area Zero', image: IMG });
+        await send('action:match', { action: 'trainerBMatchWin' });
+        await hpText('70/100');
+        await page.waitForFunction(() => window.oto.state.matchScore.trainerBWins === 1 && window.oto.state.stadium.inPlay);
+        await wait(150);
+        await nothing();
+        assert.deepEqual(await noTrace(), { classes: [], numbers: [] }, 'nothing on the tiles, the trainers or the stage');
+
+        // what is still shown plays: a Pokémon that comes in, and a knock out
+        await bench(1, 'Eevee');
+        await played('.trainer-a .bench .mon:nth-child(2)', 'moment-enter');
+        // and the Active Pokémon and the bench switched off take theirs with them
+        await over();
+        await forget();
+        await send('action:settings', { action: 'update', display: { activePokemon: false, benchPokemon: false } });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active').classList.contains('opt-off'));
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Mew', image: IMG, hp: 70 });
+        await send('action:trainerA', { action: 'knockOut', slot: 1 });
+        await page.waitForFunction(() => window.oto.state.trainerA.active.name === 'Mew' && !window.oto.state.trainerA.bench[1].name);
+        await wait(150);
+        await nothing();
+      } finally {
+        await send('action:settings', { action: 'update', display: Object.assign(Object.fromEntries(Object.keys(off).map((key) => [key, true])), { activePokemon: true, benchPokemon: true }) });
+      }
+    });
+
     it('last as long as the design says, between a fifth of a second and ten seconds, and a second and a half when it says nothing', async () => {
       const lasting = (value) => page.evaluate((text) => {
         const root = document.documentElement;

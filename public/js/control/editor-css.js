@@ -113,7 +113,7 @@ export class CssPanel {
           code('.token'), '), ', code('moment-enter'), ' on the Stadium (', code('.stadium'), ') and ', code('moment-point'), ' on the games won (', code('.sb-wins'), ').'),
         h('li', {}, 'The stage gets the kind and the side of each one too (', code('moment-damage-a'), ', ', code('moment-taken-b'), '...), for effects over the whole stage.'),
         h('li', {}, 'A knocked out Pokémon stays on its tile until its moment is over when the style sheet has a rule for ', code('moment-ko'), '.'),
-        h('li', {}, 'The producer can switch the design animations off in Settings, Overlay. The design guide (docs/DESIGNING.md) has all of it, with examples.')));
+        h('li', {}, 'The producer can switch the design animations off in Settings, Overlay, and none plays about a piece that is switched off (no ', code('moment-damage'), ' while the HP bars are off). The design guide (docs/DESIGNING.md) has all of it, with examples.')));
   }
 
   // Tab inserts two spaces instead of leaving the box

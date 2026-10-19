@@ -1007,6 +1007,8 @@
     //   moment-taken on each prize card that was just taken, moment-turn on the trainer whose turn it is now, moment-used on a tracker or
     //   a marker that was used, moment-enter on a Stadium that came into play and moment-point on the games won of a trainer.
     // Each also marks the stage with its kind and side (moment-damage-a, moment-taken-b...), for effects over the whole stage.
+    // None plays about a piece the producer switched off (see switchedOff): no damage while the HP bars are off, nothing on the bench while
+    // it is off...
     // The game keeps no record of what was done, only how it is now: undoing something plays its reverse (undoing damage is a heal).
     markMoments(previous, state) {
       const list = [];
@@ -1022,16 +1024,16 @@
         this.markPokemon(list, side, before, now, left(state[opponent]) < left(previous[opponent]));
 
         // the prize cards that were just taken, the turn that starts, a tracker or a marker that was used, a game won
-        for (let index = left(now); index < left(before); index++) this.queueMoment(list, refs.prizeNodes[index], 'taken', side);
-        if (now.isTurn && !before.isTurn) this.queueMoment(list, refs.root, 'turn', side);
+        for (let index = left(now); index < left(before); index++) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
+        if (now.isTurn && !before.isTurn) this.queueShown(list, refs.root, 'turn', side, {}, refs.turnTag);
         TOKENS.forEach(([key, resource]) => {
           const was = before.resources && before.resources[resource];
           const is = now.resources && now.resources[resource];
-          if (was && is && is.used > was.used) this.queueMoment(list, refs[key].root, 'used', side);
+          if (was && is && is.used > was.used) this.queueShown(list, refs[key].root, 'used', side);
         });
         const wins = `${side}Wins`;
         if (previous.matchScore && state.matchScore && state.matchScore[wins] > previous.matchScore[wins]) {
-          this.queueMoment(list, this.board.sides[side].wins, 'point', side);
+          this.queueShown(list, this.board.sides[side].wins, 'point', side);
         }
       });
 
@@ -1046,10 +1048,24 @@
           return Boolean(was && is && is.used > was.used);
         };
         const by = SIDES.find(played) || SIDES.find((side) => Boolean(state[side] && state[side].isTurn)) || null;
-        this.queueMoment(list, this.stadiumBox, 'enter', by);
+        this.queueShown(list, this.stadiumBox, 'enter', by);
       }
 
       this.playMoments(list);
+    }
+
+    // Whether what a moment is about is off the overlay: the piece it plays on is in one the producer switched off, or so is every piece
+    // that shows what it is about (`shows`: the HP bar for damage, the status icons for a condition...). Such a moment does not play, so
+    // that no design can show what the producer hid (the damage, the condition, whose turn it is, a game won).
+    switchedOff(node, shows) {
+      if (node.closest('.opt-off')) return true;
+      const pieces = shows ? [].concat(shows) : [];
+      return pieces.length > 0 && pieces.every((piece) => Boolean(piece.closest('.opt-off')));
+    }
+
+    // queueMoment, for a moment of the game that is on the overlay (see switchedOff)
+    queueShown(list, node, kind, side, extra, shows) {
+      if (!this.switchedOff(node, shows)) this.queueMoment(list, node, kind, side, extra);
     }
 
     // The moments of the Pokémon of one trainer (see markMoments). `prizesTaken`: the opponent took prize cards in the same change.
@@ -1088,26 +1104,26 @@
         }
         // another Pokémon on the tile: what was still playing on it was about the one before (`fresh`)
         if (!hasPokemon(old)) {
-          this.queueMoment(list, node, 'enter', side, { fresh: true });
+          this.queueShown(list, node, 'enter', side, { fresh: true });
           return;
         }
         if (switched !== -1 && (index === 0 || index === switched)) {
-          this.queueMoment(list, node, 'switch', side, { fresh: true });
+          this.queueShown(list, node, 'switch', side, { fresh: true });
           return;
         }
         // an evolution remembers the card it was (the last of its stages), and going back takes that card again
         const oldStages = Array.isArray(old.stages) ? old.stages : [];
         const stages = Array.isArray(pokemon.stages) ? pokemon.stages : [];
         if (stages.length === oldStages.length + 1 && sameCard(stages[stages.length - 1], old)) {
-          this.queueMoment(list, node, 'evolve', side);
+          this.queueShown(list, node, 'evolve', side);
           return;
         }
         if (stages.length === oldStages.length - 1 && sameCard(oldStages[oldStages.length - 1], pokemon)) {
-          this.queueMoment(list, node, 'devolve', side);
+          this.queueShown(list, node, 'devolve', side);
           return;
         }
         if (occupantOf(pokemon) !== occupantOf(old) || stages.length !== oldStages.length) {
-          this.queueMoment(list, node, 'enter', side, { fresh: true });
+          this.queueShown(list, node, 'enter', side, { fresh: true });
           return;
         }
 
@@ -1117,19 +1133,19 @@
         const hp = pokemon.hp || {};
         if ((oldHp.max || 0) === (hp.max || 0)) {
           const change = (oldHp.current || 0) - (hp.current || 0);
-          if (change > 0) this.queueMoment(list, node, 'damage', side, { amount: change });
-          else if (change < 0) this.queueMoment(list, node, 'heal', side, { amount: -change });
+          if (change > 0) this.queueShown(list, node, 'damage', side, { amount: change }, mon.hp);
+          else if (change < 0) this.queueShown(list, node, 'heal', side, { amount: -change }, mon.hp);
         }
         const attached = Math.max(0, countOf(pokemon.energies) - countOf(old.energies)) + Math.max(0, countOf(pokemon.specialEnergies) - countOf(old.specialEnergies));
-        if (attached > 0) this.queueMoment(list, node, 'energy', side, { amount: attached });
-        if (countOf(pokemon.tools) > countOf(old.tools)) this.queueMoment(list, node, 'tool', side);
+        if (attached > 0) this.queueShown(list, node, 'energy', side, { amount: attached }, mon.energies);
+        if (countOf(pokemon.tools) > countOf(old.tools)) this.queueShown(list, node, 'tool', side, {}, [mon.toolCards, mon.tools]);
         const had = Array.isArray(old.status) ? old.status : [];
         const came = (Array.isArray(pokemon.status) ? pokemon.status : []).filter((key) => had.indexOf(key) === -1);
-        if (came.length) this.queueMoment(list, node, 'status', side, { status: String(came[came.length - 1]) });
+        if (came.length) this.queueShown(list, node, 'status', side, { status: String(came[came.length - 1]) }, mon.statuses);
         const oldAbilities = Array.isArray(old.abilities) ? old.abilities : [];
         const used = (Array.isArray(pokemon.abilities) ? pokemon.abilities : []).some((ability, i) => Boolean(ability && ability.used
           && oldAbilities[i] && !oldAbilities[i].used && oldAbilities[i].name === ability.name));
-        if (used) this.queueMoment(list, node, 'ability', side);
+        if (used) this.queueShown(list, node, 'ability', side, {}, mon.abilities);
       });
     }
 
@@ -1137,6 +1153,7 @@
     // with what it showed, until the moment is over, and goes then (a Pokémon that comes into the slot meanwhile takes it at once: see
     // renderMon). Without such a rule the tile goes at once, as it always has.
     markKnockOut(list, mon, side) {
+      if (this.switchedOff(mon.root)) return; // (the Active Pokémon, or the bench, is switched off: the tile goes, and nothing plays)
       const extra = {};
       if (this.designCss.textContent.indexOf('moment-ko') !== -1) {
         mon.root.hidden = false; // (renderMon has just hidden it, and left what it showed)
