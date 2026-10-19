@@ -5,6 +5,11 @@
  * announcements (announce) and a note when the theme changes (theme:changed). Every element carries a
  * data-opt key from the shared catalogue (public/js/display-options.js) so it can be switched off.
  *
+ * A design can bring a style sheet of its own (checked before it gets here, see public/js/theme-css.js): it goes
+ * in <style id="oto-design-css">, after the built-in sheets. For it to animate what happens in the game, the
+ * overlay puts "moments" on the pieces it happened to for a short while (see markMoments): classes such as
+ * moment-damage on a Pokémon's tile or moment-taken on a prize card, and moment-damage-a on the stage.
+ *
  * Kept to syntax that older OBS browser engines understand.
  */
 (function () {
@@ -30,6 +35,14 @@
   const ENERGY_INDEX = {};
   GAME.ENERGY_KEYS.forEach((key, index) => { ENERGY_INDEX[key] = index; });
   const PER_TURN = ['energy', 'stadiumUse', 'supporter']; // the trackers of what is used once each turn (the GX and VSTAR markers are for the game)
+  // each tracker and marker, with the counter of the game it shows
+  const TOKENS = [['energy', 'energyPerTurn'], ['stadiumUse', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn'], ['gx', 'gxPerGame'], ['vstar', 'vstarPerGame']];
+  // A moment lasts as long as the design's style sheet says (--oto-moment-ms, set in a rule for :root), within these bounds
+  const MOMENT_MS = 1500;
+  const MOMENT_MIN_MS = 200;
+  const MOMENT_MAX_MS = 10000;
+  // the moments there are (each is the class moment-<kind>; see markMoments for when each one happens)
+  const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point'];
   const STATUS = {};
   const STATUS_INDEX = {};
   GAME.STATUS_CONDITIONS.forEach((condition, index) => { STATUS[condition.key] = condition; STATUS_INDEX[condition.key] = index; });
@@ -67,6 +80,48 @@
 
   function cssUrl(value) {
     return `url("${String(value).replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
+  }
+
+  // ------------------------------------------------------------------ moments
+
+  // Who the Pokémon in a slot is, to tell whether the slot still holds the same one ('' for an empty slot). A Pokémon on the table has no
+  // id of its own, so two copies of one card look the same.
+  function occupantOf(pokemon) {
+    return hasPokemon(pokemon) ? `${pokemon.cardId || ''}|${pokemon.name || ''}` : '';
+  }
+
+  function sameCard(a, b) {
+    return Boolean(a && b) && (a.cardId || '') === (b.cardId || '') && (a.name || '') === (b.name || '');
+  }
+
+  function countOf(list) {
+    return Array.isArray(list) ? list.length : 0;
+  }
+
+  // Stop a moment that is still playing on a node: its class goes now, and what it was to do at its end is not done
+  // (node.moments holds the moments playing on a node, by class, each with its timer)
+  function endMoment(node, name) {
+    const playing = node.moments && node.moments[name];
+    if (playing) {
+      clearTimeout(playing.timer);
+      delete node.moments[name];
+    }
+    node.classList.remove(name);
+    // the number and the status condition that this moment wrote on the node go with it
+    const owners = node.momentOwners || {};
+    if (owners.amount === name) {
+      delete owners.amount;
+      node.removeAttribute('data-amount');
+      node.style.removeProperty('--moment-amount');
+    }
+    if (owners.status === name) {
+      delete owners.status;
+      node.removeAttribute('data-status');
+    }
+  }
+
+  function endMoments(node) {
+    Object.keys(node.moments || {}).forEach((name) => endMoment(node, name));
   }
 
   // ------------------------------------------------------------- building blocks
@@ -295,6 +350,13 @@
 
   function renderMon(mon, pokemon) {
     const present = hasPokemon(pokemon);
+    // A Pokémon that was just knocked out stays on its tile, as it was, until its moment is over (see markMoments). A Pokémon that comes
+    // into the slot meanwhile ends that at once: the tile is drawn again for the newcomer.
+    if (mon.knockedOut) {
+      if (!present) return;
+      mon.knockedOut = false;
+      endMoments(mon.root);
+    }
     mon.root.hidden = !present;
     if (!present) return;
 
@@ -362,6 +424,10 @@
       this.themeGeneration = 0;
       this.toastTimers = {};
       this.effectNodes = [];
+      // the style sheet of the design that is on (see applyTheme), after the built-in ones so that it wins when both say something
+      this.designCss = document.createElement('style');
+      this.designCss.id = 'oto-design-css';
+      document.head.appendChild(this.designCss);
 
       // "editor" is the copy inside the design editor: it draws what the editor sends and talks to no server
       const params = new URLSearchParams(window.location.search);
@@ -385,7 +451,9 @@
       // role "preview" is the small copy inside the control panel: it is not counted as a screen
       const role = params.has('preview') ? 'preview' : 'overlay';
       this.socket = window.io({ auth: { role } });
-      this.socket.on('state:full', (state) => this.update(state));
+      // (the whole game is sent when the page connects, and again when it reconnects: it is drawn as it is, and what happened while the
+      // page was away is not played as moments)
+      this.socket.on('state:full', (state) => this.update(state, { full: true }));
       this.socket.on('state:update', (state) => this.update(state));
       this.socket.on('announce', (announcement) => this.announce(announcement));
       this.socket.on('theme:changed', () => this.loadTheme());
@@ -665,7 +733,8 @@
 
     // ---- the game
 
-    update(state) {
+    // `full`: the whole game, sent when the page (re)connects (see the constructor)
+    update(state, { full = false } = {}) {
       const previous = this.state;
       this.state = state;
       const display = this.displayOf(state);
@@ -695,6 +764,10 @@
       this.stage.querySelectorAll('[data-opt]').forEach((node) => {
         node.classList.toggle('opt-off', display[node.dataset.opt] === false);
       });
+
+      // Then what just happened, for the design's style sheet to animate. Not for the first state the page gets, nor for the whole game sent
+      // again after a reconnection (everything that happened meanwhile would play at once), nor when the same state is drawn again.
+      if (previous && previous !== state && !full && display.moments !== false) this.markMoments(previous, state);
     }
 
     renderScoreboard(state, display) {
@@ -756,22 +829,24 @@
       // of the ones still there are marked red
       const opponent = state[side === 'trainerA' ? 'trainerB' : 'trainerA'];
       const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
-      // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden)
+      // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden: then the picture of the card is not given to
+      // the prize card at all, so no style sheet can show a card that is face down)
       const faces = trainer.prizes.cards || [];
+      const faceDown = Boolean(trainer.prizes.hidden);
       refs.prizeNodes.forEach((node, index) => {
         node.classList.toggle('taken', index >= trainer.prizes.count);
         node.classList.toggle('penalty', index < penalty);
         const face = faces[index] && faces[index].image;
         node.classList.toggle('has-face', Boolean(face));
-        if (face) node.style.setProperty('--prize-face', cssUrl(face));
+        if (face && !faceDown) node.style.setProperty('--prize-face', cssUrl(face));
         else node.style.removeProperty('--prize-face');
       });
-      refs.prizes.classList.toggle('is-hidden', Boolean(trainer.prizes.hidden));
+      refs.prizes.classList.toggle('is-hidden', faceDown);
       refs.prizes.classList.toggle('pulse', penalty > 0 && state.settings.showPenaltyAnimation !== false);
       refs.prizeFlag.textContent = penalty > 0 ? 'PENALTY' : '';
 
       // once-per-turn tokens, and the once-per-game markers
-      [['energy', 'energyPerTurn'], ['stadiumUse', 'stadiumPerTurn'], ['supporter', 'supporterPerTurn'], ['gx', 'gxPerGame'], ['vstar', 'vstarPerGame']].forEach(([key, resource]) => {
+      TOKENS.forEach(([key, resource]) => {
         const counter = trainer.resources[resource];
         if (!counter) return;
         refs[key].root.classList.toggle('used', counter.used >= counter.available);
@@ -913,9 +988,265 @@
       this.schedule(fx, announcement.animationMs, () => fx.remove());
     }
 
+    // ---- moments
+
+    // What just happened in the game, found by comparing the state before with the state now, as classes on the pieces it happened to for
+    // a short while (see playMoments), so a design's style sheet can animate them:
+    //   on a Pokémon's tile (.mon): moment-damage and moment-heal (data-amount and --moment-amount say how much), moment-ko (knocked out),
+    //   moment-enter (a Pokémon came into the slot: played, moved there, or another one in its place), moment-switch (the Active Pokémon
+    //   and a benched one changed places: both tiles), moment-evolve, moment-devolve, moment-energy (data-amount: how many were attached),
+    //   moment-tool, moment-status (data-status: the condition that came) and moment-ability (an ability was used);
+    //   moment-taken on each prize card that was just taken, moment-turn on the trainer whose turn it is now, moment-used on a tracker or
+    //   a marker that was used, moment-enter on a Stadium that came into play and moment-point on the games won of a trainer.
+    // Each also marks the stage with its kind and side (moment-damage-a, moment-taken-b...), for effects over the whole stage.
+    // The game keeps no record of what was done, only how it is now: undoing something plays its reverse (undoing damage is a heal).
+    markMoments(previous, state) {
+      const list = [];
+      const left = (trainer) => Math.max(0, Math.min(PRIZE_SLOTS, Number(trainer && trainer.prizes && trainer.prizes.count) || 0));
+      SIDES.forEach((side) => {
+        const before = previous[side];
+        const now = state[side];
+        if (!before || !now) return;
+        const refs = this.trainers[side];
+        const opponent = side === 'trainerA' ? 'trainerB' : 'trainerA';
+
+        // (when the opponent took prize cards in the same change, a Pokémon that left the table was knocked out)
+        this.markPokemon(list, side, before, now, left(state[opponent]) < left(previous[opponent]));
+
+        // the prize cards that were just taken, the turn that starts, a tracker or a marker that was used, a game won
+        for (let index = left(now); index < left(before); index++) this.queueMoment(list, refs.prizeNodes[index], 'taken', side);
+        if (now.isTurn && !before.isTurn) this.queueMoment(list, refs.root, 'turn', side);
+        TOKENS.forEach(([key, resource]) => {
+          const was = before.resources && before.resources[resource];
+          const is = now.resources && now.resources[resource];
+          if (was && is && is.used > was.used) this.queueMoment(list, refs[key].root, 'used', side);
+        });
+        const wins = `${side}Wins`;
+        if (previous.matchScore && state.matchScore && state.matchScore[wins] > previous.matchScore[wins]) {
+          this.queueMoment(list, this.board.sides[side].wins, 'point', side);
+        }
+      });
+
+      // a Stadium that came into play (where there was none, or another one), on the side of the trainer who played it when the game says
+      // so (their Stadium play was used), or else of the trainer whose turn it is
+      const stadiumOf = (game) => (game.stadium && game.stadium.inPlay && (game.stadium.image || game.stadium.name) ? game.stadium : null);
+      const stadium = stadiumOf(state);
+      if (stadium && !sameCard(stadiumOf(previous), stadium)) {
+        const played = (side) => {
+          const was = previous[side] && previous[side].resources && previous[side].resources.stadiumPerTurn;
+          const is = state[side] && state[side].resources && state[side].resources.stadiumPerTurn;
+          return Boolean(was && is && is.used > was.used);
+        };
+        const by = SIDES.find(played) || SIDES.find((side) => Boolean(state[side] && state[side].isTurn)) || null;
+        this.queueMoment(list, this.stadiumBox, 'enter', by);
+      }
+
+      this.playMoments(list);
+    }
+
+    // The moments of the Pokémon of one trainer (see markMoments). `prizesTaken`: the opponent took prize cards in the same change.
+    markPokemon(list, side, before, now, prizesTaken) {
+      const refs = this.trainers[side];
+      const tiles = [refs.activeMon].concat(refs.benchMons);
+      // what each tile showed and shows now: the Active Pokémon, then the bench (a slot that is not in use shows nothing)
+      const shown = (trainer) => [trainer.active].concat(refs.benchMons.map((mon, index) => (index < trainer.benchSize && trainer.bench ? trainer.bench[index] : null)));
+      const was = shown(before);
+      const is = shown(now);
+
+      // the Pokémon that are in a slot they were not in: a slot that was emptied, and held one of them, saw it move to another slot
+      const arrivals = [];
+      is.forEach((pokemon, index) => {
+        if (hasPokemon(pokemon) && occupantOf(pokemon) !== occupantOf(was[index])) arrivals.push(occupantOf(pokemon));
+      });
+      // the Active Pokémon and a benched one that changed places (switched in, or dragged onto each other)
+      let switched = -1;
+      if (hasPokemon(was[0]) && hasPokemon(is[0]) && occupantOf(was[0]) !== occupantOf(is[0])) {
+        for (let index = 1; index < is.length && switched === -1; index++) {
+          if (occupantOf(is[0]) === occupantOf(was[index]) && occupantOf(is[index]) === occupantOf(was[0])) switched = index;
+        }
+      }
+
+      tiles.forEach((mon, index) => {
+        const old = was[index];
+        const pokemon = is[index];
+        const node = mon.root;
+        if (!hasPokemon(pokemon)) {
+          if (!hasPokemon(old)) return;
+          const moved = arrivals.indexOf(occupantOf(old));
+          if (moved !== -1) arrivals.splice(moved, 1); // (the slot it went to plays)
+          else if (prizesTaken) this.markKnockOut(list, mon, side);
+          // (a Pokémon taken off the table some other way just goes)
+          return;
+        }
+        // another Pokémon on the tile: what was still playing on it was about the one before (`fresh`)
+        if (!hasPokemon(old)) {
+          this.queueMoment(list, node, 'enter', side, { fresh: true });
+          return;
+        }
+        if (switched !== -1 && (index === 0 || index === switched)) {
+          this.queueMoment(list, node, 'switch', side, { fresh: true });
+          return;
+        }
+        // an evolution remembers the card it was (the last of its stages), and going back takes that card again
+        const oldStages = Array.isArray(old.stages) ? old.stages : [];
+        const stages = Array.isArray(pokemon.stages) ? pokemon.stages : [];
+        if (stages.length === oldStages.length + 1 && sameCard(stages[stages.length - 1], old)) {
+          this.queueMoment(list, node, 'evolve', side);
+          return;
+        }
+        if (stages.length === oldStages.length - 1 && sameCard(oldStages[oldStages.length - 1], pokemon)) {
+          this.queueMoment(list, node, 'devolve', side);
+          return;
+        }
+        if (occupantOf(pokemon) !== occupantOf(old) || stages.length !== oldStages.length) {
+          this.queueMoment(list, node, 'enter', side, { fresh: true });
+          return;
+        }
+
+        // the same Pokémon: the damage it took (or was healed of), what was attached to it, a condition that came, an ability used.
+        // (A change of its maximum HP is not a hit, even when it leaves the Pokémon short of its full HP: nothing plays for the HP then.)
+        const oldHp = old.hp || {};
+        const hp = pokemon.hp || {};
+        if ((oldHp.max || 0) === (hp.max || 0)) {
+          const change = (oldHp.current || 0) - (hp.current || 0);
+          if (change > 0) this.queueMoment(list, node, 'damage', side, { amount: change });
+          else if (change < 0) this.queueMoment(list, node, 'heal', side, { amount: -change });
+        }
+        const attached = Math.max(0, countOf(pokemon.energies) - countOf(old.energies)) + Math.max(0, countOf(pokemon.specialEnergies) - countOf(old.specialEnergies));
+        if (attached > 0) this.queueMoment(list, node, 'energy', side, { amount: attached });
+        if (countOf(pokemon.tools) > countOf(old.tools)) this.queueMoment(list, node, 'tool', side);
+        const had = Array.isArray(old.status) ? old.status : [];
+        const came = (Array.isArray(pokemon.status) ? pokemon.status : []).filter((key) => had.indexOf(key) === -1);
+        if (came.length) this.queueMoment(list, node, 'status', side, { status: String(came[came.length - 1]) });
+        const oldAbilities = Array.isArray(old.abilities) ? old.abilities : [];
+        const used = (Array.isArray(pokemon.abilities) ? pokemon.abilities : []).some((ability, i) => Boolean(ability && ability.used
+          && oldAbilities[i] && !oldAbilities[i].used && oldAbilities[i].name === ability.name));
+        if (used) this.queueMoment(list, node, 'ability', side);
+      });
+    }
+
+    // A Pokémon that was knocked out. When the design's style sheet animates it (it has a rule for moment-ko), its tile stays as it was,
+    // with what it showed, until the moment is over, and goes then (a Pokémon that comes into the slot meanwhile takes it at once: see
+    // renderMon). Without such a rule the tile goes at once, as it always has.
+    markKnockOut(list, mon, side) {
+      const extra = {};
+      if (this.designCss.textContent.indexOf('moment-ko') !== -1) {
+        mon.root.hidden = false; // (renderMon has just hidden it, and left what it showed)
+        mon.knockedOut = true;
+        extra.end = () => {
+          mon.knockedOut = false;
+          mon.root.hidden = true;
+        };
+      }
+      this.queueMoment(list, mon.root, 'ko', side, extra);
+    }
+
+    // Add a moment to `list` (see playMoments), with the mark of its kind and side on the stage. One that is in it already is not added twice.
+    queueMoment(list, node, kind, side, extra) {
+      const put = (target, name, more) => {
+        const found = list.find((moment) => moment.node === target && moment.name === name);
+        if (found) Object.assign(found, more);
+        else list.push(Object.assign({ node: target, name }, more));
+      };
+      put(node, `moment-${kind}`, extra || {});
+      if (SIDE_CLASS[side]) put(this.stage, `moment-${kind}-${SIDE_CLASS[side]}`, {});
+    }
+
+    // Play moments: each is { node, name (its class), amount, status, fresh, end }. The class stays on the node for as long as a moment
+    // lasts (momentDuration). A moment that is still playing on that node starts again from the beginning and lasts its whole time again:
+    // its class is taken away and put back once the page has been laid out without it, which is what starts a CSS animation over.
+    // `fresh`: the tile has another Pokémon now, so whatever was still playing on it ends. `end` is done when the moment is over, just
+    // before its class goes (so the tile of a knocked out Pokémon is hidden before its animation lets go of it, and does not flash back).
+    playMoments(list) {
+      if (!list.length) return;
+      const ms = this.momentDuration();
+      list.forEach((moment) => {
+        const playing = moment.node.moments && moment.node.moments[moment.name];
+        // (what the one that starts again was to do at its end still has to be done)
+        if (playing && playing.end && !moment.end) moment.end = playing.end;
+        if (moment.fresh) endMoments(moment.node);
+        else endMoment(moment.node, moment.name);
+      });
+      void this.stage.offsetWidth; // (one layout for all of them)
+      list.forEach((moment) => {
+        const node = moment.node;
+        const owners = node.momentOwners || (node.momentOwners = {});
+        if (Number.isFinite(moment.amount)) {
+          node.setAttribute('data-amount', String(moment.amount));
+          node.style.setProperty('--moment-amount', String(moment.amount));
+          owners.amount = moment.name;
+        }
+        if (moment.status) {
+          node.setAttribute('data-status', moment.status);
+          owners.status = moment.name;
+        }
+        node.classList.add(moment.name);
+        const playing = { end: moment.end, timer: 0 };
+        playing.timer = setTimeout(() => {
+          if (playing.end) playing.end();
+          endMoment(node, moment.name);
+        }, ms);
+        (node.moments || (node.moments = {}))[moment.name] = playing;
+      });
+    }
+
+    // How long a moment lasts, in milliseconds: what the design's style sheet says in --oto-moment-ms (in a rule for :root), else 1.5 seconds
+    momentDuration() {
+      const value = getComputedStyle(document.documentElement).getPropertyValue('--oto-moment-ms').trim();
+      const number = parseFloat(value);
+      if (!Number.isFinite(number)) return MOMENT_MS;
+      const ms = /[0-9.]s$/i.test(value) ? number * 1000 : number; // (seconds are understood too: "1.2s")
+      return Math.max(MOMENT_MIN_MS, Math.min(MOMENT_MAX_MS, ms));
+    }
+
+    // Play one moment as if it had happened (the design editor's "Try a moment", and the tests). `moment` is its kind ('damage', 'ko'...:
+    // see MOMENT_KINDS), `side` 'a' or 'b', `target` the piece it plays on ('active', 'bench0' to 'bench7', 'prize0' to 'prize5', 'trainer',
+    // 'token-energy', 'token-stadium', 'token-supporter', 'token-gx', 'token-vstar', 'stadium' or 'wins') and `amount` the number it is
+    // about (the damage, the energy attached), if any. A knock out plays on the tile as it is and does not hide it. It plays even while the
+    // design animations are switched off: it is asked for. False when there is no such moment or piece.
+    playMoment(moment, side, target, amount) {
+      const trainer = side === 'a' || side === 'trainerA' ? 'trainerA' : side === 'b' || side === 'trainerB' ? 'trainerB' : null;
+      const node = trainer && MOMENT_KINDS.indexOf(moment) !== -1 ? this.momentNode(trainer, String(target || '')) : null;
+      if (!node) return false;
+      const extra = {};
+      const number = amount === null || amount === undefined || amount === '' ? NaN : Number(amount);
+      if (Number.isFinite(number)) extra.amount = Math.round(number);
+      if (moment === 'status') {
+        // the condition the tile shows last, or the first there is
+        const chips = node.querySelectorAll('.status-chip');
+        extra.status = chips.length ? chips[chips.length - 1].dataset.status : GAME.STATUS_CONDITIONS[0].key;
+      }
+      const list = [];
+      this.queueMoment(list, node, moment, trainer, extra);
+      this.playMoments(list);
+      return true;
+    }
+
+    // The piece a moment plays on, for playMoment
+    momentNode(side, target) {
+      const refs = this.trainers[side];
+      const bench = /^bench([0-7])$/.exec(target);
+      const prize = /^prize([0-5])$/.exec(target);
+      if (target === 'active') return refs.activeMon.root;
+      if (bench) return refs.benchMons[Number(bench[1])].root;
+      if (prize) return refs.prizeNodes[Number(prize[1])];
+      const pieces = {
+        trainer: refs.root,
+        'token-energy': refs.energy.root,
+        'token-stadium': refs.stadiumUse.root,
+        'token-supporter': refs.supporter.root,
+        'token-gx': refs.gx.root,
+        'token-vstar': refs.vstar.root,
+        stadium: this.stadiumBox,
+        wins: this.board.sides[side].wins
+      };
+      return Object.prototype.hasOwnProperty.call(pieces, target) ? pieces[target] : null;
+    }
+
     // ---- the design editor
 
-    // The editor sends the design being edited, a made-up match and whether to show a banner
+    // The editor sends the design being edited, a made-up match, whether to show a banner and a moment to try
+    // ({ kind: 'moment', moment, side, target, amount }: see playMoment)
     listenToEditor() {
       window.addEventListener('message', (event) => {
         if (event.source !== window.parent || event.origin !== window.location.origin) return;
@@ -923,6 +1254,7 @@
         if (message.kind === 'design') this.applyTheme(message.theme || null);
         else if (message.kind === 'state') this.update(message.state);
         else if (message.kind === 'banner') this.editorBanner(Boolean(message.show));
+        else if (message.kind === 'moment') this.playMoment(message.moment, message.side, message.target, message.amount);
         else return;
         // so the editor can measure the pieces now that they are where they are going to be
         window.parent.postMessage({ kind: 'drawn' }, window.location.origin);
@@ -997,6 +1329,9 @@
       this.themeFonts = [];
       const generation = ++this.themeGeneration; // (a font that arrives after the design has changed again is not for this page any more)
 
+      // the design's style sheet is not emptied here with the rest: it is only written below when it is not the same any more
+      const oldCss = this.designCss.textContent;
+
       // the screen (wide, or a tall one for a phone) and the reserved spaces
       this.setScreen(theme && theme.orientation);
       this.renderSpaces(theme);
@@ -1012,6 +1347,12 @@
       if (style === THEME.PRIZE_DEFAULT) style = own ? THEME.PRIZE_DEFAULT : 'english';
       if (style !== THEME.PRIZE_DEFAULT) root.classList.add(`prize-${style}`);
       if (theme && THEME.PRIZE_LAYOUT_KEYS.includes(theme.prizeLayout) && theme.prizeLayout !== THEME.PRIZE_LAYOUT_DEFAULT) root.classList.add(`prize-layout-${theme.prizeLayout}`);
+
+      // The design's own style sheet (and its animations: see markMoments), as text only. It was checked before it got here: by the server
+      // for the overlays, by the design editor for its copy. Written only when it changed: the editor sends the design again at every step
+      // of a drag, and writing it again would start every animation over. No design (or one without a style sheet) empties it.
+      const css = theme && typeof theme.css === 'string' ? theme.css : '';
+      if (css !== oldCss) this.designCss.textContent = css;
       if (!theme) return;
 
       const set = (name, value) => {
