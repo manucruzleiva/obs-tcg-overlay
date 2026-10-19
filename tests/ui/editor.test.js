@@ -418,6 +418,18 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('lets Tab move on to the next control once Ctrl+M says so', async () => {
+      await input().press('Control+m');
+      await input().press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Format');
+      await input().focus();
+      await input().press('Control+m');
+      await input().press('Control+End');
+      const before = await input().inputValue();
+      await input().press('Tab');
+      assert.equal(await input().inputValue(), `${before}  `);
+    });
+
     it('shows the design as text, with line numbers', async () => {
       const text = await input().inputValue();
       assert.deepEqual(JSON.parse(text), { author: '', description: '', colors: {}, layout: {}, crop: {}, tile: {} });
@@ -1865,6 +1877,26 @@ describe('design editor', { skip }, () => {
         assert.deepEqual(await overlayFrame().$$eval(`.trainer-${side} .token.moment-used`, (nodes) => nodes.map((node) => getComputedStyle(node).visibility)), ['visible'], `Trainer ${side.toUpperCase()}`);
       }
       assert.deepEqual(page.problems, []);
+    });
+
+    it('lets Tab move on to the next control once Ctrl+M says so, and indent again after another Ctrl+M', async () => {
+      await openEditorFor('Sheet Keys');
+      await tab().click();
+      await input().fill('.a {}');
+      await says(/^Applied\.$/);
+      await input().press('Control+m');
+      assert.match(await status().textContent(), /Tab now moves to the next control/);
+      await input().press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Add a picture', 'the next control');
+      assert.equal(await input().inputValue(), '.a {}', 'and nothing was typed');
+      await input().focus();
+      await input().press('Control+m');
+      assert.match(await status().textContent(), /Tab now indents/);
+      await input().press('Control+End');
+      await input().press('Tab');
+      assert.equal(await input().inputValue(), '.a {}  ');
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains('css-input')), true);
+      assert.match(await page.locator('.css-help').textContent(), /Ctrl\+M/, 'and the help says so');
     });
 
     it('reaches the live overlay once the design is on air: cleaned, on the stage, with its pictures from the overlay\'s own address', async () => {

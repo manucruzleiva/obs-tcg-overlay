@@ -78,7 +78,7 @@ export class CodePanel {
   build() {
     this.input = h('textarea', {
       class: 'code-input', spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off', wrap: 'off',
-      'aria-label': 'The design as code', 'aria-describedby': 'code-status'
+      'aria-label': 'The design as code (Tab indents; Ctrl+M makes it move to the next control)', 'aria-describedby': 'code-status'
     });
     this.gutter = h('pre', { class: 'code-gutter', 'aria-hidden': 'true' });
     this.status = h('p', { class: 'code-status', id: 'code-status', role: 'status' });
@@ -99,9 +99,16 @@ export class CodePanel {
       h('div', { class: 'button-row' }, this.format));
   }
 
-  // Tab inserts two spaces instead of leaving the box
+  // Tab inserts two spaces instead of leaving the box, until Ctrl+M says it moves to the next control (and Ctrl+M again brings it back),
+  // as in code editors: so the controls after the box can be reached with the keyboard
   onKeyDown(event) {
-    if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey) return;
+    if (event.key.toLowerCase() === 'm' && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      this.tabMoves = !this.tabMoves;
+      this.say(this.tabMoves ? 'Tab now moves to the next control (Ctrl+M to indent with it again).' : 'Tab now indents (Ctrl+M to move to the next control with it).');
+      return;
+    }
+    if (this.tabMoves || event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
     const { selectionStart: start, selectionEnd: end, value } = this.input;
     this.input.value = `${value.slice(0, start)}  ${value.slice(end)}`;
