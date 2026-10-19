@@ -648,7 +648,11 @@ describe('overlay', { skip }, () => {
 
   describe('a mobile screen (a design with orientation portrait)', () => {
     const portrait = (extra = {}) => page.evaluate((more) => window.oto.applyTheme({ name: 'phone', colors: {}, images: {}, sounds: [], orientation: 'portrait', ...more }), extra);
-    const stage = () => page.$eval('#stage', (node) => ({ w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait'), benchRow: node.classList.contains('bench-row'), transform: node.style.transform }));
+    // (the stage is scaled in its frame, which is where the stage is on the page: see fit in overlay.js)
+    const stage = () => page.$eval('#stage', (node) => ({
+      w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait'), benchRow: node.classList.contains('bench-row'), transform: node.style.transform,
+      frame: ['left', 'top', 'width', 'height'].map((side) => node.parentElement.style[side]).join(' ')
+    }));
     const box = (selector) => page.$eval(selector, (node) => { const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; });
     const fill = async () => {
       await send('action:trainerB', { action: 'setActive', cardId: 'b-act', name: 'Charizard', image: IMG, hp: 150 });
@@ -661,7 +665,7 @@ describe('overlay', { skip }, () => {
     };
 
     it('is the wide 1920 x 1080 stage unless the design says otherwise', async () => {
-      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'translate(0px, 0px) scale(1)' });
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'scale(1)', frame: '0px 0px 1920px 1080px' });
     });
 
     it('is a tall 1080 x 1920 stage, fitted to the screen, and goes back to the wide one with the design', async () => {
@@ -669,14 +673,14 @@ describe('overlay', { skip }, () => {
       const tall = await stage();
       assert.deepEqual([tall.w, tall.h, tall.portrait], [1080, 1920, true]);
       await page.setViewportSize({ width: 540, height: 960 });
-      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5)'));
-      assert.match((await stage()).transform, /translate\(0px, 0px\) scale\(0\.5\)/, 'half the size on a screen half the size');
+      await page.waitForFunction(() => document.getElementById('stage').style.transform === 'scale(0.5)');
+      assert.equal((await stage()).frame, '0px 0px 540px 960px', 'half the size on a screen half the size');
       await page.setViewportSize({ width: 1920, height: 1080 });
-      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5625)'));
-      assert.match((await stage()).transform, /translate\((\d+(\.\d+)?)px, 0px\) scale\(0\.5625\)/, 'a tall stage is centered on a wide screen');
+      await page.waitForFunction(() => document.getElementById('stage').style.transform === 'scale(0.5625)');
+      assert.equal((await stage()).frame, '656.25px 0px 607.5px 1080px', 'a tall stage is centered on a wide screen');
 
       await page.evaluate(() => window.oto.applyTheme(null));
-      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: (await stage()).transform });
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'scale(1)', frame: '0px 0px 1920px 1080px' });
       assert.deepEqual(page.problems, []);
     });
 
@@ -2096,6 +2100,80 @@ describe('overlay', { skip }, () => {
       await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.2}}');
       assert.ok(await page.evaluate(() => window.sheetWrites) > 0, 'a change is written');
       await page.evaluate(() => window.oto.applyTheme(null));
+    });
+
+    // OBS needs the page around the stage see-through: it is there whenever the browser source is not the shape of the stage. Designs
+    // saved and put on air the way a producer does (each checked by the server), on a square page, with the stage across its middle.
+    it('cannot paint the page around the stage, whatever it does to the stage and what is in it', async () => {
+      const api = async (method, route, body) => {
+        const response = await fetch(`${server.base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        assert.equal(response.status, 200, `${method} ${route}: ${await response.text()}`);
+      };
+      const OUTSIDE = [[500, 20], [500, 980], [5, 5], [995, 995], [500, 205], [500, 795]];
+      const square = await openPage(browser, `${server.base}/overlay`, { viewport: { width: 1000, height: 1000 } });
+      // what a screenshot with a see-through background shows at these points: 0 is see-through, 255 opaque
+      const alphaAt = async (points) => {
+        const shot = (await square.screenshot({ omitBackground: true })).toString('base64');
+        const probe = await square.context().newPage();
+        try {
+          return await probe.evaluate(async ([data, where]) => {
+            const picture = new Image();
+            picture.src = `data:image/png;base64,${data}`;
+            await picture.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = picture.width;
+            canvas.height = picture.height;
+            const context = canvas.getContext('2d');
+            context.drawImage(picture, 0, 0);
+            return where.map(([x, y]) => context.getImageData(x, y, 1, 1).data[3]);
+          }, [shot, points]);
+        } finally {
+          await probe.close();
+        }
+      };
+      const designs = [
+        ['a shadow of the stage', '#stage { box-shadow: 0 0 0 100vmax #000; }'],
+        ['an outline of the stage', '#stage { outline: 2000px solid #000; }'],
+        ['a pseudo-element of the stage', '#stage::before { content: ""; position: absolute; inset: -3000px; background: #000; }'],
+        ['a piece bigger than the stage', '.backdrop { inset: -3000px; background: #000; }'],
+        ['the shadow of a piece', '.spaces { box-shadow: 0 0 0 5000px #000; }'],
+        ['filters', '#stage { filter: drop-shadow(0 -900px 0 #000) drop-shadow(0 900px 0 #000); background: #000; }'],
+        ['the stage scaled', '#stage { scale: 4; background: #000; }'],
+        ['the stage moved', '#stage { left: -300px; top: -300px; } .backdrop { background: #000; }'],
+        ['the stage zoomed', '#stage { zoom: 3; background: #000; }'],
+        ['another origin', '#stage { transform-origin: 50% 50%; background: #000; }'],
+        ['an animation of the stage', '#stage { background: #000; animation: big .1s forwards; } @keyframes big { to { transform: translate(0px, 0px) scale(4); } }'],
+        ['a fixed piece, with the scaling of the stage taken away', '.spaces { position: fixed; inset: -3000px; background: #000; } #stage { animation: flat .1s forwards; } @keyframes flat { to { transform: none; } }']
+      ];
+      try {
+        await square.waitForSelector('.trainer-a .active .mon:not([hidden])');
+        const tile = await square.$eval('.trainer-a .active .mon .art', (node) => { const rect = node.getBoundingClientRect(); return [Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2)]; });
+        assert.deepEqual(await alphaAt([...OUTSIDE, tile]), [0, 0, 0, 0, 0, 0, 255], 'without a design: see-through around the stage, the Active Pokémon in it');
+        for (const [name, css] of designs) {
+          await api('PUT', `/api/themes/${encodeURIComponent(`Opaque ${name}`)}`, { colors: {}, css });
+          await api('POST', '/api/theme/active', { name: `Opaque ${name}` });
+          await square.waitForFunction((wanted) => document.getElementById('oto-design-css').textContent.includes(wanted), css.includes('backdrop') ? '.backdrop' : '#stage');
+          await square.waitForFunction((text) => document.getElementById('oto-design-css').textContent === text, (await (await fetch(`${server.base}/api/theme`)).json()).theme.css);
+          await wait(250); // (the animations are over)
+          assert.deepEqual(await alphaAt(OUTSIDE), OUTSIDE.map(() => 0), name);
+        }
+        // the colors of a design, the older way: a shadow with another one behind it
+        await api('PUT', '/api/themes/Opaque%20colors', { colors: { '--shadow': 'rgba(0,0,0,.5), 0 0 0 4000px #f80' } });
+        await api('POST', '/api/theme/active', { name: 'Opaque colors' });
+        await square.waitForFunction(() => document.documentElement.textContent !== null && getComputedStyle(document.documentElement).getPropertyValue('--shadow').includes('4000px'));
+        await wait(100);
+        assert.deepEqual(await alphaAt(OUTSIDE), OUTSIDE.map(() => 0), 'a shadow in the colors');
+        // and what a design paints inside the stage is there
+        await api('PUT', '/api/themes/Opaque%20inside', { colors: {}, css: '.backdrop { background: #000; }' });
+        await api('POST', '/api/theme/active', { name: 'Opaque inside' });
+        await square.waitForFunction(() => document.getElementById('oto-design-css').textContent.includes('backdrop'));
+        await wait(100);
+        assert.deepEqual(await alphaAt([[500, 20], [500, 230], [500, 770], [10, 500], [990, 500]]), [0, 255, 255, 255, 255]);
+        assert.deepEqual(square.problems, []);
+      } finally {
+        await api('POST', '/api/theme/active', { name: null });
+        await square.context().close();
+      }
     });
 
     // (the check of a style sheet refuses allow-discrete: this is what the overlay does about one that would get here all the same)

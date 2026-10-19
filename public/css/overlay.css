@@ -26,6 +26,19 @@ html, body {
 /* A design can move and resize pieces of the overlay: overlay.js sets --lx, --ly (pixels) and --ls (scale) */
 [data-block].moved { transform: translate(var(--lx, 0px), var(--ly, 0px)) scale(var(--ls, 1)); }
 
+/* The frame of the stage: overlay.js puts it where the stage is on the page, at the stage's size, and it clips everything drawn in it
+   (shadows and outlines of the stage, pieces bigger than it, fixed ones) to that box, so the page around the stage stays see-through for
+   OBS. A design's style sheet cannot reach it: every rule of one is for #stage or what is inside it. (No var() here: a design sets those.) */
+#stage-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  contain: paint;
+}
+
 #stage {
   position: absolute;
   left: 0;

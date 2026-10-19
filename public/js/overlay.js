@@ -415,6 +415,7 @@
   class Overlay {
     constructor() {
       this.stage = document.getElementById('stage');
+      this.frame = document.getElementById('stage-frame'); // (it clips the stage: see fit)
       this.state = null;
       this.themeProps = [];
       this.layoutNodes = []; // the pieces a design has moved
@@ -690,7 +691,14 @@
       const scale = auto ? Math.min(window.innerWidth / width, window.innerHeight / height) : 1;
       const x = auto ? (window.innerWidth - width * scale) / 2 : 0;
       const y = auto ? (window.innerHeight - height * scale) / 2 : 0;
-      this.stage.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+      // The frame is the box of the stage on the page, and nothing is drawn outside it: whatever a design does to the stage or to what is
+      // in it (a shadow, a piece bigger than the stage, an animation of the stage's transform), the page around it stays see-through
+      const frame = this.frame.style;
+      frame.left = `${x}px`;
+      frame.top = `${y}px`;
+      frame.width = `${width * scale}px`;
+      frame.height = `${height * scale}px`;
+      this.stage.style.transform = `scale(${scale})`;
     }
 
     // The screen of the design: a wide one (1920 x 1080) or a tall one for a phone (1080 x 1920, with its own arrangement: see #stage.portrait)
