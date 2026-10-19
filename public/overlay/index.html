@@ -9,8 +9,9 @@
   <link rel="stylesheet" href="/css/overlay.css">
 </head>
 <body>
-  <!-- The overlay is drawn on a 1920x1080 stage that is scaled to fit the browser source -->
-  <div id="stage"></div>
+  <!-- The overlay is drawn on a 1920x1080 stage that is scaled to fit the browser source. Its frame clips what is drawn to the box of
+       the stage, so the page around it stays see-through for OBS: a design's style sheet can only style #stage and what is in it. -->
+  <div id="stage-frame"><div id="stage"></div></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/display-options.js"></script>

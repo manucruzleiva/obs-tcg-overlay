@@ -1,5 +1,5 @@
 /**
- * Settings in a real browser: designs (pictures, colors, sounds), .oto packages, and the card library.
+ * Settings in a real browser: designs (pictures, colors, sounds, the style sheet), .oto packages, and the card library.
  * Run with: npm run test:ui
  */
 
@@ -351,19 +351,114 @@ describe('settings', { skip }, () => {
       await overlay.waitForFunction(() => document.documentElement.classList.contains('has-logo'));
       // the design's sound has been fetched and decoded by the overlay's audio engine, ready to play
       await overlay.waitForFunction(() => window.oto.sfx.buffers.has('damage'));
-      assert.equal(await overlay.evaluate(() => document.documentElement.style.getPropertyValue('--accent')), '#ff00aa');
-      const url = await overlay.evaluate(() => /url\("(.*)"\)/.exec(document.documentElement.style.getPropertyValue('--logoImage'))[1]);
+      assert.equal(await overlay.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent')), '#ff00aa');
+      const url = await overlay.evaluate(() => /url\("(.*)"\)/.exec(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--logoImage'))[1]);
       assert.match(url, /^\/api\/theme\/assets\/images\/logoImage\.png\?v=\d+$/);
       assert.equal(await overlay.evaluate((src) => new Promise((resolve) => { const image = new Image(); image.onload = () => resolve(image.naturalWidth); image.onerror = () => resolve(0); image.src = src; }), url), 1, 'the picture really loads');
 
       // an edit shows up on the overlay by itself
       await page.locator('.color-row').first().locator('input[type=text]').fill('#00ffcc');
-      await overlay.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#00ffcc');
+      await overlay.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent') === '#00ffcc');
 
       await page.locator('.theme-item', { hasText: 'Built-in look' }).click();
       await overlay.waitForFunction(() => !document.documentElement.classList.contains('has-logo'));
       await overlay.waitForFunction(() => !window.oto.sfx.buffers.has('damage'));
       assert.deepEqual(overlay.problems, []);
+    });
+
+    it('says whether a design has a style sheet, keeps it while the rest is edited here, and opens the editor on it', async () => {
+      const sheet = '.sb-name { letter-spacing: 7px; }';
+      await call('PUT', '/api/themes/Plain', { colors: {} });
+      await call('PUT', '/api/themes/Styled', { colors: {}, css: sheet });
+      await call('PUT', '/api/themes/Styled/images/css-glow', S.PNG);
+      const row = () => page.locator('.image-row[data-role="styles"]');
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Plain' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Plain")');
+      assert.equal(await row().locator('.image-preview').textContent(), 'None');
+      assert.equal(await row().locator('small').textContent(), 'A style sheet (CSS) can restyle anything on the overlay and animate what happens in the game. It is written in the editor, on the Style sheet tab.');
+      assert.equal(await page.locator('.image-row', { hasText: 'css-glow' }).count(), 0, 'the pictures for a style sheet are not among the slots');
+
+      await page.locator('.theme-item', { hasText: 'Styled' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Styled")');
+      assert.equal(await row().locator('small').textContent(), 'This design has its own style sheet (styles.css), with 1 picture for it. It is written in the editor, on the Style sheet tab.');
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#ff00aa');
+      await saved();
+      assert.equal((await call('GET', '/api/themes/Styled')).json.css, sheet, 'what is saved here leaves the style sheet as it is');
+
+      await row().getByRole('button', { name: 'Edit the style sheet' }).click();
+      const editor = page.locator('.modal[aria-label="Design: Styled"]');
+      await editor.waitFor();
+      await page.waitForFunction(() => window.oto.designEditor && window.oto.designEditor.tab === 'css');
+      assert.equal(await editor.locator('.editor-side .tab[data-tab="css"]').getAttribute('aria-selected'), 'true');
+      assert.equal(await editor.locator('.css-input').inputValue(), sheet);
+      assert.deepEqual(await editor.locator('.css-picture strong').allTextContents(), ['css-glow']);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('saves a color typed a moment ago before the editor opens, so a save in the editor does not put the old one back', async () => {
+      await call('PUT', '/api/themes/Race', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Race' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Race")');
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      await page.locator('.image-row[data-role="styles"]').getByRole('button', { name: 'Edit the style sheet' }).click();
+      const editor = page.locator('.modal[aria-label="Design: Race"]');
+      await editor.waitFor();
+      await page.waitForFunction(() => window.oto.designEditor && window.oto.designEditor.tab === 'css');
+      assert.equal(await page.evaluate(() => window.oto.designEditor.model.draft.colors['--accent']), '#3344ff', 'the editor has the color just typed');
+      await editor.locator('.css-input').fill('.sb-name { letter-spacing: 2px; }');
+      await page.waitForFunction(() => window.oto.designEditor.model.dirty);
+      await editor.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.equal((await call('GET', '/api/themes/Race')).json.colors['--accent'], '#3344ff');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('keeps a color typed while the design is being read again', async () => {
+      await call('PUT', '/api/themes/Reread', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Reread' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Reread")');
+      // the design is read again (a click on it in the list), and that answer is held back while the producer types
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      let reads = 0;
+      await page.route('**/api/themes/Reread', async (route) => {
+        if (route.request().method() === 'GET') { reads += 1; await held; }
+        await route.continue();
+      });
+      await page.locator('.theme-item', { hasText: 'Reread' }).click();
+      while (reads === 0) await wait(20);
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      release();
+      await page.waitForFunction(() => document.querySelector('.save-status').textContent === 'Saved');
+      assert.equal((await call('GET', '/api/themes/Reread')).json.colors['--accent'], '#3344ff', 'the color typed during the read is the one saved');
+      assert.equal(await page.locator('.color-row').first().locator('input[type=text]').inputValue(), '#3344ff', 'and the box still shows it');
+      await page.unroute('**/api/themes/Reread');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('waits for a save of the Look tab that is on its way before the editor reads the design', async () => {
+      await call('PUT', '/api/themes/Slow', { colors: { '--accent': '#111111' } });
+      await openSettings('Look');
+      await page.locator('.theme-item', { hasText: 'Slow' }).click();
+      await page.waitForSelector('.theme-head h3:has-text("Slow")');
+      // the Look tab's own save is held back by the network, so it is still on its way when the editor opens
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      await page.route('**/api/themes/Slow', async (route) => {
+        if (route.request().method() === 'PUT') await held;
+        await route.continue();
+      });
+      await page.locator('.color-row').first().locator('input[type=text]').fill('#3344ff');
+      await page.waitForFunction(() => document.querySelector('.save-status').textContent === 'Saving…');
+      await page.locator('.image-row[data-role="styles"]').getByRole('button', { name: 'Edit the style sheet' }).click();
+      setTimeout(() => release(), 600);
+      await page.locator('.modal[aria-label="Design: Slow"]').waitFor();
+      assert.equal(await page.evaluate(() => window.oto.designEditor.model.draft.colors['--accent']), '#3344ff', 'the editor read the design after the save had landed');
+      await page.unroute('**/api/themes/Slow');
+      assert.deepEqual(page.problems, []);
     });
 
     it('lists the design\'s sounds on the Sounds tab, and lets the producer\'s own sound win', async () => {
@@ -559,6 +654,41 @@ describe('settings', { skip }, () => {
       await page.waitForFunction(() => [...document.querySelectorAll('.toast-info')].some((node) => /Drop a \.oto file/.test(node.textContent)));
     });
 
+    it('says that a design has its own style sheet, and pictures for it, and installs them with it', async () => {
+      const sheet = '.scoreboard { background-image: var(--css-glow); }';
+      await call('PUT', '/api/themes/Glow', { colors: {}, css: sheet });
+      await call('PUT', '/api/themes/Glow/images/css-glow', S.PNG);
+      await call('PUT', '/api/themes/Glow/images/logoImage', S.PNG);
+      const exported = await call('GET', '/api/packages/export?design=Glow');
+      assert.deepEqual([...readZip(exported.buffer).keys()].sort(), ['design.json', 'images/css-glow.png', 'images/logoImage.png', 'manifest.json', 'styles.css']);
+      await call('DELETE', '/api/themes/Glow');
+
+      await openSettings('Look');
+      await chooseFile(page.locator('button', { hasText: 'Install a .oto' }).first(), { name: 'glow.oto', mimeType: 'application/octet-stream', buffer: exported.buffer });
+      const dialog = page.locator('.modal[aria-label="Install \\"Glow\\""]');
+      await dialog.waitFor();
+      assert.match(await dialog.locator('.switch', { hasText: 'Install the design' }).textContent(), /1 picture, its own style sheet, 1 picture for it/);
+      assert.doesNotMatch(await dialog.textContent(), /not used/, 'every file in it is used');
+
+      await dialog.locator('button', { hasText: 'Install' }).click();
+      await page.waitForSelector('.toast-success');
+      const installed = (await call('GET', '/api/themes/Glow')).json;
+      assert.equal(installed.css, sheet);
+      assert.equal(installed.images['css-glow'], 'images/css-glow.png');
+      await page.waitForSelector('.theme-head h3:has-text("Glow")');
+      assert.match(await page.locator('.image-row[data-role="styles"]').textContent(), /This design has its own style sheet \(styles\.css\), with 1 picture for it\./);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('says that a design can be saved with its style sheet', async () => {
+      await call('PUT', '/api/themes/Glow', { colors: {} });
+      await openSettings('Look');
+      await page.locator('button', { hasText: 'Save as .oto' }).click();
+      const dialog = page.locator('.modal[aria-label="Save a package"]');
+      await dialog.waitFor();
+      assert.match(await dialog.locator('.switch', { hasText: 'The design "Glow"' }).textContent(), /Colors, pictures, font, style sheet and the sounds that belong to it/);
+    });
+
     it('installs a design from a file made by the older version', async () => {
       const legacy = { name: 'Old League', colors: { '--accent': '#ff0000' }, images: { logoImage: `data:image/png;base64,${S.PNG.toString('base64')}` } };
       await openSettings('Look');
@@ -587,6 +717,33 @@ describe('settings', { skip }, () => {
       await page.getByRole('button', { name: 'Show everything' }).click();
       for (let waited = 0; waited < 40 && !(await live()).settings.display.vstarMarker; waited++) await wait(50);
       assert.equal((await live()).settings.display.vstarMarker, true, 'everything means everything');
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the design animations', () => {
+    it('have a switch, on to begin with, that "Minimal" leaves as it is and "Show everything" turns on', async () => {
+      await openSettings('Overlay');
+      const animations = page.locator('.option-group label.switch', { hasText: 'Design animations (damage, knock outs, prizes...)' });
+      assert.equal(await animations.locator('input').isChecked(), true);
+      assert.equal(await animations.evaluate((node) => node.closest('.option-group').querySelector('legend').textContent), 'Announcements', 'with the full-screen animations');
+
+      // (each button changes every switch at once: once the nationality has changed, so has everything else)
+      await page.getByRole('button', { name: /^Minimal/ }).click();
+      await until(async () => (await live()).settings.display.nationality, false);
+      assert.equal((await live()).settings.display.moments, true, 'Minimal hides pieces: how the pieces that are left move is not one of them');
+
+      await animations.click();
+      await until(async () => (await live()).settings.display.moments, false);
+      await page.getByRole('button', { name: 'Show everything' }).click();
+      await until(async () => (await live()).settings.display.nationality, true);
+      assert.equal((await live()).settings.display.moments, true, 'everything means everything');
+
+      await animations.click();
+      await until(async () => (await live()).settings.display.moments, false);
+      await page.getByRole('button', { name: /^Minimal/ }).click();
+      await until(async () => (await live()).settings.display.nationality, false);
+      assert.equal((await live()).settings.display.moments, false, 'and Minimal leaves them off when they were');
       assert.deepEqual(page.problems, []);
     });
   });

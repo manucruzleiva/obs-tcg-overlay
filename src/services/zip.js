@@ -171,7 +171,9 @@ function readZip(buffer, limits = {}) {
     if (packed === 0xffffffff || unpacked === 0xffffffff) throw new ZipError('That package is too large');
 
     const allowed = maxEntry(name);
-    if (unpacked > allowed) throw new ZipError(`"${name}" is too large${allowed ? ` (${Math.round(allowed / MB * 10) / 10} MB at most)` : ''}`);
+    // (a limit under a megabyte is said in KB: 256 KB would be "0.3 MB", which a file of 270 KB seems to be under)
+    const limit = allowed < MB ? `${Math.round(allowed / 1024)} KB` : `${Math.round(allowed / MB * 10) / 10} MB`;
+    if (unpacked > allowed) throw new ZipError(`"${name}" is too large${allowed ? ` (${limit} at most)` : ''}`);
     total += unpacked;
     if (total > maxTotal) throw new ZipError(`That package is too large (${Math.round(maxTotal / MB)} MB at most once unpacked)`);
 

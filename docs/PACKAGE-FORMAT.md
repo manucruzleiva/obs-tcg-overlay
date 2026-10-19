@@ -12,9 +12,11 @@ This page is the exact reference, for artists who want to build a package by han
 my-design.oto
 ├── manifest.json        what this is (optional when you zip a folder by hand)
 ├── design.json          the design: name, author, colors   (optional)
+├── styles.css           the design's style sheet             (optional)
 ├── images/              pictures for the overlay            (optional)
 │   ├── logoImage.png
 │   ├── backgroundImage.jpg
+│   ├── css-texture.png  a picture for the style sheet (optional, see styles.css)
 │   └── ...
 ├── fonts/
 │   ├── font.woff2       the main font, for names, numbers and announcements
@@ -60,7 +62,7 @@ Every part is optional, but a package must hold a design, control settings, or b
 | `name` | The design's name (letters and digits are what count; up to 40 characters). If it is missing, the package's name is used |
 | `author` | Who made it (up to 60 characters). Shown when someone installs it |
 | `description` | One line about it (up to 300 characters) |
-| `colors` | CSS variables the design sets. Unknown names are ignored. Values may not contain `; { } < > \` |
+| `colors` | CSS variables the design sets. Unknown names are ignored. Values may not contain `; { } < > \`, and are read the way the [style sheet](#stylescss-the-style-sheet) is: no `url()` at all, and only the functions it allows (a gradient, but no `image-set()`) |
 | `layout` | Where pieces of the overlay are moved to and how big they are: `{ "scoreboard": { "x": 0, "y": 40, "scale": 1.1 } }`. `x` and `y` are pixels of the 1920 × 1080 stage (up to ±1920), `scale` is 0.2 to 4. A piece that has not moved is not listed. The pieces: `logo`, `scoreboard`, `features`, `stadium`, `toasts`, and for each trainer (`trainerA`, `trainerB`) the whole trainer plus `.prizes`, `.tokens`, `.locks`, `.active` and `.bench` |
 | `crop` | Which part of a card picture shows, as fractions of the card (0 to 1): `{ "active": { "x": 0.07, "y": 0.115, "w": 0.86, "h": 0.385 } }`. `active`, `bench`, `stadium`, `tool` (the picture of a Pokémon Tool on a Pokémon, the same window as the Stadium's unless it says otherwise) and `prize` (a card set on a prize card; the whole card unless it says otherwise) are rectangles (`x`, `y`, `w`, `h`, at least 5% wide and high, inside the card); `energy` is the circle cut out of a Special Energy card (`x`, `y`, `w`: the height follows). Left out, a Pokémon shows the picture of its card (`x 0.07, y 0.115, w 0.86, h 0.385`) and the Stadium its own picture window (`x 0.082, y 0.145, w 0.836, h 0.37`), because a Trainer card is laid out differently. The whole card is `{ "x": 0, "y": 0, "w": 1, "h": 1 }`, and has to be asked for |
 | `tile` | Where the parts of a Pokémon's tile go, for `active` and `bench`: `{ "active": { "hp": "bottom", "retreat": "top-right" } }`. `hp`: `top`, `bottom` or `below` the picture. `energy`, `retreat` and `status`: a corner of the picture (`top-left`, `top-right`, `bottom-left`, `bottom-right`) or `below` it. The usual: HP on top, energy bottom left, retreat cost bottom right, status icons top right. Only what differs from the usual is kept |
@@ -69,10 +71,11 @@ Every part is optional, but a package must hold a design, control settings, or b
 | `fontFamilies` | Fonts to use for a group of text, as a CSS font-family list, for fonts installed on the computer that shows the overlay: `{ "numbers": "Impact, 'Arial Black', sans-serif" }`. The groups are `display` (the main font), `names`, `numbers`, `labels`, `banners`, `subtitles` and `text` (small text). Up to 160 characters each, made of letters, digits, spaces and `, ' " . _ -` only. A group that has a font file uses the file first, then this list, then the main font |
 | `orientation` | The screen: `portrait` for a tall 1080 × 1920 mobile screen. Left out, the usual wide 1920 × 1080 one (so `layout` and `spaces` use the pixels of the stage that is chosen). Anything else is ignored |
 | `spaces` | Up to six places the overlay keeps clear for a camera feed or the like: `[ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]`. `shape` is `rect` (the usual), `rounded` or `circle`; `x` and `y` are pixels of the stage (up to ±3840), `w` and `h` are 40 to 3840; `name` (up to 24 letters) is only for the editor. `id` (1 to 6, each once) says which picture is the frame of the space: the slot `spaceFrame<id>`; one that is missing is given the lowest number that is free. A space that does not fit these is dropped |
+| `styles` | `"styles.css"`: the design has a [style sheet](#stylescss-the-style-sheet). OTO writes it when it saves or installs one. A package does not need it: the file is found by its name |
 
 The color and shape variables you can set are listed in the **Look** tab of Settings, and in [`public/js/theme-options.js`](../public/js/theme-options.js). Examples: `--accent`, `--trainer-a`, `--trainer-b`, `--ability`, `--tool`, `--stadium`, `--supporter`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`.
 
-## Pictures, font and sounds are found by name
+## Pictures, fonts, sounds and the style sheet are found by name
 
 OTO does not read file names out of `design.json`. It looks for these exact names, so a hand-made package only has to put the right files in the right folders:
 
@@ -88,6 +91,8 @@ OTO does not read file names out of `design.json`. It looks for these exact name
 | `energySymbols` | A strip of 11 equal squares: Grass, Fire, Water, Lightning, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless |
 | `statusSymbols` | A strip of 6 equal squares: Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped |
 | `spaceFrame1` to `spaceFrame6` | A picture drawn over the reserved space with that `id`, stretched to its size (a frame with a see-through middle, for example). Without one the space is drawn as an outline of its shape |
+
+**Pictures for the style sheet**, `images/css-<name>.<type>`, with the same types: pictures with names of the designer's choosing, which the [style sheet](#stylescss-the-style-sheet) uses as `var(--css-<name>)` or `url(images/css-<name>.png)`. `<name>` is up to 32 lowercase letters, digits and dashes, starting with a letter or a digit (`css-texture`, `css-ko-burst`). A design can have 24 of them: when a package has more, the first 24 in the order of their names are used, and the others are reported as not used, like a file whose name does not fit.
 
 **Fonts**, `fonts/<group>.<type>` with the type `woff2`, `woff`, `ttf` or `otf`. The main font is `fonts/font.<type>`; the text of the overlay is in groups, and each can have a font of its own:
 
@@ -114,7 +119,9 @@ A group without a font takes the main font's (and the main font, the usual font 
 
 A cue without a sound uses OTO's built-in one. Sound effects are off until the producer switches them on (Settings, Sounds).
 
-If a slot has files of several types (`logoImage.png` and `logoImage.jpg`), the one `design.json` names under `images` wins, otherwise the first of `png`, `jpg`, `gif`, `webp`, `svg`.
+If a slot has files of several types (`logoImage.png` and `logoImage.jpg`), the one `design.json` names under `images` wins, otherwise the first of `png`, `jpg`, `gif`, `webp`, `svg`. The same goes for a picture for the style sheet.
+
+**The style sheet**, `styles.css`, next to `design.json` (see [below](#stylescss-the-style-sheet)).
 
 ### Limits
 
@@ -125,8 +132,62 @@ If a slot has files of several types (`logoImage.png` and `logoImage.jpg`), the 
 | All the files of one design | 40 MB |
 | The `.oto` file | 48 MB |
 | Files in the package | 200 |
+| The style sheet (`styles.css`) | 256 KB |
+| Rules and declarations in the style sheet | 10,000 |
+| Pictures for the style sheet | 24 |
 
-Pictures and fonts must be **files in the package**. A design cannot point at a web address: it would stop working offline, and an image on someone else's server would tell them every time an overlay loaded.
+Pictures and fonts must be **files in the package**, for the style sheet too. A design cannot point at a web address: it would stop working offline, and an image on someone else's server would tell them every time an overlay loaded.
+
+## `styles.css`: the style sheet
+
+A design's style sheet restyles and animates the overlay. How to write one, and the moments of a match it can animate (`moment-damage`, `moment-ko`, `moment-taken`...), are in the [design guide](DESIGNING.md#style-sheet-and-animations). This is exactly what OTO lets through.
+
+**The file.** One file, `styles.css`, next to `design.json` (OTO reads it when the package has a `design.json`, as it does the pictures). Plain UTF-8 text, up to 256 KB; a byte order mark at the start is dropped. Control characters other than tabs and line ends are refused. An empty `styles.css` is the same as none: the design is installed without a style sheet (and OTO does not export an empty one).
+
+**When it is checked.** When a package is installed, a style sheet with anything not allowed in it makes the whole install fail, with the line and the reason (`Line 3: @import is not allowed (a design can only use the files it carries).`), and nothing is installed. The design editor and the API refuse it the same way when it is saved. OTO keeps the file as it was written, comments and all. Each time an overlay gets the design, the file is read again: what is not allowed is left out (the smallest part that is bad: a declaration, a selector, a rule or an at-rule, for a file that was changed by hand), and the rest is written out anew from what was read, never copied from the text.
+
+**How it is read.** As a browser reads CSS (CSS Syntax Level 3): escapes are decoded and comments are dropped, so `@\69mport` is `@import` and `\75 rl(` is `url(`, as they would be for a browser.
+
+**Every rule is for the overlay's stage**, `#stage`:
+
+- A selector gets `#stage ` in front: `.scoreboard` is written `#stage .scoreboard`. One that starts with `#stage` (`#stage.portrait .logo`) stays as it is.
+- One that starts with `:root` or `html`, with classes or attributes or without (`:root.has-logo`), gets `#stage` after that part: `:root.has-logo .logo` is written `:root.has-logo #stage .logo`.
+- A rule for `:root` or `html` alone can only set custom properties (`--name: value`). A rule for them and other selectors (`:root, .logo`) is split in two.
+- `#stage + ...`, `#stage ~ ...`, a pseudo-element of `:root` or `html`, and rules for `body`, `head`, `style`, `script`, `link`, `meta`, `title` and `iframe` are refused.
+- Each selector of a list is checked on its own: in a file changed by hand, a rule keeps its good selectors.
+
+**At-rules:** `@media`, `@supports` and `@container` (with a condition made of names, numbers, `( )`, `:`, `,`, `/`, `<`, `>` and `=`; `@supports` also takes `selector()` and the functions a value can use, but not `url()`), `@layer` (`@layer base, theme;`, or a block with one name, such as `theme` or `theme.colors`, or none), `@keyframes` and `@-webkit-keyframes` (one name or string; the keyframes are `from`, `to` and percentages), `@font-face` and `@starting-style`, up to 3 inside each other. Everything else is refused, `@import`, `@namespace` and `@charset` among them.
+
+**Selectors:** type selectors, `*`, classes, ids (not starting with a digit), attributes (`[name]`, or `[name="value"]` with `=`, `~=`, `|=`, `^=`, `$=` or `*=`, and `i` or `s`) and the combinators (a space, `>`, `+`, `~`). No namespaces, and no rule inside another rule (CSS nesting).
+
+- Pseudo-classes without brackets, except `:link`, `:visited`, `:any-link`, `:-webkit-any-link`, `:local-link`, `:target`, `:target-within` and `:host`.
+- Pseudo-classes with brackets: only `:not()`, `:is()`, `:where()`, `:nth-child()`, `:nth-last-child()`, `:nth-of-type()`, `:nth-last-of-type()` (`An+B`, `odd` or `even`, and for the `-child` ones `of` a list of selectors), `:lang()` and `:dir()`. `:has()`, `:host()` and the others are refused.
+- Pseudo-elements: `::before`, `::after`, `::first-letter`, `::first-line`, `::marker`, `::selection` and `::placeholder` (the first four also with one colon), one per selector and at its end.
+
+**Declarations** (in style rules, keyframes, `@font-face` and `@starting-style`): any property, custom properties included, except `behavior` and `-moz-binding`. `!important` is refused (in a file changed by hand it is left out, and the declaration kept). The name `allow-discrete` is refused in any value, custom properties included: a transition of `display` wins over the `!important` that keeps a piece the producer switched off hidden (in a file changed by hand the declaration is left out). A value can hold names, numbers, strings, `#` colors, `,` and `/ * + -` (and `?` in `@font-face`, for `unicode-range`); `( )` only inside a maths function, and `[ ]` only around names (grid lines). Strings and names are written again with `<` and `>` escaped, so `</style` can never appear in what the overlay gets.
+
+**Functions** (written in capitals or not; the gradients and `calc()` also with `-webkit-` in front):
+
+| Kind | Functions |
+|------|-----------|
+| Colors | `rgb()`, `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color()`, `color-mix()`, `light-dark()` |
+| Maths | `calc()`, `min()`, `max()`, `clamp()`, `round()`, `mod()`, `rem()`, `abs()`, `sign()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2()`, `pow()`, `sqrt()`, `hypot()`, `log()`, `exp()` |
+| Variables | `var()` (the name of a custom property, and a fallback after a comma, which is checked too), `env()` (a name, as `env(safe-area-inset-top)`) |
+| Gradients | `linear-gradient()`, `radial-gradient()`, `conic-gradient()`, `repeating-linear-gradient()`, `repeating-radial-gradient()`, `repeating-conic-gradient()` |
+| Transforms | `matrix()`, `matrix3d()`, `translate()`, `translateX()`, `translateY()`, `translateZ()`, `translate3d()`, `scale()`, `scaleX()`, `scaleY()`, `scaleZ()`, `scale3d()`, `rotate()`, `rotateX()`, `rotateY()`, `rotateZ()`, `rotate3d()`, `skew()`, `skewX()`, `skewY()`, `perspective()` |
+| Filters | `blur()`, `brightness()`, `contrast()`, `drop-shadow()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`, `saturate()`, `sepia()` |
+| Easing | `cubic-bezier()`, `steps()`, `linear()` |
+| Shapes | `inset()`, `circle()`, `ellipse()`, `polygon()`, `path()`, `rect()`, `xywh()` |
+| Grid | `repeat()`, `minmax()`, `fit-content()` |
+| Counters | `counter()`, `counters()` |
+| Only in one place | `attr()` in `content`, as `attr(data-name)` or `attr(data-name, "fallback")`; `format()`, `tech()` and `local()` in the `src` of `@font-face`; `selector()` after `@supports` |
+| The design's files | `url()`, below |
+
+Every other function is refused, in particular `image-set()`, `-webkit-image-set()`, `cross-fade()`, `image()`, `element()`, `-moz-element()`, `paint()`, `src()` and `expression()`.
+
+**`url()`** can only name one of the design's own pictures and fonts, as they are in the package: `images/<slot>.<type>` or `images/css-<name>.<type>` (`png`, `jpg`, `gif`, `webp` or `svg`), `fonts/font.<type>` or `fonts/<group>.<type>` (`woff2`, `woff`, `ttf` or `otf`), written `url(images/css-texture.png)` or `url("images/css-texture.png")`. No web address, no `data:`, no `/` at the start, no `..`, nothing after a `?` or a `#`. Each time an overlay gets the design, OTO writes the address of the file in its place. OTO keeps each file under the type it really is (a picture named `css-photo.png` that is a JPEG is kept as `images/css-photo.jpg`), so a file is found by its folder and name whatever the type `url()` gives it. A file the design does not have is left out with its declaration: that is not an error, the picture just does not show. The `src` of `@font-face` can only hold `url()` of the design's fonts (with `format()` and `tech()` after it) and `local()`.
+
+**Limits:** 256 KB; 10,000 rules and declarations in all (a file changed by hand keeps the first 10,000); at-rules 3 inside each other; brackets and functions 24 inside each other.
 
 ## `controls.json`: the control settings
 
@@ -147,7 +208,7 @@ This is the producer's configuration of the controls, as opposed to the look of 
 
 | Setting | Meaning |
 |---------|---------|
-| `display` | One `true`/`false` per overlay element (see [`public/js/display-options.js`](../public/js/display-options.js)): scoreboard, names, nationality, record, prizes, energy counter, active Pokémon, bench, HP bars, ability tokens, stadium, toasts, animations and more |
+| `display` | One `true`/`false` per overlay element (see [`public/js/display-options.js`](../public/js/display-options.js)): scoreboard, names, nationality, record, prizes, energy counter, active Pokémon, bench, HP bars, ability tokens, stadium, toasts, animations, the design's animations of the moments of a match (`moments`) and more |
 | `toastSeconds`, `animationSeconds` | How long banners and full-screen effects stay (1 to 30 seconds) |
 | `sound` | `enabled`, a master `volume` (0 to 100), and for each cue an `enabled` and a `volume` |
 | `enable…Toast`, `enable…Animation` | Which announcements are switched on |
@@ -163,11 +224,12 @@ A `.oto` file can come from anyone, so OTO treats it as data it must check, neve
 
 - **Everything is checked by what it is**, not what it is called. A file named `logo.png` that is not a PNG is refused.
 - **SVG pictures** with scripts, `foreignObject`, event handlers, `@import` or links to the web are refused.
+- **The style sheet** is read the way a browser reads CSS and checked part by part: `@import`, `url()` with anything but the design's own pictures and fonts, the functions that load a picture without `url()`, `!important`, `allow-discrete` and rules for anything outside the overlay's stage are refused, and a package with any of them installs nothing ([the rules](#stylescss-the-style-sheet)).
 - **File names** that could point outside the package (`../`, absolute paths, drive letters, duplicate names) make the whole package fail. Nothing in a package is ever written to disk under a name taken from it.
 - **Sizes are enforced** against what each file declares, while unpacking, so a "zip bomb" that claims to be small is cut off. Files are also checked against their checksums.
 - **Passwords and unusual compression** are not supported and are refused.
 - **Nothing is installed unless all of it is good.** A design appears completely or not at all, and a package that fails does not change the control settings either.
-- **Designs are served to the overlay as pictures, fonts and sounds only**, with a content security policy that stops a file from running anything even if it were opened directly.
+- **Designs are served to the overlay as pictures, fonts and sounds only**, with a content security policy that stops a file from running anything even if it were opened directly. The style sheet is not served as a file: the overlay gets it as text with the rest of the design, checked again and written out anew, and puts it in the page as text.
 
 ## Making a package without OTO
 

@@ -1,5 +1,5 @@
 /**
- * What a theme can change: the colors and shapes (CSS variables) and the images.
+ * What a theme can change: the colors and shapes (CSS variables), the images, and the limits of its style sheet.
  *
  * One source of truth for the server (which validates themes) and the control panel's theme editor.
  * Loaded in the browser as OTO_THEME.
@@ -48,6 +48,17 @@
     // the picture of a reserved space (see SPACE_LIMITS): a frame drawn over it, with a see-through middle for what shows through
     ...[1, 2, 3, 4, 5, 6].map((n) => ({ key: `spaceFrame${n}`, label: `Space ${n}: frame`, help: 'Drawn over the reserved space, stretched to fit (a frame with a see-through middle, for example)', space: n }))
   ];
+  const IMAGE_KEYS = IMAGES.map((image) => image.key);
+
+  // A design can carry a style sheet of its own (CSS), in one file next to design.json, to restyle and animate the overlay's stage
+  // (public/js/theme-css.js checks it). It can have pictures of its own too, with names the designer chooses: images/css-<name>.png and
+  // so on, kept with the other pictures under the key "css-<name>" (so the overlay sets var(--css-<name>) for each).
+  const CSS_FILE = 'styles.css';
+  const CSS_MAX_BYTES = 256 * 1024;
+  const CSS_IMAGE_KEY = /^css-[a-z0-9][a-z0-9-]{0,31}$/;
+  const CSS_IMAGE_MAX = 24;
+  // A picture slot of a design: one of IMAGES, or a picture for its style sheet
+  const isImageKey = (key) => typeof key === 'string' && (IMAGE_KEYS.indexOf(key) !== -1 || CSS_IMAGE_KEY.test(key));
 
   // The text of the overlay is in groups, and each group can have a font of its own: a font file in the design (fonts/<group>.woff2...) and/or a
   // list of fonts to use (a CSS font-family, such as "Impact, Arial Black, sans-serif", for fonts that are on the computer that shows the overlay).
@@ -223,7 +234,12 @@
     PRIZE_KEYS: PRIZE_STYLES.map((style) => style.key),
     PRIZE_DEFAULT: 'current',
     COLOR_KEYS: COLORS.map((color) => color.key),
-    IMAGE_KEYS: IMAGES.map((image) => image.key),
+    IMAGE_KEYS,
+    isImageKey,
+    CSS_FILE,
+    CSS_MAX_BYTES,
+    CSS_IMAGE_KEY,
+    CSS_IMAGE_MAX,
     BLOCKS,
     BLOCK_KEYS: BLOCKS.map((block) => block.key),
     LAYOUT_LIMITS,

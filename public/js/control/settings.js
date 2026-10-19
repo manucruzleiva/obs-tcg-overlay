@@ -56,14 +56,16 @@ function overlayTab(app) {
   const update = (patch) => app.act('action:settings', { action: 'update', ...patch });
 
   // (a way of drawing something, such as the flag for a nationality, is not a piece to show or hide: these buttons leave it as it is)
-  const setAll = (predicate) => update({ display: Object.fromEntries(DISPLAY.KEYS.filter((key) => !DISPLAY.STYLE_KEYS.includes(key)).map((key) => [key, predicate(key)])) });
+  const setAll = (predicate, keep = []) => update({ display: Object.fromEntries(DISPLAY.KEYS.filter((key) => !DISPLAY.STYLE_KEYS.includes(key) && !keep.includes(key)).map((key) => [key, predicate(key)])) });
   const MINIMAL = new Set(['scoreboard', 'matchScore', 'trainerName', 'activePokemon', 'pokemonNames', 'hpBars', 'toasts']);
+  // Minimal hides pieces. The animations of the design are how the pieces that are left move, not a piece: it leaves them as they are.
+  const MINIMAL_KEEPS = ['moments'];
 
   const visibility = section('What the overlay shows',
     note('Switch off anything you do not want on stream. It disappears right away and the rest rearranges itself.'),
     h('div', { class: 'button-row' },
       h('button', { class: 'btn', type: 'button', onclick: async () => { await setAll(() => true); app.openSettings('overlay'); } }, 'Show everything'),
-      h('button', { class: 'btn', type: 'button', onclick: async () => { await setAll((key) => MINIMAL.has(key)); app.openSettings('overlay'); } }, 'Minimal (score, names, Active, HP)')),
+      h('button', { class: 'btn', type: 'button', onclick: async () => { await setAll((key) => MINIMAL.has(key), MINIMAL_KEEPS); app.openSettings('overlay'); } }, 'Minimal (score, names, Active, HP)')),
     h('div', { class: 'option-groups' }, DISPLAY.GROUPS.map((group) => h('fieldset', { class: 'option-group' },
       h('legend', {}, group.label),
       group.options.map((option) => switchControl(option.label, display[option.key] !== false, (on) => update({ display: { [option.key]: on } })))))));
@@ -363,7 +365,10 @@ function themesTab(app) {
     names = data.names;
     active = data.active;
     selected = select !== undefined ? select : (names.includes(selected) ? selected : (active || names[0] || null));
-    theme = selected ? await json('GET', `/api/themes/${encodeURIComponent(selected)}`) : null;
+    const loaded = selected ? await json('GET', `/api/themes/${encodeURIComponent(selected)}`) : null;
+    // what was typed while the same design was being read again stays: it goes up with the next save
+    const typing = pending && loaded && theme && theme.name === loaded.name;
+    theme = typing ? { ...loaded, colors: theme.colors, author: theme.author, description: theme.description, fontFamilies: theme.fontFamilies } : loaded;
     try {
       own = Object.fromEntries(Object.entries((await json('GET', '/api/sounds')).custom).filter(([, sound]) => sound.source === 'custom'));
     } catch (error) { own = {}; }
@@ -461,6 +466,19 @@ function themesTab(app) {
         ref && h('button', { class: 'btn tiny', type: 'button', onclick: () => change(() => json('DELETE', here(`/sounds/${cue.key}`))) }, icon('trash', 14), 'Remove')));
   };
 
+  // The style sheet of the design (and the pictures that are for it) is written in the editor, on its own tab
+  const stylesRow = () => {
+    const pictures = Object.keys(theme.images).filter((key) => THEME.CSS_IMAGE_KEY.test(key)).length;
+    const said = theme.css
+      ? `This design has its own style sheet (styles.css)${pictures ? `, with ${pictures === 1 ? '1 picture' : `${pictures} pictures`} for it` : ''}. It is written in the editor, on the Style sheet tab.`
+      : 'A style sheet (CSS) can restyle anything on the overlay and animate what happens in the game. It is written in the editor, on the Style sheet tab.';
+    return h('div', { class: 'image-row', dataset: { role: 'styles' } },
+      h('div', { class: 'image-preview font-sample' }, theme.css ? h('span', {}, '{ }') : h('span', { class: 'muted' }, 'None')),
+      h('div', { class: 'image-info' }, h('strong', {}, 'Style sheet'), h('small', {}, said),
+        h('div', { class: 'button-row' },
+          h('button', { class: 'btn tiny', type: 'button', onclick: () => openEditor(selected, 'css') }, icon('code', 14), 'Edit the style sheet'))));
+  };
+
   const groups = [...new Set(THEME.COLORS.map((color) => color.group))];
 
   const field = (label, value, max, onInput) => {
@@ -495,7 +513,7 @@ function themesTab(app) {
           field('About this design', theme.description, 300, (value) => { theme.description = value; })),
         groups.map((group) => h('fieldset', { class: 'option-group' }, h('legend', {}, group), THEME.COLORS.filter((color) => color.group === group).map(colorRow))),
         // (the frame of a reserved space is listed when the design has that space, or still has the picture)
-        h('fieldset', { class: 'option-group' }, h('legend', {}, 'Pictures and font'), THEME.IMAGES.filter((image) => !image.space || theme.images[image.key] || (theme.spaces || []).some((space) => space.id === image.space)).map(imageRow), fontRow()),
+        h('fieldset', { class: 'option-group' }, h('legend', {}, 'Pictures and font'), THEME.IMAGES.filter((image) => !image.space || theme.images[image.key] || (theme.spaces || []).some((space) => space.id === image.space)).map(imageRow), fontRow(), stylesRow()),
         h('fieldset', { class: 'option-group' }, h('legend', {}, 'Sounds'),
           note('These play while this design is on the overlay, once sound effects are switched on in Settings > Sounds. A sound you set yourself on the Sounds tab plays instead of the design\'s for that moment.'),
           SOUND.GROUPS.map((group) => h('div', { class: 'design-sounds' }, h('div', { class: 'section-label' }, group.label), group.cues.map(soundRow)))))
@@ -505,8 +523,12 @@ function themesTab(app) {
     replace(root, list, editor);
   };
 
-  // The editor for a design opens over the settings; when it closes after saving, the design is read again
-  const openEditor = (designName) => openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
+  // The editor for a design opens over the settings (on one of its tabs, if `tab` says which); when it closes after saving, the design is read again
+  const openEditor = async (designName, tab) => {
+    await save.flush(); // what was just typed goes up before the editor reads the design (its Save sends the colors it read)
+    const editor = await openDesignEditor(app, designName, { onClose: (model) => { if (model.everSaved) refresh(designName).catch((error) => app.toast(error.message, 'error')); } });
+    if (editor && tab) editor.showTab(tab);
+  };
 
   // A new design: an empty one, or (`fromBuiltIn`) a copy of the built-in look, with every color and the fonts written out so they can be changed
   const newTheme = async ({ fromBuiltIn = false } = {}) => {

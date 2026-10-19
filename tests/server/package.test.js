@@ -207,6 +207,47 @@ describe('packing and unpacking', () => {
     assert.deepEqual(Object.keys(opened.design.images), ['logoImage']);
   });
 
+  it('finds the style sheet next to design.json, and the pictures for it by their names', () => {
+    const css = Buffer.from('.logo { background: url(images/css-glow.png) }');
+    const opened = unpack(zip({
+      'design.json': { name: 'Styled', images: { 'css-glow': 'images/css-glow.webp' } }, 'styles.css': css,
+      'images/css-glow.png': S.PNG, 'images/css-glow.webp': S.WEBP, 'images/css-paper.jpg': S.JPG, 'images/css-Bad.png': S.PNG, 'images/css-notes.txt': 'hello', 'css/styles.css': '.a{}'
+    }), DEFAULTS);
+    assert.deepEqual(opened.design.css, css);
+    assert.deepEqual(Object.keys(opened.design.images), ['css-glow', 'css-paper']);
+    assert.deepEqual(opened.design.images['css-glow'], S.WEBP, 'the type design.json names, when there are several');
+    assert.deepEqual(opened.ignored.sort(), ['css/styles.css', 'images/css-Bad.png', 'images/css-notes.txt']);
+
+    const wrapped = unpack(zip({ 'My Design/design.json': { name: 'Wrapped' }, 'My Design/styles.css': css }), DEFAULTS);
+    assert.deepEqual(wrapped.design.css, css, 'in a zipped folder too');
+    assert.deepEqual(wrapped.ignored, []);
+    assert.equal(unpack(zip({ 'design.json': { name: 'Plain' } }), DEFAULTS).design.css, null);
+    refuses(() => unpack(zip({ 'styles.css': css })), /no design and no control settings/, PackageError);
+  });
+
+  it('takes 24 pictures for the style sheet at most, the first by name, and says the others were not used', () => {
+    const entries = { 'design.json': { name: 'Many' } };
+    for (let n = 10; n < 40; n++) entries[`images/css-p${n}.png`] = S.PNG;
+    const opened = unpack(zip(entries), DEFAULTS);
+    assert.deepEqual(Object.keys(opened.design.images), Array.from({ length: 24 }, (unused, n) => `css-p${n + 10}`));
+    assert.deepEqual(opened.ignored, Array.from({ length: 6 }, (unused, n) => `images/css-p${n + 34}.png`));
+  });
+
+  it('reads a style sheet of 256 KB at most, and says so in KB, whether the package is a folder zipped or not', () => {
+    assert.ok(unpack(zip({ 'design.json': { name: 'x' }, 'styles.css': Buffer.alloc(256 * 1024, 0x20) }), DEFAULTS).design.css);
+    for (const size of [256 * 1024 + 1, 270 * 1024, 300 * 1024]) {
+      for (const folder of ['', 'my-design/']) {
+        refuses(() => unpack(zip({ [`${folder}design.json`]: { name: 'x' }, [`${folder}styles.css`]: Buffer.alloc(size, 0x20) })), /^The style sheet is too large \(256 KB at most\)$/, PackageError);
+      }
+    }
+  });
+
+  it('takes an empty styles.css for no style sheet', () => {
+    const opened = unpack(zip({ 'design.json': { name: 'x' }, 'styles.css': Buffer.alloc(0) }), DEFAULTS);
+    assert.equal(opened.design.css, null);
+    assert.deepEqual(opened.ignored, [], 'it is not a file it has no use for');
+  });
+
   it('reads the settings whether they are wrapped or bare, and drops what is not shareable', () => {
     const wrapped = unpack(zip({ 'controls.json': { version: 1, settings: { toastSeconds: 5, apiKey: 'secret' } } }), DEFAULTS);
     assert.deepEqual(wrapped.controls.settings, { toastSeconds: 5 });
@@ -352,7 +393,7 @@ describe('the package service', () => {
       assert.equal(info.name, 'Store League');
       assert.equal(info.author, 'Mina');
       assert.equal(info.app, 'OTO 1.2.3');
-      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], font: false, sounds: ['damage', 'ko'], fonts: [], fontFamilies: [], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null, prizeLayout: null, orientation: null, spaces: 0 });
+      assert.deepEqual(info.design, { name: 'Store League', exists: true, images: ['logoImage'], css: null, cssImages: 0, font: false, sounds: ['damage', 'ko'], fonts: [], fontFamilies: [], colors: 1, layout: 0, crop: [], tile: [], prizeStyle: null, prizeLayout: null, orientation: null, spaces: 0 });
       assert.deepEqual(info.controls.hidden, ['Tournament record (W/L/T)'], 'the markers that are off to begin with are not "hidden"');
       assert.deepEqual(info.controls.revealed, []);
       assert.equal(info.controls.toastSeconds, 6);
@@ -490,6 +531,78 @@ describe('the package service', () => {
     it('refuses to install nothing', () => {
       refuses(() => service.install(exported(), { design: false, controls: false }), /Nothing was chosen/);
       refuses(() => service.install(exported({ design: 'Store League' }), { design: false }), /Nothing was chosen/);
+    });
+
+    it('carries the style sheet of a design and the pictures for it, says so before it installs them, and installs them as they were', () => {
+      const css = '/* glow */\n.logo { background: url(images/css-glow.png); animation: glow 2s infinite }\n@keyframes glow { 50% { opacity: .5 } }\n';
+      themes.save('Store League', { css });
+      themes.setImage('Store League', 'css-glow', S.PNG);
+      const buffer = service.exportPackage({ design: 'Store League' }).buffer;
+      const files = readZip(buffer);
+      assert.deepEqual([...files.keys()].sort(), ['design.json', 'images/css-glow.png', 'images/logoImage.png', 'manifest.json', 'sounds/damage.mp3', 'sounds/ko.ogg', 'styles.css']);
+      assert.equal(files.get('styles.css').toString('utf8'), css, 'as it was written');
+      assert.equal(JSON.parse(files.get('design.json')).styles, 'styles.css');
+
+      const info = service.inspect(buffer);
+      assert.deepEqual(info.design.css, { bytes: Buffer.byteLength(css) });
+      assert.equal(info.design.cssImages, 1);
+      assert.deepEqual(info.design.images, ['logoImage'], 'the pictures for the style sheet are counted on their own');
+      assert.deepEqual(info.ignored, []);
+
+      const result = service.install(buffer);
+      const installed = themes.get(result.design.name);
+      assert.equal(installed.styles, 'styles.css');
+      assert.equal(installed.images['css-glow'], 'images/css-glow.png');
+      assert.equal(themes.cssOf(installed.name), css);
+      assert.match(themes.resolved(installed.name).css, /^#stage \.logo\{background:url\("\/api\/theme\/assets\/images\/css-glow\.png\?v=\d+"\);animation:glow 2s infinite\}/);
+    });
+
+    it('installs a design whose styles.css is empty, as one without a style sheet, and one it exported itself with an emptied one', () => {
+      const empty = zip({ 'design.json': { name: 'Empty Css' }, 'styles.css': Buffer.alloc(0) });
+      assert.equal(service.inspect(empty).design.css, null, 'the install dialog does not say it has a style sheet');
+      const installed = themes.get(service.install(empty).design.name);
+      assert.equal(installed.styles, undefined);
+
+      // emptied by hand in the design's folder, then exported
+      themes.save('Hand', { css: '.score { color: red; }' });
+      fs.writeFileSync(path.join(themes.folderFor('Hand'), 'styles.css'), '');
+      assert.equal(themes.get('Hand').styles, undefined, 'an empty file is no style sheet');
+      const exported = service.exportPackage({ design: 'Hand' }).buffer;
+      assert.equal(readZip(exported).has('styles.css'), false);
+      assert.equal(service.inspect(exported).design.css, null);
+      assert.ok(themes.get(service.install(exported).design.name));
+
+      // a design added from elsewhere with an empty style sheet
+      assert.equal(themes.addDesign({ name: 'Added', css: Buffer.alloc(0) }).styles, undefined);
+    });
+
+    it('finds the files its style sheet names whatever their ending, as each is kept under the type it really is', () => {
+      const css = '.scoreboard { background: url(images/css-photo.png) }\n.logo { background: var(--css-photo) }\n.toast { background: url(images/css-ok.png) }\n'
+        + '@font-face { font-family: X; src: url(fonts/font.ttf) }\n.sb-name { background: url(images/css-none.png) }';
+      const result = service.install(zip({ 'design.json': { name: 'Mismatch' }, 'images/css-photo.png': S.JPG, 'images/css-ok.png': S.PNG, 'fonts/font.ttf': S.WOFF2, 'styles.css': css }));
+      const installed = themes.get(result.design.name);
+      assert.deepEqual([installed.images['css-photo'], installed.images['css-ok'], installed.font], ['images/css-photo.jpg', 'images/css-ok.png', 'fonts/font.woff2']);
+      const served = themes.resolved(installed.name).css;
+      assert.match(served, /#stage \.scoreboard\{background:url\("\/api\/theme\/assets\/images\/css-photo\.jpg\?v=\d+"\)\}/);
+      assert.match(served, /#stage \.toast\{background:url\("\/api\/theme\/assets\/images\/css-ok\.png\?v=\d+"\)\}/);
+      assert.match(served, /@font-face\{font-family:X;src:url\("\/api\/theme\/assets\/fonts\/font\.woff2\?v=\d+"\)\}/);
+      assert.match(served, /#stage \.sb-name\{\}/, 'a picture the design does not have is still left out');
+    });
+
+    it('installs nothing at all when the style sheet of a package has something not allowed in it', () => {
+      for (const [css, pattern] of [
+        ['.a { color: red }\n@import url(https://tracker.example/x.css);', /^Line 2: @import is not allowed \(a design can only use the files it carries\)\.$/],
+        ['.a { background: image-set("https://tracker.example/a.png" 1x) }', /image-set\(\) is not allowed/],
+        ['body { background: #000 }', /rules for body are not allowed/],
+        [Buffer.from([0x2e, 0x61, 0xff]), /not plain text/]
+      ]) {
+        const bad = zip({ 'design.json': { name: 'Booby Trapped' }, 'images/logoImage.png': S.PNG, 'styles.css': css, 'controls.json': { settings: { toastSeconds: 9 } } });
+        refuses(() => service.install(bad), pattern);
+        assert.ok(service.inspect(bad).design.css, 'looking inside does not check it');
+      }
+      assert.deepEqual(themes.list(), ['Store League']);
+      assert.deepEqual(commits, [], 'the settings were not applied either');
+      assert.deepEqual(events, []);
     });
 
     it('installs nothing at all when part of a package is bad', () => {

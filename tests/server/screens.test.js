@@ -104,6 +104,19 @@ describe('the design each overlay wears', () => {
     assert.deepEqual(file.buffer, S.PNG);
   });
 
+  it('has its style sheet with the files of that design asked for by its name, and the main overlay has its own', async () => {
+    await api('PUT', '/api/themes/Phone', { css: '.logo { background: url(images/logoImage.png) }' });
+    await api('PUT', '/api/themes/Wide', { css: '.logo { opacity: .5 }' });
+    await screens([{ id: 'vertical', name: 'Vertical', design: 'Phone', display: {}, sound: false }]);
+    const { json } = await api('GET', '/api/theme?screen=vertical');
+    assert.match(json.theme.css, /^#stage \.logo\{background:url\("\/api\/theme\/assets\/images\/logoImage\.png\?v=\d+&design=Phone"\)\}$/);
+    const address = /url\("([^"]+)"\)/.exec(json.theme.css)[1];
+    assert.deepEqual((await api('GET', address)).buffer, S.PNG, 'the overlay of that screen can load it');
+    assert.equal((await api('GET', '/api/theme')).json.theme.css, '#stage .logo{opacity:.5}');
+    await api('PUT', '/api/themes/Phone', { css: '' });
+    await api('PUT', '/api/themes/Wide', { css: '' });
+  });
+
   it('is the one on air when the design of a screen does not exist any more', async () => {
     await screens([{ id: 'gone', name: 'Gone', design: 'Deleted', display: {}, sound: false }]);
     assert.equal((await api('GET', '/api/theme?screen=gone')).json.name, 'Wide');
@@ -133,6 +146,24 @@ describe('the design each overlay wears', () => {
     await wait(300);
     stop();
     assert.equal(heard, false, 'Other is worn by nobody');
+  });
+
+  it('tells every overlay to look again when a design that a screen wears is deleted, and not when nobody wears it', async () => {
+    await api('PUT', '/api/themes/Gone%20Soon', { colors: { '--accent': '#abcdef' }, css: '.logo { transform: scale(2) }' });
+    await api('PUT', '/api/themes/Unworn', { colors: {} });
+    await screens([{ id: 'vertical', name: 'Vertical', design: 'Gone Soon', display: {}, sound: false }]);
+    assert.equal((await api('GET', '/api/theme?screen=vertical')).json.name, 'Gone Soon');
+    const told = viewer.expect('theme:changed', () => true, 1500);
+    assert.equal((await api('DELETE', '/api/themes/Gone%20Soon')).status, 200);
+    await told;
+    assert.equal((await api('GET', '/api/theme?screen=vertical')).json.name, 'Wide', 'the screen wears the one on air now');
+
+    let heard = false;
+    const stop = viewer.watch('theme:changed', () => true, () => { heard = true; });
+    assert.equal((await api('DELETE', '/api/themes/Unworn')).status, 200);
+    await wait(300);
+    stop();
+    assert.equal(heard, false, 'Unworn was worn by nobody');
   });
 
   it('is told about by the settings: the list of screens is in the game everybody sees, so every overlay can read its own', async () => {

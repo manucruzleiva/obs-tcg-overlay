@@ -236,7 +236,7 @@ class Session {
     }
     if (spec.silent) return;
 
-    this.finish({ before, targets: targets || [], label: spec.label(this.gs), clientId, announced, cues: spec.cues(), kind: 'action' });
+    this.finish({ before, targets: targets || [], label: spec.label(this.gs), clientId, announced, cues: spec.cues(), kind: 'action', whole: spec.whole });
     // what follows by itself (a game won because of the last prize card) is a step of its own, by the system, that can be undone on its own
     this.finishAutomatic(spec.automatic(this.gs));
     this.acknowledge(socket, meta.seq);
@@ -267,8 +267,8 @@ class Session {
     });
   }
 
-  // Apply a change that did not come from a control panel (for example the REST API)
-  commit(label, mutate, by = { clientId: 'api', name: 'API' }) {
+  // Apply a change that did not come from a control panel (for example the REST API). `whole`: it replaces the whole game (see finish).
+  commit(label, mutate, by = { clientId: 'api', name: 'API' }, { whole = false } = {}) {
     const before = this.gs.snapshot();
     try {
       mutate(this.gs);
@@ -276,7 +276,7 @@ class Session {
       this.gs.restore(before);
       throw error;
     }
-    this.finish({ before, targets: ['*'], label, clientId: by.clientId, by, announced: [], kind: 'action' });
+    this.finish({ before, targets: ['*'], label, clientId: by.clientId, by, announced: [], kind: 'action', whole });
   }
 
   // A Pokémon picked while the card service was slow has no attacks or retreat cost yet: they are looked for in the background and filled
@@ -315,8 +315,10 @@ class Session {
     return true;
   }
 
-  // The one place a change becomes official: new revision, undo entry, activity, broadcast
-  finish({ before, targets, label, clientId, by, announced = [], cues = [], kind, undoLabel = label, recordUndo = true, keepRedo = false, draft = null }) {
+  // The one place a change becomes official: new revision, undo entry, activity, broadcast. `whole`: the game was replaced as a whole (an
+  // import, a full reset, or undoing or redoing one), and goes out as state:full: an overlay draws it as it is, where it would play the
+  // difference from the game before as moments (a fake knock out of each Pokémon that is not in the new one).
+  finish({ before, targets, label, clientId, by, announced = [], cues = [], kind, undoLabel = label, recordUndo = true, keepRedo = false, draft = null, whole = false }) {
     const gs = this.gs;
     const changed = JSON.stringify({ ...before, revision: 0 }) !== JSON.stringify({ ...gs.state, revision: 0 });
 
@@ -326,13 +328,13 @@ class Session {
 
     this.collab.recordChange({ rev, clientId, by: who, label, targets });
     // (a draft that was sent keeps its changes, so that redoing the send can open it again)
-    if (recordUndo && changed) this.collab.pushUndo({ before, rev, label: undoLabel, by: who, draft });
+    if (recordUndo && changed) this.collab.pushUndo({ before, rev, label: undoLabel, by: who, draft, whole });
     if (kind !== 'undo' && kind !== 'redo' && !keepRedo) this.collab.clearRedo();
 
     const activity = this.collab.addActivity({ rev, by: who, label, kind });
 
     this.afterChange(gs.state);
-    this.io.emit('state:update', publicState(gs.state));
+    this.io.emit(whole ? 'state:full' : 'state:update', publicState(gs.state));
     this.io.to(PRODUCERS).emit('activity', activity);
     for (const announcement of announced) {
       this.io.emit('announce', { ...announcement, id: ++this.announceId, ts: Date.now() });
@@ -358,13 +360,13 @@ class Session {
     if (this.staleView(socket, data)) return;
 
     this.collab.popUndo();
-    this.collab.pushRedo({ snapshot: this.gs.snapshot(), label: entry.label, by: entry.by, draft: entry.draft || null });
+    this.collab.pushRedo({ snapshot: this.gs.snapshot(), label: entry.label, by: entry.by, draft: entry.draft || null, whole: Boolean(entry.whole) });
     this.gs.restore(entry.before);
 
     const owner = entry.by.clientId === clientId ? '' : ` (made by ${entry.by.name})`;
     this.finish({
       before: this.gs.snapshot(), targets: ['*'], clientId, kind: 'undo', recordUndo: false,
-      label: `Undid: ${entry.label}${owner}`
+      label: `Undid: ${entry.label}${owner}`, whole: Boolean(entry.whole)
     });
     this.acknowledge(socket, seq);
   }
@@ -393,7 +395,7 @@ class Session {
     this.gs.restore(entry.snapshot);
     this.finish({
       before: current, targets: ['*'], clientId, kind: 'redo',
-      label: `Redid: ${entry.label}`, undoLabel: entry.label
+      label: `Redid: ${entry.label}`, undoLabel: entry.label, whole: Boolean(entry.whole)
     });
     this.acknowledge(socket, seq);
   }
@@ -556,6 +558,7 @@ class Session {
     const announced = [];
     const cues = [];
     const targets = [];
+    let whole = false; // (an import or a full reset in the draft)
 
     for (const entry of draft.queue) {
       if (entry.conflict && mode === 'skip') {
@@ -565,6 +568,7 @@ class Session {
       const spec = actions.resolve(entry.event, entry.payload);
       try {
         announced.push(...spec.run(this.gs));
+        if (spec.whole) whole = true;
         cues.push(...spec.cues());
         applied.push(spec.label(this.gs));
         kept.push({ event: entry.event, payload: entry.payload, label: entry.label, targets: entry.targets, by: entry.by });
@@ -580,7 +584,7 @@ class Session {
     if (applied.length) {
       const preview = applied.slice(0, 3).join('; ') + (applied.length > 3 ? '…' : '');
       this.finish({
-        before, targets, clientId, announced, cues, kind: 'draft', draft: kept,
+        before, targets, clientId, announced, cues, kind: 'draft', draft: kept, whole,
         label: `Sent ${applied.length} change${applied.length === 1 ? '' : 's'}: ${preview}`,
         undoLabel: `${applied.length} sent change${applied.length === 1 ? '' : 's'}`
       });

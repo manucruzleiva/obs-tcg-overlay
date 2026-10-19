@@ -1,6 +1,6 @@
 /*
  * The design editor: a full-size dialog with the overlay on a canvas (zoom, pan, handles over each piece),
- * and a side panel with the layout, the card crop and the code.
+ * and a side panel with the layout, the card crop, the code and the style sheet.
  */
 
 .modal-full { max-width: min(1760px, calc(100vw - 24px)); height: calc(100vh - 24px); max-height: none; }
@@ -142,8 +142,9 @@
 /* -------------------------------------------------------------- side panel */
 
 .editor-side { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-primary); }
-.editor-side .tabs { margin: 0; padding: 0 8px; }
-.editor-side .tab { padding: 10px 12px; font-size: 14px; }
+/* (the tabs go on a second line when the panel is too narrow for all of them) */
+.editor-side .tabs { flex-wrap: wrap; margin: 0; padding: 0 8px; }
+.editor-side .tab { padding: 10px 10px; font-size: 14px; white-space: nowrap; }
 .editor-side-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 
 .block-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
@@ -247,6 +248,25 @@
 .code-input.bad { box-shadow: inset 0 0 0 2px var(--danger); }
 .code-status { min-height: 1.4em; margin: 8px 0 0; font-size: 12px; color: var(--fg-muted); }
 .code-status.bad { color: var(--danger); }
+
+/* --------------------------------------------------------------- style sheet */
+
+/* the same box as the code view, with the pictures, the moments to try and the guide under it */
+.css-panel { height: auto; }
+.css-panel .code-editor { flex: none; height: 46vh; min-height: 260px; }
+.css-panel code { font: 11px var(--font-mono); color: var(--fg-primary); white-space: nowrap; }
+.css-pictures { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.css-picture { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.css-picture .image-preview { width: 74px; height: 48px; }
+.css-picture .image-info { min-width: 0; }
+.css-picture small { color: var(--fg-muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.css-try { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.css-try select { flex: 1; min-width: 0; padding: 5px 8px; font-size: 13px; }
+.css-try select:first-child { flex-basis: 100%; }
+.css-help { margin-top: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.css-help > summary { padding: 8px 12px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.css-help[open] > summary { border-bottom: 1px solid var(--border); }
+.css-help ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px 12px 28px; font-size: 12px; line-height: 1.5; color: var(--fg-secondary); }
 
 .prompt-complaint { margin: 0; color: var(--danger); font-size: 13px; }
 .prompt-complaint[hidden] { display: none; }

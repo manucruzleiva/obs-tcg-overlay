@@ -9,10 +9,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, sniffImage, sniffFont, checkImage, checkFont, checkSound,
-  sanitizeColors, cleanName, cleanText, folderName
+  ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, sniffImage, sniffFont, checkImage, checkFont, checkSound, checkCss,
+  sanitizeColors, cleanName, cleanText, folderName, MIME
 } = require('../../src/services/themes');
 const SOUND = require('../../public/js/sound-options');
+const cssRules = require('../../public/js/theme-css');
 const S = require('../support/samples');
 const { ROOT } = require('../support/harness');
 
@@ -36,6 +37,14 @@ describe('what a design may hold', () => {
     for (const bad of ['red; background: url(x)', 'red}body{display:none', '<script>', 'a\\b', 'x'.repeat(201), 5]) {
       refuses(() => sanitizeColors({ '--accent': bad }), /Invalid value for --accent/);
     }
+  });
+
+  it('refuses values that would make the overlay load a picture, from the web or not, and keeps gradients', () => {
+    for (const bad of ['url(https://tracker.example/x.png)', 'url(//tracker.example/x)', 'URL(images/logoImage.png)', 'image-set("https://tracker.example/x.png" 1x)',
+      '-webkit-image-set(url(//tracker.example/a) 1x)', 'linear-gradient(red, blue), url(//tracker.example/b)', 'var(--x, url(//tracker.example/c))', 'red !important']) {
+      refuses(() => sanitizeColors({ '--bg-panel': bad }), /^Invalid value for --bg-panel: /);
+    }
+    assert.deepEqual(sanitizeColors({ '--bg-panel': 'linear-gradient(135deg, rgba(10,14,24,.9), transparent)' }), { '--bg-panel': 'linear-gradient(135deg, rgba(10,14,24,.9), transparent)' });
   });
 
   it('needs a usable name, and tidies it', () => {
@@ -88,6 +97,18 @@ describe('what a design may hold', () => {
     refuses(() => checkImage('data:image/png;base64,AAAA'), /No picture was sent/);
     refuses(() => checkFont(S.PNG), /not a supported font/);
     refuses(() => checkFont(undefined), /No font was sent/);
+  });
+
+  it('takes a style sheet file that is plain UTF-8 text with nothing in it that is not allowed, and says what is wrong with one that is not', () => {
+    assert.equal(checkCss(Buffer.from('﻿.a { color: red }')), '.a { color: red }', 'the text, without a byte order mark');
+    assert.equal(checkCss(Buffer.from('.a::before { content: "é ★" }')), '.a::before { content: "é ★" }');
+    refuses(() => checkCss(undefined), /No style sheet was sent/);
+    refuses(() => checkCss('.a{}'), /No style sheet was sent/);
+    refuses(() => checkCss(Buffer.alloc(0)), /No style sheet was sent/);
+    refuses(() => checkCss(Buffer.alloc(256 * 1024 + 1, 0x20)), /^The style sheet is too large \(256 KB at most\)$/);
+    refuses(() => checkCss(Buffer.from([0x2e, 0x61, 0x7b, 0xff, 0xfe, 0x7d])), /^The style sheet is not plain text \(save it as UTF-8\)$/);
+    refuses(() => checkCss(Buffer.from('.a { color: red }\n@import "x.css";')), /^Line 2: @import is not allowed \(a design can only use the files it carries\)\.$/);
+    assert.equal(MIME.css, 'text/css; charset=utf-8');
   });
 });
 
@@ -211,6 +232,24 @@ describe('the folder a design lives in', () => {
       assert.deepEqual(design.sounds, {});
     });
 
+    it('leaves out only the color that is not allowed any more, and keeps the others when the design is saved again', () => {
+      // (a design saved before url() was refused in its colors, by OTO itself or by hand)
+      store.save('Neon League', { colors: { '--accent': '#ff4d6d' }, author: 'Mina' });
+      const file = path.join(store.folderFor('Neon League'), 'design.json');
+      const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+      written.colors = {
+        '--accent': '#ff4d6d', '--trainer-a': '#3b82f6', '--trainer-b': '#ef4444',
+        '--bg-panel': 'url(https://cdn.example/panel-texture.png) center / cover', '--bg-card': 'red; display: none'
+      };
+      fs.writeFileSync(file, JSON.stringify(written));
+      const kept = { '--accent': '#ff4d6d', '--trainer-a': '#3b82f6', '--trainer-b': '#ef4444' };
+      assert.deepEqual(store.get('Neon League').colors, kept);
+      assert.deepEqual(store.save('Neon League', { author: 'Mina K' }).colors, kept, 'saving something else keeps them');
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).colors, kept);
+      store.setImage('Neon League', 'logoImage', S.PNG);
+      assert.deepEqual(store.get('Neon League').colors, kept);
+    });
+
     it('can use a name Windows would not allow as a folder', () => {
       store.save('CON', { colors: { '--accent': '#123456' } });
       assert.equal(path.basename(store.folderFor('CON')), 'con-design');
@@ -327,6 +366,174 @@ describe('the folder a design lives in', () => {
     });
   });
 
+  describe('the style sheet', () => {
+    const SHEET = '/* Store League: the logo glows */\n.logo {\n  background: url(images/css-glow.png) center / contain;\n  animation: glow 2s infinite;\n}\n@keyframes glow { 50% { opacity: .5 } }\n';
+    const stylesFile = (name) => path.join(store.folderFor(name), 'styles.css');
+    beforeEach(() => store.save('Store League', {}));
+
+    it('is kept as it was written, comments and all, says it is there in design.json, and comes back to the editor', () => {
+      const before = store.get('Store League').version;
+      const saved = store.save('Store League', { css: SHEET });
+      assert.equal(saved.styles, 'styles.css');
+      assert.equal('css' in saved, false, 'its text is not in the design itself');
+      assert.deepEqual(files('Store League'), ['design.json', 'styles.css']);
+      assert.equal(fs.readFileSync(stylesFile('Store League'), 'utf8'), SHEET);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(store.folderFor('Store League'), 'design.json'), 'utf8')).styles, 'styles.css');
+      assert.equal(store.cssOf('Store League'), SHEET);
+      assert.deepEqual(store.forEditor('Store League'), { ...store.get('Store League'), css: SHEET });
+      assert.equal(store.forEditor('Nobody'), null);
+      assert.equal(store.cssOf('Nobody'), '');
+      assert.ok(store.get('Store League').version >= before);
+    });
+
+    it('is handed to the overlay checked again and written anew, with the address of each of the design\'s files in it', () => {
+      store.save('Store League', { css: SHEET });
+      let resolved = store.resolved('Store League');
+      assert.equal(resolved.css, '#stage .logo{animation:glow 2s infinite}\n@keyframes glow{\n50%{opacity:.5}\n}', 'a picture it does not have is left out');
+      store.setImage('Store League', 'css-glow', S.PNG);
+      const { version } = store.get('Store League');
+      resolved = store.resolved('Store League');
+      assert.equal(resolved.css, `#stage .logo{background:url("/api/theme/assets/images/css-glow.png?v=${version}") center / contain;animation:glow 2s infinite}\n@keyframes glow{\n50%{opacity:.5}\n}`);
+      assert.equal(resolved.images['css-glow'], `/api/theme/assets/images/css-glow.png?v=${version}`, 'and the picture is one of the design\'s, so the overlay has it as var(--css-glow) too');
+      assert.match(store.resolved('Store League', { byName: true }).css, new RegExp(`url\\("/api/theme/assets/images/css-glow\\.png\\?v=${version}&design=Store%20League"\\)`));
+      store.save('Arena', {});
+      assert.equal('css' in store.resolved('Arena'), false, 'a design without a style sheet has none');
+    });
+
+    it('writes the same style sheet once, and again when it or the design changes', () => {
+      store.save('Store League', { css: '.a { color: red }' });
+      const sanitize = cssRules.sanitizeCss;
+      let written = 0;
+      cssRules.sanitizeCss = (...args) => { written++; return sanitize(...args); };
+      try {
+        for (let n = 0; n < 3; n++) assert.equal(store.resolved('Store League').css, '#stage .a{color:red}');
+        assert.equal(written, 1);
+        assert.equal(store.resolved('Store League', { byName: true }).css, '#stage .a{color:red}');
+        assert.equal(written, 2, 'the addresses are not the same for a screen');
+        fs.writeFileSync(path.join(store.folderFor('Store League'), 'styles.css'), '.a { color: blue }');
+        assert.equal(store.resolved('Store League').css, '#stage .a{color:blue}', 'changed by hand');
+        store.setImage('Store League', 'css-x', S.PNG);
+        store.resolved('Store League');
+        assert.equal(written, 4, 'a new version of the design');
+      } finally {
+        cssRules.sanitizeCss = sanitize;
+      }
+    });
+
+    it('only lets the style sheet use the pictures and fonts the design holds, never its sounds', () => {
+      store.setImage('Store League', 'logoImage', S.PNG);
+      store.setFont('Store League', S.WOFF2);
+      store.setSound('Store League', 'damage', S.MP3);
+      store.save('Store League', { css: '.a { background: url(images/logoImage.png) } @font-face { font-family: X; src: url(fonts/font.woff2), url(fonts/names.woff2) } .b { background: url(images/css-gone.png); color: red }' });
+      const { version } = store.get('Store League');
+      assert.equal(store.resolved('Store League').css, `#stage .a{background:url("/api/theme/assets/images/logoImage.png?v=${version}")}\n@font-face{font-family:X}\n#stage .b{color:red}`, 'a src with a font it does not have is left out');
+      refuses(() => store.save('Store League', { css: '.a { background: url(sounds/damage.mp3) }' }), /url\(sounds\/damage\.mp3\) is not one of the design's files/);
+    });
+
+    it('checks a style sheet changed by hand again before the overlay gets it, and leaves out what is not allowed', () => {
+      store.save('Store League', { css: '.a { color: red }' });
+      fs.writeFileSync(stylesFile('Store League'), '﻿body { background: #000 } .a { background: url(https://tracker.example/a) } @import "x.css"; .b { color: red !important }');
+      assert.equal(store.resolved('Store League').css, '#stage .a{}\n#stage .b{color:red}');
+      fs.writeFileSync(stylesFile('Store League'), `.a { color: red }${' '.repeat(300 * 1024)}`);
+      assert.equal('css' in store.resolved('Store League'), false, 'one too large is left out');
+      fs.writeFileSync(stylesFile('Store League'), Buffer.from([0x2e, 0x61, 0x7b, 0x63, 0x6f, 0x6c, 0x6f, 0x72, 0x3a, 0xff, 0x7d]));
+      assert.equal(store.resolved('Store League').css, '#stage .a{color:�}', 'what is not UTF-8 is read as the replacement character');
+    });
+
+    it('refuses a style sheet with something not allowed in it, and keeps the one it had', () => {
+      store.save('Store League', { css: SHEET });
+      refuses(() => store.save('Store League', { css: '.a { color: red }\n\n@import "https://tracker.example/x.css";' }), /^Line 3: @import is not allowed \(a design can only use the files it carries\)\.$/, 400);
+      refuses(() => store.save('Store League', { css: 'body { background: #000 }' }), /rules for body are not allowed/);
+      refuses(() => store.save('Store League', { css: `.a{}${' '.repeat(256 * 1024)}` }), /^The style sheet is too large \(256 KB at most\)$/);
+      refuses(() => store.save('Store League', { css: 42 }), /The style sheet must be text/);
+      refuses(() => store.save('Store League', { css: '.a { color: red }', colors: { '--accent': 'url(//x)' } }), /Invalid value for --accent/);
+      assert.equal(fs.readFileSync(stylesFile('Store League'), 'utf8'), SHEET, 'nothing was written');
+      refuses(() => store.save('Brand New', { css: '@import "x.css";' }), /@import is not allowed/);
+      assert.equal(store.get('Brand New'), null, 'a design is not made with a style sheet that cannot be kept');
+    });
+
+    it('stays when other things are saved, and goes when it is emptied', () => {
+      store.save('Store League', { css: SHEET });
+      store.save('Store League', { colors: { '--accent': '#ff0000' }, author: 'Mina' });
+      assert.equal(store.cssOf('Store League'), SHEET, 'only "css" changes the style sheet');
+      const emptied = store.save('Store League', { css: '' });
+      assert.equal('styles' in emptied, false);
+      assert.deepEqual(files('Store League'), ['design.json']);
+      assert.equal(store.forEditor('Store League').css, '');
+      assert.equal('css' in store.resolved('Store League'), false);
+      assert.equal(store.save('Store League', { css: '' }).name, 'Store League', 'emptying none is fine');
+    });
+
+    it('does not trust what design.json says about it', () => {
+      const file = path.join(store.folderFor('Store League'), 'design.json');
+      const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+      fs.writeFileSync(file, JSON.stringify({ ...written, styles: 'styles.css' }));
+      assert.equal(store.get('Store League').styles, undefined, 'not there');
+      fs.writeFileSync(path.join(store.folderFor('Store League'), 'other.css'), '.a{}');
+      for (const styles of ['other.css', '../styles.css', 'images/styles.css', 5]) {
+        fs.writeFileSync(file, JSON.stringify({ ...written, styles }));
+        assert.equal(store.get('Store League').styles, undefined, String(styles));
+      }
+    });
+
+    it('is part of the design: counted in its size, handed over for a package, and served to the editor as CSS', () => {
+      store.save('Store League', { css: SHEET });
+      assert.equal(store.totalBytes(store.get('Store League')), Buffer.byteLength(SHEET));
+      const { files: held } = store.exportDesign('Store League');
+      assert.deepEqual(held.map((file) => file.ref), ['styles.css']);
+      assert.equal(held[0].data.toString('utf8'), SHEET);
+      const found = store.assetFile('Store League', 'styles.css');
+      assert.equal(found.mime, 'text/css; charset=utf-8');
+      for (const key of IMAGE_KEYS.slice(0, 8)) store.setImage('Store League', key, S.bigPng(4.4 * 1024 * 1024));
+      store.setFont('Store League', Buffer.concat([S.WOFF2, Buffer.alloc(4.4 * 1024 * 1024)]));
+      store.setSound('Store League', 'damage', S.bigWav(0.3 * 1024 * 1024)); // (about 100 KB are left)
+      refuses(() => store.save('Store League', { css: `${SHEET}/*${'x'.repeat(200 * 1024)}*/` }), /size limit \(40 MB\)/);
+      assert.equal(store.cssOf('Store League'), SHEET);
+    });
+  });
+
+  describe('pictures for the style sheet', () => {
+    beforeEach(() => store.save('Store League', {}));
+
+    it('takes pictures with names of the designer\'s choosing, kept with the others', () => {
+      const design = store.setImage('Store League', 'css-glow', S.PNG);
+      assert.equal(design.images['css-glow'], 'images/css-glow.png');
+      store.setImage('Store League', 'css-0-paper-texture', S.SVG);
+      assert.deepEqual(files('Store League'), ['design.json', 'images/css-0-paper-texture.svg', 'images/css-glow.png']);
+      assert.deepEqual(Object.keys(store.get('Store League').images), ['css-glow', 'css-0-paper-texture']);
+      assert.deepEqual(Object.keys(store.removeImage('Store League', 'css-glow').images), ['css-0-paper-texture']);
+      assert.deepEqual(store.exportDesign('Store League').files.map((file) => file.ref), ['images/css-0-paper-texture.svg']);
+    });
+
+    it('refuses a name that is not one, and a picture that is not one', () => {
+      for (const key of ['css-', 'css-A', 'css-_x', '-css-x', `css-${'a'.repeat(33)}`, 'css-a.png', 'css-a/b', 'CSS-a']) {
+        refuses(() => store.setImage('Store League', key, S.PNG), /no such picture slot/);
+        refuses(() => store.removeImage('Store League', key), /no such picture slot/);
+      }
+      assert.ok(store.setImage('Store League', `css-${'a'.repeat(32)}`, S.PNG));
+      refuses(() => store.setImage('Store League', 'css-glow', S.HTML), /not a supported picture/);
+    });
+
+    it('takes 24 of them at most, and a picture can still be replaced', () => {
+      for (let n = 0; n < 24; n++) store.setImage('Store League', `css-p${n}`, S.PNG);
+      refuses(() => store.setImage('Store League', 'css-one-more', S.PNG), /^A design can have at most 24 pictures for its style sheet\.$/);
+      assert.equal(store.setImage('Store League', 'css-p3', S.JPG).images['css-p3'], 'images/css-p3.jpg');
+      assert.ok(store.setImage('Store League', 'logoImage', S.PNG), 'the other slots do not count');
+      store.removeImage('Store League', 'css-p0');
+      assert.ok(store.setImage('Store League', 'css-one-more', S.PNG).images['css-one-more']);
+    });
+
+    it('does not trust the names written in design.json', () => {
+      store.setImage('Store League', 'css-glow', S.PNG);
+      const file = path.join(store.folderFor('Store League'), 'design.json');
+      const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+      fs.writeFileSync(file, JSON.stringify({ ...written, images: { 'css-glow': 'images/css-glow.png', 'css-other': 'images/css-glow.png', 'css-gone': 'images/css-gone.png', 'css-Bad': 'images/css-Bad.png', 'css-up': '../css-up.png' } }));
+      assert.deepEqual(store.get('Store League').images, { 'css-glow': 'images/css-glow.png' });
+      fs.writeFileSync(file, JSON.stringify({ ...written, images: ['images/css-glow.png'] }));
+      assert.deepEqual(store.get('Store League').images, {});
+    });
+  });
+
   describe('the design on air', () => {
     it('remembers which design is on air, and falls back to the built-in look', () => {
       assert.equal(store.activeName(), null);
@@ -436,6 +643,32 @@ describe('the folder a design lives in', () => {
       assert.equal(store.get('Huge'), null);
     });
 
+    it('brings its style sheet, byte for byte, and the pictures for it', () => {
+      const css = Buffer.from('﻿/* from a package */\n.logo { background: url(images/css-glow.png) }\r\n');
+      const added = store.addDesign(parts({ css, images: { logoImage: S.PNG, 'css-glow': S.PNG, 'css-paper': S.JPG, 'css-Nope': S.PNG } }));
+      assert.equal(added.styles, 'styles.css');
+      assert.deepEqual(Object.keys(added.images), ['logoImage', 'css-glow', 'css-paper'], 'a name that is not one is left out, like an unknown slot');
+      assert.deepEqual(fs.readFileSync(path.join(store.folderFor(added.name), 'styles.css')), css);
+      assert.equal(store.cssOf(added.name), '/* from a package */\n.logo { background: url(images/css-glow.png) }\r\n');
+      assert.match(store.resolved(added.name).css, /^#stage \.logo\{background:url\("\/api\/theme\/assets\/images\/css-glow\.png\?v=\d+"\)\}$/);
+    });
+
+    it('adds nothing when its style sheet has something not allowed in it, is not text, or has too many pictures', () => {
+      store.save('Existing', {});
+      const many = Object.fromEntries(Array.from({ length: 25 }, (unused, n) => [`css-p${n}`, S.PNG]));
+      for (const [bad, pattern] of [
+        [parts({ css: Buffer.from('.a { color: red }\n.b { background: url(https://tracker.example/b) }') }), /^Line 2: a web address is not allowed in url\(\)/],
+        [parts({ css: Buffer.from('@import "x.css";') }), /@import is not allowed/],
+        [parts({ css: Buffer.from([0xc3, 0x28]) }), /not plain text/],
+        [parts({ css: Buffer.alloc(300 * 1024, 0x20) }), /too large \(256 KB at most\)/],
+        [parts({ images: many }), /^A design can have at most 24 pictures for its style sheet\.$/]
+      ]) {
+        refuses(() => store.addDesign(bad), pattern);
+      }
+      assert.deepEqual(store.list(), ['Existing']);
+      assert.deepEqual(fs.readdirSync(store.dir).sort(), ['existing'], 'not even a half-built folder');
+    });
+
     it('hands over a design with its files, for a package', () => {
       store.addDesign(parts());
       const { design, files: held } = store.exportDesign('From a package');
@@ -504,6 +737,8 @@ describe('the folder a design lives in', () => {
       assert.deepEqual(Object.keys(design.images), ['logoImage', 'prizeCardBack']);
       assert.equal(store.importLegacy(legacy({ colors: { '--accent': '#0000ff' } })).colors['--accent'], '#0000ff', 'importing again replaces it');
       assert.equal(store.list().length, 1);
+      assert.deepEqual(store.importLegacy(legacy({ colors: { '--accent': '#0000ff', '--bg-panel': 'url(https://cdn.example/x.png)' } })).colors, { '--accent': '#0000ff' },
+        'a color that is not allowed any more is left out on its own');
       refuses(() => store.importLegacy('nope'), /must be an object/);
       refuses(() => store.importLegacy({ colors: {} }), /needs a name/);
     });

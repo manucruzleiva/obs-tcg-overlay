@@ -1,8 +1,8 @@
 /**
  * The design editor: the overlay on a canvas you can zoom and drag pieces around (with a grid to line them up by, and a wide or a tall
  * mobile screen), a crop selector for the Pokémon cards, where the parts of a Pokémon's tile go (and the picture on the prize cards), the
- * places kept clear for a camera feed, and the design as code. It edits one design and saves it back, so the overlay (if this design is on air)
- * follows.
+ * places kept clear for a camera feed, the design as code, and its style sheet (with the pictures for it and the moments it can animate).
+ * It edits one design and saves it back, so the overlay (if this design is on air) follows.
  */
 import { h, icon } from './dom.js';
 import { openModal, closeModal, confirmDialog, pickFile } from './ui.js';
@@ -13,6 +13,7 @@ import { EditorCanvas } from './editor-canvas.js';
 import { CropSelector } from './editor-crop.js';
 import { TilePanel } from './editor-tile.js';
 import { CodePanel } from './editor-code.js';
+import { CssPanel } from './editor-css.js';
 import { sampleState, cardArt, specialEnergyArt } from './editor-sample.js';
 
 const THEME = window.OTO_THEME;
@@ -196,17 +197,17 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     }
   });
   const tilePanel = new TilePanel({ model });
-  const code = new CodePanel({ model });
+  // (refreshStatus is below: text typed in these boxes that the design does not have yet is a change that is not saved)
+  const code = new CodePanel({ model, onInput: () => refreshStatus() });
 
-  // The picture that is drawn over a reserved space is one of the design's pictures (spaceFrame<id>): it is saved as soon as it is chosen,
-  // not with the rest of the design
-  const frameUrl = (id) => (model.files.images[`spaceFrame${id}`] ? assetUrl(model.files.images[`spaceFrame${id}`]) : null);
-  const uploadFrame = async (id) => {
+  // The pictures chosen in the editor (the one drawn over a reserved space, spaceFrame<id>, and the ones for the style sheet, css-<name>)
+  // are pictures of the design like the others: each is saved as soon as it is chosen, not with the rest of the design
+  const uploadPicture = async (key) => {
     const file = await pickFile('image/png,image/jpeg,image/gif,image/webp,image/svg+xml');
     if (!file) return;
     if (file.size > MAX_UPLOAD_BYTES) { app.toast('That picture is larger than 4.5 MB. Use a smaller one.', 'warning'); return; }
     try {
-      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/spaceFrame${id}`, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/${key}`, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The picture could not be saved');
       model.setFiles(data);
@@ -214,9 +215,9 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
       app.toast(error.message, 'error');
     }
   };
-  const removeFrame = async (id) => {
+  const removePicture = async (key) => {
     try {
-      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/spaceFrame${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}/images/${key}`, { method: 'DELETE' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The picture could not be taken off');
       model.setFiles(data);
@@ -224,7 +225,9 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
       app.toast(error.message, 'error');
     }
   };
-  const spaces = new SpacesPanel({ model, canvas, frameUrl, upload: uploadFrame, removePicture: removeFrame });
+  const frameUrl = (id) => (model.files.images[`spaceFrame${id}`] ? assetUrl(model.files.images[`spaceFrame${id}`]) : null);
+  const spaces = new SpacesPanel({ model, canvas, frameUrl, upload: (id) => uploadPicture(`spaceFrame${id}`), removePicture: (id) => removePicture(`spaceFrame${id}`) });
+  const css = new CssPanel({ model, canvas, assetUrl, upload: uploadPicture, removePicture, onInput: () => refreshStatus() });
 
   // The font files of the groups of text go up the moment they are chosen too (the main font is the design's "font")
   const fontRoute = (role) => `/api/themes/${encodeURIComponent(model.name)}/${role === 'display' ? 'font' : `fonts/${role}`}`;
@@ -297,8 +300,8 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));
 
   // ---- the side panel
-  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, spaces: spaces.element, fonts: fonts.element, code: code.element };
-  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['spaces', 'Spaces'], ['fonts', 'Fonts'], ['code', 'Code']];
+  const panels = { layout: layout.element, crop: cropSelector.element, tile: tilePanel.element, spaces: spaces.element, fonts: fonts.element, code: code.element, css: css.element };
+  const tabs = [['layout', 'Layout'], ['crop', 'Card crop'], ['tile', 'Tile'], ['spaces', 'Spaces'], ['fonts', 'Fonts'], ['code', 'Code'], ['css', 'Style sheet']];
   const tabButtons = new Map();
   const sideBody = h('div', { class: 'editor-side-body' });
   let current = 'layout';
@@ -326,25 +329,32 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   const revertButton = h('button', { class: 'btn', type: 'button', onclick: () => model.revert() }, 'Undo all changes');
   let saving = false;
 
+  // Text in the code view or the style sheet that the draft does not have is not saved either: keys pressed a moment ago (read before
+  // a save or a close), or text with a mistake, which is never read into the design (only "Undo all changes" or fixing it takes it away)
+  const typing = () => code.waiting || css.waiting;
+  const mistake = () => (code.unapplied && !code.waiting) || (css.unapplied && !css.waiting);
   const refreshStatus = () => {
-    const dirty = model.dirty;
-    status.textContent = saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved';
+    const dirty = model.dirty || code.unapplied || css.unapplied;
+    status.textContent = saving ? 'Saving…' : mistake() ? 'Unsaved changes (text with a mistake is not used)' : dirty ? 'Unsaved changes' : 'Saved';
     status.classList.toggle('unsaved', dirty);
-    saveButton.disabled = !dirty || saving;
+    saveButton.disabled = !(model.dirty || typing()) || saving;
     revertButton.disabled = !dirty;
     toolbar.undo.disabled = !model.canUndo;
     toolbar.redo.disabled = !model.canRedo;
   };
 
   const save = async () => {
+    // (what was typed a moment ago is read first)
+    code.flush();
+    css.flush();
     if (saving || !model.dirty) return true;
     saving = true;
     refreshStatus();
     try {
-      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle, prizeLayout: model.draft.prizeLayout, orientation: model.draft.orientation, spaces: model.draft.spaces, fontFamilies: model.draft.fontFamilies })
-      });
+      const body = { author: model.draft.author, description: model.draft.description, colors: model.draft.colors, layout: model.draft.layout, crop: model.draft.crop, tile: model.draft.tile, prizeStyle: model.draft.prizeStyle, prizeLayout: model.draft.prizeLayout, orientation: model.draft.orientation, spaces: model.draft.spaces, fontFamilies: model.draft.fontFamilies };
+      // the style sheet goes only when it changed (one written outside OTO may hold something the server refuses: the rest still saves)
+      if (model.draft.css !== model.saved.css) body.css = model.draft.css;
+      const response = await fetch(`/api/themes/${encodeURIComponent(model.name)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'The design could not be saved');
       model.markSaved(data);
@@ -392,13 +402,19 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
     footer: [status, revertButton, h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Close'), saveButton],
     // closing with changes that were not saved asks first
     beforeClose: () => {
-      if (!model.dirty) return true;
-      confirmDialog({ title: 'Close without saving?', message: 'This design has changes that are not saved.', confirmLabel: 'Close without saving', danger: true })
+      code.flush();
+      css.flush();
+      if (!model.dirty && !code.unapplied && !css.unapplied) return true;
+      const message = css.unapplied ? 'The style sheet has text with a mistake that is not saved.'
+        : code.unapplied ? 'The code view has text with a mistake that is not saved.' : 'This design has changes that are not saved.';
+      confirmDialog({ title: 'Close without saving?', message, confirmLabel: 'Close without saving', danger: true })
         .then((yes) => { if (yes) closeModal({ force: true }); });
       return false;
     },
     onClose: () => {
       live();
+      code.dispose();
+      css.dispose();
       canvas.destroy();
       if (app.designEditor === editor) app.designEditor = null;
       if (onClose) onClose(model);

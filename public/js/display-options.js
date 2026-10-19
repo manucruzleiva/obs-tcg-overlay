@@ -75,7 +75,9 @@
       label: 'Announcements',
       options: [
         { key: 'toasts', label: 'Toast banners' },
-        { key: 'animations', label: 'Full-screen animations' }
+        { key: 'animations', label: 'Full-screen animations' },
+        // the "moments" a design's style sheet can animate: the overlay marks what just happened (see markMoments in public/js/overlay.js)
+        { key: 'moments', label: 'Design animations (damage, knock outs, prizes...)' }
       ]
     }
   ];

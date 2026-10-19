@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A style sheet in a design** (`styles.css`): a design can restyle any piece of the overlay's stage and animate it with `@keyframes`, with up to 24 pictures of its own for it (`images/css-<name>.png`, used as `var(--css-<name>)`). It is written in a **Style sheet** tab of the design editor (the Look tab's **Edit the style sheet** opens it), saved with the design and carried in its `.oto`, and the install dialog says when a package has one. It is checked when it is saved or installed and again each time an overlay gets it: it can only use the design's own pictures and fonts, only style the stage, and never use `!important` or a transition of `display` (`allow-discrete`). See [docs/DESIGNING.md](docs/DESIGNING.md#style-sheet-and-animations), and [docs/PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md#stylescss-the-style-sheet) for the exact rules
+- **Moments for a design to animate**: the overlay marks what just happened in the match with a class on that piece for a short while (`moment-damage`, `moment-ko`, `moment-taken`, `moment-turn` and more, with `data-damage`, `data-heal` and `data-energy` for their numbers), and the stage with the kind and the side (`moment-ko-a`); `--oto-moment-ms` says how long. A knocked out Pokémon stays on its tile for its moment when the style sheet names `moment-ko`. Producers can switch them off (Settings, Overlay, *Design animations*), and the editor's **Try a moment** plays one
+
+### Fixed
+- Deleting a design that an extra overlay wears (but that is not on air) now tells that overlay at once, instead of leaving the deleted design on it until OBS reloads it
+- The design editor asks before it closes when its Code or Style sheet box holds text with a mistake, or keys pressed a moment before, instead of losing them while it said "Saved"; Save reads those last keys first. `Ctrl+M` lets Tab move on from those boxes to the controls after them
+- A color typed in the Look tab just before opening the design editor is saved first, so the editor's Save no longer puts the old one back
+- A design's colors could hold a web address (`url(https://...)`, `image-set("https://..." 1x)`), and the overlay would fetch it. Colors are now read the way a style sheet is read: `url()` and the functions that load a picture are refused, and gradients stay. A design saved before with such a color keeps its other colors: only that one is left out
+
+### Security
+- Face-down prize cards no longer carry the picture of the card chosen for them on the overlay page (only the built-in style kept it from showing), so a design's style sheet cannot show them
+- The content security policy allows fonts from OTO itself only (`font-src 'self'`), behind the check of the style sheet
+- The overlay clips the stage to its own box (a frame around it that no design can style), so nothing a design draws can cover the see-through page around the stage when the OBS source is not the stage's shape: a shadow, an outline or a filter of the stage, a piece bigger than it or fixed to the page, an animation of the stage's scaling, or a shadow color with a second shadow behind it
+
 ## [1.0.0] - 2026-10-07
 
 First public release of the project, named **OTO** (OBS TCG Overlay).

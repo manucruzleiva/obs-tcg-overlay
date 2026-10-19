@@ -1,0 +1,57 @@
+{
+  "name": "Championship Blue",
+  "author": "OTO",
+  "description": "Two blue columns that frame a top-down table camera, in the style of big tournament streams, with animations.",
+  "colors": {
+    "--accent": "#8ad4ff",
+    "--accent-hover": "#b5e4ff",
+    "--trainer-a": "#ffffff",
+    "--trainer-b": "#ffffff",
+    "--ability": "#ea4f61",
+    "--tool": "#9b6dff",
+    "--stadium": "#5ad6ff",
+    "--supporter": "#ffb547",
+    "--bg-panel": "linear-gradient(180deg, #17448f 0%, #0a2a74 45%, #031a5e 100%)",
+    "--bg-card": "linear-gradient(180deg, #213f8a 0%, #17337a 100%)",
+    "--bg-primary": "#071a40",
+    "--bg-secondary": "#0d2a5e",
+    "--bg-tertiary": "#163a7a",
+    "--fg-primary": "#ffffff",
+    "--fg-secondary": "#c4dbff",
+    "--fg-muted": "#7d97c8",
+    "--success": "#3d8fe4",
+    "--warning": "#f2c230",
+    "--danger": "#f67b22",
+    "--info": "#5ab8ff",
+    "--border": "rgba(140, 196, 250, 0.45)",
+    "--shadow": "rgba(0, 12, 48, 0.5)",
+    "--radius": "10px",
+    "--radius-sm": "6px"
+  },
+  "fontFamilies": {
+    "display": "\"Segoe UI\", \"Segoe UI Variable Display\", Inter, \"Helvetica Neue\", Arial, sans-serif"
+  },
+  "tile": {
+    "active": {
+      "hp": "below"
+    },
+    "bench": {
+      "hp": "below"
+    }
+  },
+  "crop": {
+    "active": {
+      "x": 0.07,
+      "y": 0.12,
+      "w": 0.86,
+      "h": 0.315
+    },
+    "stadium": {
+      "x": 0.082,
+      "y": 0.29,
+      "w": 0.836,
+      "h": 0.07
+    }
+  },
+  "styles": "styles.css"
+}

@@ -114,7 +114,8 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       // Card pictures and theme images come from the card API, the web, or uploads embedded in a theme
       imgSrc: ["'self'", 'data:', 'https:'],
-      fontSrc: ["'self'", 'data:', 'https:'],
+      // Fonts are OTO's own and the design's (a design's style sheet can only name its own files, and this backs that up)
+      fontSrc: ["'self'"],
       connectSrc: ["'self'", 'ws:', 'wss:'],
       objectSrc: ["'none'"],
       frameAncestors: ["'self'"],

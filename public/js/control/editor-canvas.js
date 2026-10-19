@@ -104,6 +104,7 @@ export class EditorCanvas {
   }
 
   destroy() {
+    this.ready = false; // (the frame is gone: nothing is sent to it any more)
     window.removeEventListener('message', this.onMessage);
     window.removeEventListener('keyup', this.keyUp);
     this.resizer.disconnect();
@@ -198,6 +199,13 @@ export class EditorCanvas {
   showBanner(show) {
     this.banner = show;
     if (this.ready) this.frame.contentWindow.postMessage({ kind: 'banner', show }, window.location.origin);
+  }
+
+  // Play a moment on the overlay as if it had happened, so the animations of the style sheet can be seen: `moment` is its kind ("damage",
+  // "ko"...), `side` "a" or "b", `target` the piece it plays on ("active", "prize0", "stadium"...) and `amount` the number it is about, if any
+  playMoment(moment, side, target, amount) {
+    if (!this.ready) return;
+    this.frame.contentWindow.postMessage({ kind: 'moment', moment, side, target, amount }, window.location.origin);
   }
 
   // Ask the overlay where every piece is, and put the handles there

@@ -100,7 +100,8 @@ module.exports = (services) => {
     });
   };
 
-  // The design the overlay should wear (null means the built-in look), with an address for each of its files
+  // The design the overlay should wear (null means the built-in look), with an address for each of its files (and its style sheet,
+  // checked and with those addresses in it, as "css")
   // (an overlay can be one of the screens of this controller: /overlay?screen=<id>, with a design of its own, or the one on air when it has none)
   const screenDesign = (screenId) => {
     const screens = (gameState.state.settings && gameState.state.settings.screens) || [];
@@ -334,7 +335,7 @@ module.exports = (services) => {
   });
   protectedRouter.post('/config/import', handle((req, res) => {
     try {
-      session.commit('Configuration imported (API)', (gs) => gs.importState(body(req)));
+      session.commit('Configuration imported (API)', (gs) => gs.importState(body(req)), undefined, { whole: true });
     } catch (error) {
       return res.status(400).json({ error: 'Invalid config file' });
     }
@@ -385,16 +386,18 @@ module.exports = (services) => {
   protectedRouter.get('/themes', (req, res) => {
     res.json({ active: themes.activeName(), names: themes.list() });
   });
+  // A design for the editor: design.json as OTO reads it, and the text of its style sheet ("css", '' when it has none)
   protectedRouter.get('/themes/:name', handle((req, res) => {
-    const design = themes.get(req.params.name);
+    const design = themes.forEditor(req.params.name);
     if (!design) return res.status(404).json({ error: 'Design not found' });
     res.json(design);
   }));
-  // Make a design, or change its colors, author and description. Its files have their own calls below.
+  // Make a design, or change its colors, author, description and the rest of design.json, and its style sheet ("css"). Its files
+  // have their own calls below. The answer is the design as GET gives it.
   protectedRouter.put('/themes/:name', handle((req, res) => {
     const saved = themes.save(req.params.name, body(req));
     designChanged(saved.name);
-    res.json(saved);
+    res.json(themes.forEditor(saved.name));
   }));
   // A design in the older format: one JSON document with the pictures inside. The name comes from the file.
   protectedRouter.post('/themes', handle((req, res) => {
@@ -402,10 +405,11 @@ module.exports = (services) => {
     designChanged(saved.name);
     res.status(201).json(saved);
   }));
+  // (whether an overlay wears it is known before it goes: removing the one on air takes it off air)
   protectedRouter.delete('/themes/:name', handle((req, res) => {
-    const wasActive = themes.isActive(req.params.name);
+    const wasInUse = themes.isActive(req.params.name) || designsInUse().includes(folderName(req.params.name));
     if (!themes.remove(req.params.name)) return res.status(404).json({ error: 'Design not found' });
-    if (wasActive) {
+    if (wasInUse) {
       io.emit('theme:changed');
       io.emit('sounds:changed');
     }
@@ -420,7 +424,8 @@ module.exports = (services) => {
     res.json({ active: themes.activeName() });
   }));
 
-  // The pictures, font and sounds of a design arrive as the file itself
+  // The pictures, font and sounds of a design arrive as the file itself (a picture for its style sheet too: images/css-<name>).
+  // Each answers with the design as GET gives it.
   const file = express.raw({ type: () => true, limit: 6 * 1024 * 1024 });
   const slots = [
     ['images/:key', (name, req) => themes.setImage(name, req.params.key, req.body), (name, req) => themes.removeImage(name, req.params.key)],
@@ -432,12 +437,12 @@ module.exports = (services) => {
     protectedRouter.put(`/themes/:name/${route}`, file, handle((req, res) => {
       const saved = set(req.params.name, req);
       designChanged(saved.name);
-      res.json(saved);
+      res.json(themes.forEditor(saved.name));
     }));
     protectedRouter.delete(`/themes/:name/${route}`, handle((req, res) => {
       const saved = unset(req.params.name, req);
       designChanged(saved.name);
-      res.json(saved);
+      res.json(themes.forEditor(saved.name));
     }));
   }
   // Any design's files, for the editor's previews

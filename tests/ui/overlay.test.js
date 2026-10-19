@@ -33,6 +33,37 @@ describe('overlay', { skip }, () => {
   const send = (event, payload) => producer.act(event, payload);
   const live = async () => (await fetch(`${server.base}/api/state`)).json();
 
+  // Every moment a page plays (see "moments"), written down as it starts with what it says: a test that looks for one later, when the
+  // machine is busy, may find it over already
+  const recordMoments = (target) => target.evaluate(() => {
+    window.played = [];
+    new MutationObserver((changes) => {
+      const now = []; // (a moment that starts again is taken off and put back at once: it is written down once)
+      changes.forEach((change) => {
+        const node = change.target;
+        const before = (change.oldValue || '').split(/\s+/);
+        Array.prototype.forEach.call(node.classList, (name) => {
+          if (name.indexOf('moment-') !== 0 || before.indexOf(name) !== -1 || now.some((entry) => entry.node === node && entry.name === name)) return;
+          // (the number of a moment is in data-<kind> and --moment-<kind>: data-damage for moment-damage...)
+          const kind = name.slice('moment-'.length);
+          const numbered = ['damage', 'heal', 'energy'].indexOf(kind) !== -1;
+          now.push({
+            node, name, amount: numbered ? node.getAttribute(`data-${kind}`) : null, variable: numbered ? node.style.getPropertyValue(`--moment-${kind}`) : '', status: node.getAttribute('data-status'),
+            // and how the piece looks then
+            hidden: node.hidden, opacity: getComputedStyle(node).opacity, text: node.querySelector('.mon-name') ? node.querySelector('.mon-name').textContent : null
+          });
+        });
+      });
+      window.played.push(...now);
+    }).observe(document.getElementById('stage'), { attributes: true, attributeOldValue: true, subtree: true, attributeFilter: ['class'] });
+  });
+  // waits until the moment `name` has played on a piece that `selector` finds (with that amount or status, when they are given)
+  const playedOn = (target, selector, name, extra = {}) => target.waitForFunction(([where, wanted, more]) => window.played.some((entry) => entry.name === wanted
+    && entry.node.matches(where) && (more.amount === undefined || entry.amount === String(more.amount)) && (more.status === undefined || entry.status === more.status)),
+  [selector, name, extra], { timeout: 5000 });
+  // the moments that have played on the pieces `selector` finds, by name
+  const playedThere = (target, selector) => target.evaluate((where) => window.played.filter((entry) => entry.node.matches(where)).map((entry) => entry.name).sort(), selector);
+
   beforeEach(async () => {
     await send('action:reset', { action: 'full', confirm: 'FULL_RESET' });
     await send('action:trainerA', { action: 'setName', name: 'Ash' });
@@ -462,6 +493,25 @@ describe('overlay', { skip }, () => {
       assert.match(await front('a', 0), /\/art\/one\.svg/);
     });
 
+    it('does not give the pictures of the cards to the prize cards while the prizes are hidden, so no design can show them', async () => {
+      const pictures = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.style.getPropertyValue('--prize-face')));
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one'), card('two')] });
+      await waitFaces('a', 2);
+      assert.deepEqual(await pictures(), ['', '', '', '', '', ''], 'face down: the pictures are not there');
+      // (a design's style sheet that would paint them on the prize cards has nothing to paint)
+      await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, css: '#stage .prize.has-face::after{content:"";background-image:var(--prize-face)}' }));
+      assert.equal(await prize('a', 0).evaluate((node) => getComputedStyle(node, '::after').backgroundImage), 'none');
+
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .prize').style.getPropertyValue('--prize-face') !== '');
+      assert.deepEqual(await pictures(), ['url("/art/one.svg")', 'url("/art/two.svg")', '', '', '', '']);
+      await send('action:trainerA', { action: 'togglePrizeHidden', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .prizes.is-hidden'));
+      assert.deepEqual(await pictures(), ['', '', '', '', '', ''], 'and gone again when they are hidden again');
+      await page.evaluate(() => window.oto.applyTheme(null));
+    });
+
     it('fades the ones that are taken with their card still on them, and keeps the red mask of a penalty over the card', async () => {
       await send('action:trainerA', { action: 'prizeCardsSet', cards: ['one', 'two', 'three', 'four', 'five', 'six'].map(card) });
       await send('action:trainerA', { action: 'prizeSet', count: 3 });
@@ -526,11 +576,11 @@ describe('overlay', { skip }, () => {
       assert.equal(below, true, 'the name is under the picture');
 
       await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { stadium: { x: 0, y: 0, w: 1, h: 1 } } }));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '1');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--sa-w') === '1');
       const whole = await box();
       assert.ok(Math.abs(whole.h - 300 * 1.393333) < 1, `the whole card: ${whole.h}`);
       await page.evaluate(() => window.oto.applyTheme(null));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--sa-w') === '');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--sa-w') === '');
       assert.ok(Math.abs((await box()).h - 300 * 1.393333 * 0.37 / 0.836) < 1, 'back to the picture window');
       assert.deepEqual(page.problems, []);
     });
@@ -601,7 +651,11 @@ describe('overlay', { skip }, () => {
 
   describe('a mobile screen (a design with orientation portrait)', () => {
     const portrait = (extra = {}) => page.evaluate((more) => window.oto.applyTheme({ name: 'phone', colors: {}, images: {}, sounds: [], orientation: 'portrait', ...more }), extra);
-    const stage = () => page.$eval('#stage', (node) => ({ w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait'), benchRow: node.classList.contains('bench-row'), transform: node.style.transform }));
+    // (the stage is scaled in its frame, which is where the stage is on the page: see fit in overlay.js)
+    const stage = () => page.$eval('#stage', (node) => ({
+      w: node.offsetWidth, h: node.offsetHeight, portrait: node.classList.contains('portrait'), benchRow: node.classList.contains('bench-row'), transform: node.style.transform,
+      frame: ['left', 'top', 'width', 'height'].map((side) => node.parentElement.style[side]).join(' ')
+    }));
     const box = (selector) => page.$eval(selector, (node) => { const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; });
     const fill = async () => {
       await send('action:trainerB', { action: 'setActive', cardId: 'b-act', name: 'Charizard', image: IMG, hp: 150 });
@@ -614,7 +668,7 @@ describe('overlay', { skip }, () => {
     };
 
     it('is the wide 1920 x 1080 stage unless the design says otherwise', async () => {
-      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'translate(0px, 0px) scale(1)' });
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'scale(1)', frame: '0px 0px 1920px 1080px' });
     });
 
     it('is a tall 1080 x 1920 stage, fitted to the screen, and goes back to the wide one with the design', async () => {
@@ -622,14 +676,14 @@ describe('overlay', { skip }, () => {
       const tall = await stage();
       assert.deepEqual([tall.w, tall.h, tall.portrait], [1080, 1920, true]);
       await page.setViewportSize({ width: 540, height: 960 });
-      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5)'));
-      assert.match((await stage()).transform, /translate\(0px, 0px\) scale\(0\.5\)/, 'half the size on a screen half the size');
+      await page.waitForFunction(() => document.getElementById('stage').style.transform === 'scale(0.5)');
+      assert.equal((await stage()).frame, '0px 0px 540px 960px', 'half the size on a screen half the size');
       await page.setViewportSize({ width: 1920, height: 1080 });
-      await page.waitForFunction(() => document.getElementById('stage').style.transform.includes('scale(0.5625)'));
-      assert.match((await stage()).transform, /translate\((\d+(\.\d+)?)px, 0px\) scale\(0\.5625\)/, 'a tall stage is centered on a wide screen');
+      await page.waitForFunction(() => document.getElementById('stage').style.transform === 'scale(0.5625)');
+      assert.equal((await stage()).frame, '656.25px 0px 607.5px 1080px', 'a tall stage is centered on a wide screen');
 
       await page.evaluate(() => window.oto.applyTheme(null));
-      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: (await stage()).transform });
+      assert.deepEqual(await stage(), { w: 1920, h: 1080, portrait: false, benchRow: false, transform: 'scale(1)', frame: '0px 0px 1920px 1080px' });
       assert.deepEqual(page.problems, []);
     });
 
@@ -699,11 +753,11 @@ describe('overlay', { skip }, () => {
       await screens([screen({ design: 'Phone Screen' })]);
       const phone = await open();
       assert.deepEqual(await stage(phone), { w: 1080, h: 1920, portrait: true });
-      assert.equal(await phone.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '#445566');
+      assert.equal(await phone.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '#445566');
       assert.equal(await phone.locator('.trainer-a .sb-name, .sb-a .sb-name').first().textContent(), 'Ash', 'the same game');
       // the main overlay is as it was
       assert.deepEqual(await stage(page), { w: 1920, h: 1080, portrait: false });
-      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+      assert.equal(await page.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '');
 
       // what the game does, both show
       await send('action:trainerA', { action: 'setName', name: 'Misty' });
@@ -717,12 +771,12 @@ describe('overlay', { skip }, () => {
       await api('PUT', '/api/themes/On%20Air', { colors: { '--accent': '#112233' } });
       await screens([screen()]);
       const other = await open('vertical', { width: 1280, height: 720 });
-      assert.equal(await other.evaluate(() => document.documentElement.style.getPropertyValue('--accent').trim()), '');
+      assert.equal(await other.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim()), '');
       await api('POST', '/api/theme/active', { name: 'On Air' });
-      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '#112233');
+      await other.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '#112233');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '#112233');
       await api('POST', '/api/theme/active', { name: null });
-      await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent').trim() === '');
+      await other.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent').trim() === '');
     });
 
     it('changes its design when the settings say so, without being reloaded, and goes back when the design is taken off', async () => {
@@ -770,7 +824,7 @@ describe('overlay', { skip }, () => {
   describe('a font for each group of text', () => {
     const wear = (extra) => page.evaluate((more) => window.oto.applyTheme({ name: 'type', colors: {}, images: {}, sounds: [], ...more }), extra);
     const family = (selector) => page.$eval(selector, (node) => getComputedStyle(node).fontFamily);
-    const variable = (name) => page.evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+    const variable = (name) => page.evaluate((key) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(key).trim(), name);
 
     it('is the main font for every group, until a design says otherwise', async () => {
       const main = await family('.sb-name');
@@ -807,7 +861,7 @@ describe('overlay', { skip }, () => {
     it('loads the font file of a group, and puts it first in the list of fonts of that group', async () => {
       // (a font that is part of the app: the flag font)
       await wear({ fonts: { names: '/assets/fonts/TwemojiCountryFlags.woff2' }, fontFamilies: { names: 'Georgia' } });
-      await page.waitForFunction(() => /OTO Theme names/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /OTO Theme names/.test(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await variable('--font-names'), /^"OTO Theme names", Georgia, var\(--font-display\)$/);
       assert.equal(await page.evaluate(() => [...document.fonts].some((face) => face.family.replace(/"/g, '') === 'OTO Theme names')), true);
       await page.evaluate(() => window.oto.applyTheme(null));
@@ -816,7 +870,7 @@ describe('overlay', { skip }, () => {
 
     it('keeps the fonts that were listed when the font file cannot be had, and the main font when nothing was', async () => {
       await wear({ fonts: { names: '/api/theme/assets/fonts/missing.woff2' }, fontFamilies: { names: 'Georgia' } });
-      await page.waitForFunction(() => /^Georgia/.test(document.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /^Georgia/.test(document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await family('.sb-name'), /^Georgia/);
       await wear({ fonts: { numbers: '/api/theme/assets/fonts/missing.woff2' } });
       await wait(400);
@@ -924,10 +978,10 @@ describe('overlay', { skip }, () => {
       const height = () => page.$eval('.trainer-a .active .tool-card', (node) => node.getBoundingClientRect().height);
       assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1);
       await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], crop: { tool: { x: 0, y: 0, w: 1, h: 1 } } }));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '1');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '1');
       assert.ok(Math.abs(await height() - 104 * 1.393333) < 1, 'the whole card');
       await page.evaluate(() => window.oto.applyTheme(null));
-      await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ct-w') === '');
+      await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '');
       assert.ok(Math.abs(await height() - 104 * 1.393333 * 0.37 / 0.836) < 1, 'back to the usual');
       assert.deepEqual(page.problems, []);
     });
@@ -1571,7 +1625,7 @@ describe('overlay', { skip }, () => {
         return { w: rect.width, h: rect.height, imgW: img.width, imgH: img.height, left: img.left - rect.left, top: img.top - rect.top };
       });
       const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1, `${label}: ${actual} is not ${expected}`);
-      const cropped = (variable, value) => page.waitForFunction(([name, wanted]) => document.documentElement.style.getPropertyValue(name) === wanted, [variable, value]);
+      const cropped = (variable, value) => page.waitForFunction(([name, wanted]) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(name) === wanted, [variable, value]);
 
       beforeEach(async () => {
         await send('action:trainerA', { action: 'setBench', slot: 0, cardId: 'a-2', name: 'Eevee', image: IMG, hp: 60 });
@@ -1615,7 +1669,7 @@ describe('overlay', { skip }, () => {
         near(bench.left, -104 * 0.2 / 0.6, 'left');
         const active = await mon('a', '.active');
         near(active.h, 300 * 1.3933 * ART.h / ART.w, 'the Active Pokémon keeps the art');
-        assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--ca-w')), '', 'and is not given numbers of its own');
+        assert.equal(await page.evaluate(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w')), '', 'and is not given numbers of its own');
       });
 
       it('goes back to the art when the design on air is taken away', async () => {
@@ -1623,7 +1677,7 @@ describe('overlay', { skip }, () => {
         await cropped('--ca-w', '1');
         near((await mon('a', '.active')).h, 418, 'whole card');
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w') === '');
         near((await mon('a', '.active')).h, 300 * 1.3933 * ART.h / ART.w, 'the art again');
       });
 
@@ -1793,7 +1847,7 @@ describe('overlay', { skip }, () => {
 
       it('shows just the part of the card the design chooses, and the prize card takes the shape of it', async () => {
         await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         const [width, height] = await size();
         assert.equal(width, 40);
         assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `as tall as the part that shows: ${height}`);
@@ -1803,7 +1857,7 @@ describe('overlay', { skip }, () => {
         // the back of the prize cards, the other trainer's included, is as big as the part too
         assert.ok(Math.abs((await page.$eval('.trainer-b .prize', (node) => node.getBoundingClientRect().height)) - height) < 0.1);
         await page.evaluate(() => fetch('/api/theme/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: null }) }));
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '');
         assert.deepEqual(await size(), [40, 56]);
       });
 
@@ -1813,7 +1867,7 @@ describe('overlay', { skip }, () => {
         await page.route('**/art/flat-prize.svg', (route) => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: flat }));
         await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('flat-prize')] });
         await wear({ name: 'Art prizes', crop: { prize: { x: 0.07, y: 0.115, w: 0.86, h: 0.385 } } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         await wait(500);
         const shot = await page.locator('.trainer-a .prize').first().screenshot();
         // the picture is a PNG: read its middle pixel and a pixel near each corner inside the border, in the page
@@ -1860,7 +1914,7 @@ describe('overlay', { skip }, () => {
         assert.equal(usual.length, 6);
         assert.ok(usual.every((prize) => prize.image.includes('/assets/cardbacks/english')), 'the English card back is asked for');
         await wear({ name: 'Plain Prizes', colors: { '--accent': '#336699' } });
-        await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--accent') === '#336699');
+        await page.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent') === '#336699');
         assert.deepEqual(await rootClass(), ['prize-english'], 'a design that says nothing');
 
         // a design with a prize card back picture of its own: that one
@@ -1997,6 +2051,683 @@ describe('overlay', { skip }, () => {
     });
   });
 
+  // A design can bring a style sheet of its own (checked by the server or the editor before it is sent): it is put in the page as it comes
+  describe('the style sheet of a design', () => {
+    const sheet = () => page.evaluate(() => {
+      const node = document.getElementById('oto-design-css');
+      return { text: node.textContent, count: document.querySelectorAll('#oto-design-css').length, last: document.head.lastElementChild === node, tag: node.tagName };
+    });
+    const spacing = () => page.$eval('.sb-a .sb-name', (node) => getComputedStyle(node).letterSpacing);
+    const wear = (css, extra = {}) => page.evaluate(([text, more]) => window.oto.applyTheme({ name: 'Styled', colors: {}, images: {}, css: text, ...more }), [css, extra]);
+
+    it('is put in the page after the built-in style sheets, and taken away with the design', async () => {
+      const plain = await spacing();
+      assert.deepEqual(await sheet(), { text: '', count: 1, last: true, tag: 'STYLE' }, 'there is none without a design');
+      await wear('#stage .sb-name{letter-spacing:7px}');
+      assert.deepEqual(await sheet(), { text: '#stage .sb-name{letter-spacing:7px}', count: 1, last: true, tag: 'STYLE' });
+      assert.equal(await spacing(), '7px');
+
+      // another design, without one
+      await page.evaluate(() => window.oto.applyTheme({ name: 'Plain', colors: {}, images: {} }));
+      assert.equal((await sheet()).text, '');
+      assert.equal(await spacing(), plain);
+      // no design at all
+      await wear('#stage .sb-name{letter-spacing:3px}');
+      assert.equal(await spacing(), '3px');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.deepEqual(await sheet(), { text: '', count: 1, last: true, tag: 'STYLE' });
+      assert.equal(await spacing(), plain);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is written again only when it changed, so what it animates does not start over at every change of the design', async () => {
+      await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.4}}');
+      await page.evaluate(() => {
+        window.sheetWrites = 0;
+        new MutationObserver((changes) => { window.sheetWrites += changes.length; })
+          .observe(document.getElementById('oto-design-css'), { childList: true, characterData: true, subtree: true });
+      });
+      const glow = () => page.evaluate(() => document.getAnimations().filter((animation) => animation.animationName === 'oto-glow').map((animation) => animation.currentTime));
+      await wait(400);
+      const before = await glow();
+      assert.equal(before.length, 2, 'it runs on both names');
+      // (the design editor sends the design again at every step of a drag)
+      for (let y = 10; y <= 30; y += 10) {
+        await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.4}}', { layout: { scoreboard: { x: 0, y, scale: 1 } } });
+      }
+      await page.waitForSelector('.scoreboard.moved');
+      const after = await glow();
+      assert.equal(await page.evaluate(() => window.sheetWrites), 0, 'not written again');
+      assert.ok(after[0] > before[0], `the animation went on (${before[0]} ms, then ${after[0]} ms)`);
+
+      await wear('#stage .sb-name{animation:oto-glow 6s linear infinite}@keyframes oto-glow{to{opacity:.2}}');
+      assert.ok(await page.evaluate(() => window.sheetWrites) > 0, 'a change is written');
+      await page.evaluate(() => window.oto.applyTheme(null));
+    });
+
+    it('comes after the design\'s own colors and pictures, so a rule for :root changes them', async () => {
+      const looks = () => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), getComputedStyle(document.querySelector('.scoreboard')).outlineColor,
+        getComputedStyle(document.documentElement).getPropertyValue('--bg-panel').trim()]);
+      const colors = { '--accent': '#ff0000', '--bg-panel': '#123456' };
+      await wear(':root { --accent: #ff00aa; }\n.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#ff00aa', 'rgb(255, 0, 170)', '#123456'], 'what the style sheet names is its own, the rest stays the design\'s');
+      await wear(':root.has-logo, :root { --accent: #00ff00; }\n.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#00ff00', 'rgb(0, 255, 0)', '#123456']);
+      await wear('.scoreboard { outline: 4px solid var(--accent); }', { colors });
+      assert.deepEqual(await looks(), ['#ff0000', 'rgb(255, 0, 0)', '#123456'], 'without such a rule, the design\'s colors');
+      // (a value stays a value: it cannot end its rule and start another one)
+      await page.evaluate(() => window.oto.applyTheme({ name: 'Odd', colors: { '--accent': 'red}body{background:#000' }, images: {} }));
+      assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgba(0, 0, 0, 0)');
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg-panel').trim() !== '#123456'), true, 'and they go with the design');
+      assert.deepEqual(page.problems, []);
+    });
+
+    // OBS needs the page around the stage see-through: it is there whenever the browser source is not the shape of the stage. Designs
+    // saved and put on air the way a producer does (each checked by the server), on a square page, with the stage across its middle.
+    it('cannot paint the page around the stage, whatever it does to the stage and what is in it', async () => {
+      const api = async (method, route, body) => {
+        const response = await fetch(`${server.base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        assert.equal(response.status, 200, `${method} ${route}: ${await response.text()}`);
+      };
+      const OUTSIDE = [[500, 20], [500, 980], [5, 5], [995, 995], [500, 205], [500, 795]];
+      const square = await openPage(browser, `${server.base}/overlay`, { viewport: { width: 1000, height: 1000 } });
+      // what a screenshot with a see-through background shows at these points: 0 is see-through, 255 opaque
+      const alphaAt = async (points) => {
+        const shot = (await square.screenshot({ omitBackground: true })).toString('base64');
+        const probe = await square.context().newPage();
+        try {
+          return await probe.evaluate(async ([data, where]) => {
+            const picture = new Image();
+            picture.src = `data:image/png;base64,${data}`;
+            await picture.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = picture.width;
+            canvas.height = picture.height;
+            const context = canvas.getContext('2d');
+            context.drawImage(picture, 0, 0);
+            return where.map(([x, y]) => context.getImageData(x, y, 1, 1).data[3]);
+          }, [shot, points]);
+        } finally {
+          await probe.close();
+        }
+      };
+      const designs = [
+        ['a shadow of the stage', '#stage { box-shadow: 0 0 0 100vmax #000; }'],
+        ['an outline of the stage', '#stage { outline: 2000px solid #000; }'],
+        ['a pseudo-element of the stage', '#stage::before { content: ""; position: absolute; inset: -3000px; background: #000; }'],
+        ['a piece bigger than the stage', '.backdrop { inset: -3000px; background: #000; }'],
+        ['the shadow of a piece', '.spaces { box-shadow: 0 0 0 5000px #000; }'],
+        ['filters', '#stage { filter: drop-shadow(0 -900px 0 #000) drop-shadow(0 900px 0 #000); background: #000; }'],
+        ['the stage scaled', '#stage { scale: 4; background: #000; }'],
+        ['the stage moved', '#stage { left: -300px; top: -300px; } .backdrop { background: #000; }'],
+        ['the stage zoomed', '#stage { zoom: 3; background: #000; }'],
+        ['another origin', '#stage { transform-origin: 50% 50%; background: #000; }'],
+        ['an animation of the stage', '#stage { background: #000; animation: big .1s forwards; } @keyframes big { to { transform: translate(0px, 0px) scale(4); } }'],
+        ['a fixed piece, with the scaling of the stage taken away', '.spaces { position: fixed; inset: -3000px; background: #000; } #stage { animation: flat .1s forwards; } @keyframes flat { to { transform: none; } }']
+      ];
+      try {
+        await square.waitForSelector('.trainer-a .active .mon:not([hidden])');
+        const tile = await square.$eval('.trainer-a .active .mon .art', (node) => { const rect = node.getBoundingClientRect(); return [Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2)]; });
+        assert.deepEqual(await alphaAt([...OUTSIDE, tile]), [0, 0, 0, 0, 0, 0, 255], 'without a design: see-through around the stage, the Active Pokémon in it');
+        for (const [name, css] of designs) {
+          await api('PUT', `/api/themes/${encodeURIComponent(`Opaque ${name}`)}`, { colors: {}, css });
+          await api('POST', '/api/theme/active', { name: `Opaque ${name}` });
+          await square.waitForFunction((wanted) => document.getElementById('oto-design-css').textContent.includes(wanted), css.includes('backdrop') ? '.backdrop' : '#stage');
+          await square.waitForFunction((text) => document.getElementById('oto-design-css').textContent === text, (await (await fetch(`${server.base}/api/theme`)).json()).theme.css);
+          await wait(250); // (the animations are over)
+          assert.deepEqual(await alphaAt(OUTSIDE), OUTSIDE.map(() => 0), name);
+        }
+        // the colors of a design, the older way: a shadow with another one behind it
+        await api('PUT', '/api/themes/Opaque%20colors', { colors: { '--shadow': 'rgba(0,0,0,.5), 0 0 0 4000px #f80' } });
+        await api('POST', '/api/theme/active', { name: 'Opaque colors' });
+        await square.waitForFunction(() => document.documentElement.textContent !== null && getComputedStyle(document.documentElement).getPropertyValue('--shadow').includes('4000px'));
+        await wait(100);
+        assert.deepEqual(await alphaAt(OUTSIDE), OUTSIDE.map(() => 0), 'a shadow in the colors');
+        // and what a design paints inside the stage is there
+        await api('PUT', '/api/themes/Opaque%20inside', { colors: {}, css: '.backdrop { background: #000; }' });
+        await api('POST', '/api/theme/active', { name: 'Opaque inside' });
+        await square.waitForFunction(() => document.getElementById('oto-design-css').textContent.includes('backdrop'));
+        await wait(100);
+        assert.deepEqual(await alphaAt([[500, 20], [500, 230], [500, 770], [10, 500], [990, 500]]), [0, 255, 255, 255, 255]);
+        assert.deepEqual(square.problems, []);
+      } finally {
+        await api('POST', '/api/theme/active', { name: null });
+        await square.context().close();
+      }
+    });
+
+    // (the check of a style sheet refuses allow-discrete: this is what the overlay does about one that would get here all the same)
+    it('cannot keep a piece the producer switched off on the stage with a transition of display, which beats !important', async () => {
+      const pieces = ['.scoreboard', '.trainer-a .active', '.trainer-a .prizes'];
+      const shown = () => page.evaluate((selectors) => selectors.map((selector) => getComputedStyle(document.querySelector(selector)).display), pieces);
+      await wear(`${pieces.map((selector) => `#stage ${selector}`).join(',')}{transition:display 100000s step-end allow-discrete}`);
+      assert.ok((await shown()).every((display) => display !== 'none'), 'they are there to begin with');
+      try {
+        await send('action:settings', { action: 'update', display: { scoreboard: false, activePokemon: false, prizes: false } });
+        await page.waitForFunction(() => document.querySelector('.scoreboard').classList.contains('opt-off'));
+        await wait(200);
+        assert.deepEqual(await shown(), ['none', 'none', 'none'], 'switched off at once');
+        // and still, after the next change of the game
+        await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '90/100');
+        await wait(200);
+        assert.deepEqual(await shown(), ['none', 'none', 'none']);
+        assert.equal(await page.evaluate(() => document.querySelector('.scoreboard').checkVisibility()), false);
+      } finally {
+        await send('action:settings', { action: 'update', display: { scoreboard: true, activePokemon: true, prizes: true } });
+        await page.evaluate(() => window.oto.applyTheme(null));
+      }
+    });
+  });
+
+  // What happens in the game is marked for a while on the piece it happened to ("moments": classes a design's style sheet can animate), and
+  // on the stage with its kind and side
+  describe('moments', () => {
+    const MS = 700; // (how long they last, as the design says)
+    const wear = (css = '') => page.evaluate((text) => window.oto.applyTheme({ name: 'Moments', colors: {}, images: {}, css: text }), `:root{--oto-moment-ms:${MS}}${css}`);
+    beforeEach(async () => {
+      await page.evaluate(() => window.oto.loadTheme()); // (the page has asked for the design on air: that answer is in before this design is put on)
+      await wear();
+      await recordMoments(page);
+    });
+    const played = (selector, name, extra) => playedOn(page, selector, name, extra);
+    const there = (selector) => playedThere(page, selector);
+    const forget = () => page.evaluate(() => { window.played = []; });
+    const nothing = async () => assert.deepEqual(await page.evaluate(() => window.played.map((entry) => entry.name)), []);
+    const over = () => page.waitForSelector('[class*="moment-"]', { state: 'detached', timeout: MS * 6 });
+    // How long something is on the stage, as the page sees it: `watch` before what makes it happen, then `lasted` answers once it is gone
+    const watch = (selector) => page.evaluate((wanted) => {
+      window.lasted = new Promise((resolve) => {
+        let from = null;
+        const observer = new MutationObserver(() => {
+          const shown = Boolean(document.querySelector(wanted));
+          if (shown && from === null) from = performance.now();
+          if (!shown && from !== null) {
+            observer.disconnect();
+            resolve(Math.round(performance.now() - from));
+          }
+        });
+        observer.observe(document.getElementById('stage'), { attributes: true, subtree: true, attributeFilter: ['class', 'hidden'] });
+      });
+    }, selector);
+    const lasted = () => page.evaluate(() => window.lasted);
+    // the animations of the design that start, by name
+    const starts = () => page.evaluate(() => {
+      window.started = [];
+      document.addEventListener('animationstart', (event) => {
+        if (event.animationName === 'oto-hit') window.started.push({ name: event.animationName, at: performance.now(), mon: event.target.classList.contains('mon') });
+      });
+    });
+    const hpText = (text) => page.waitForFunction((wanted) => document.querySelector('.trainer-a .active .hp-text').textContent === wanted, text);
+    const bench = (slot, name, extra = {}) => send('action:trainerA', { action: 'setBench', slot, cardId: `b-${slot}`, name, image: IMG, hp: 60, ...extra });
+    // a Pokémon on the bench, once its moment is over (and forgotten)
+    const benched = async (slot, name) => {
+      await bench(slot, name);
+      await played(`.trainer-a .bench .mon:nth-child(${slot + 1})`, 'moment-enter');
+      await over();
+      await forget();
+    };
+
+    it('mark a Pokémon that takes damage, with how much, and the stage with the side, for as long as the design says', async () => {
+      const tile = '.trainer-a .active .mon';
+      await watch(`${tile}.moment-damage`);
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await played(tile, 'moment-damage', { amount: 30 });
+      assert.deepEqual(await page.evaluate(() => window.played.filter((entry) => entry.name === 'moment-damage').map((entry) => entry.variable)), ['30'], 'and in --moment-damage');
+      assert.deepEqual(await there('#stage'), ['moment-damage-a']);
+      const stayed = await lasted();
+      assert.ok(stayed > MS - 100 && stayed < MS + 1000, `it stayed ${stayed} ms`);
+      await over(); // (the stage's too)
+      assert.equal(await page.$eval(tile, (node) => node.hasAttribute('data-damage') || node.style.getPropertyValue('--moment-damage') !== ''), false, 'the number goes with it');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('give each number a name of its own, so damage and energy in one change, or one after the other, each say theirs', async () => {
+      await wear('#stage .mon.moment-damage::after{content:"-" attr(data-damage)}#stage .mon.moment-energy::before{content:"+" attr(data-energy) " energy"}:root{--oto-moment-ms:4000}');
+      const tile = '.trainer-a .active .mon';
+      const labels = () => page.$eval(tile, (node) => [node.dataset.damage, node.dataset.energy, node.style.getPropertyValue('--moment-damage'), node.style.getPropertyValue('--moment-energy'),
+        getComputedStyle(node, '::after').content, getComputedStyle(node, '::before').content]);
+      const started = producer.expect('draft:state', (draft) => draft.active);
+      producer.emit('draft:start');
+      await started;
+      try {
+        await producer.draftAct('action:trainerA', { action: 'activeDamage', amount: 50 });
+        await producer.draftAct('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'fire', count: 2 });
+        producer.emit('draft:send', {});
+        await played(tile, 'moment-damage', { amount: 50 });
+        await played(tile, 'moment-energy', { amount: 2 });
+        assert.deepEqual(await labels(), ['50', '2', '50', '2', '"-50"', '"+2 energy"']);
+      } finally {
+        const closed = producer.expect('draft:state', (draft) => !draft.active, 2000).catch(() => null);
+        producer.emit('draft:discard');
+        await closed;
+      }
+      await page.waitForSelector(`${tile}.moment-damage`, { state: 'detached', timeout: 8000 });
+      assert.deepEqual((await labels()).slice(0, 4), [undefined, undefined, '', ''], 'each goes with its moment');
+
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await played(tile, 'moment-damage', { amount: 30 });
+      await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'water', count: 1 });
+      await played(tile, 'moment-energy', { amount: 1 });
+      assert.deepEqual(await labels(), ['30', '1', '30', '1', '"-30"', '"+1 energy"'], 'the energy does not take the number of the hit');
+    });
+
+    it('mark a heal, and damage on the bench, on the tile it happened to', async () => {
+      await send('action:trainerA', { action: 'activeDamage', amount: 40 });
+      await played('.trainer-a .active .mon', 'moment-damage', { amount: 40 });
+      await send('action:trainerA', { action: 'activeDamage', amount: -10 });
+      await played('.trainer-a .active .mon', 'moment-heal', { amount: 10 });
+      assert.deepEqual(await there('#stage'), ['moment-damage-a', 'moment-heal-a']);
+
+      await bench(1, 'Eevee');
+      await played('.trainer-a .bench .mon:nth-child(2)', 'moment-enter');
+      await send('action:trainerB', { action: 'setActive', cardId: 'g-1', name: 'Gengar', image: IMG, hp: 120 });
+      await send('action:trainerA', { action: 'benchDamage', slot: 1, amount: 20 });
+      await played('.trainer-a .bench .mon:nth-child(2)', 'moment-damage', { amount: 20 });
+      await send('action:trainerB', { action: 'activeHeal' }); // (nothing to heal: nothing plays)
+      await send('action:trainerB', { action: 'activeDamage', amount: 50 });
+      await played('.trainer-b .active .mon', 'moment-damage', { amount: 50 });
+      assert.deepEqual(await there('.trainer-b .mon'), ['moment-damage', 'moment-enter']);
+      assert.ok((await there('#stage')).includes('moment-damage-b'));
+      assert.deepEqual(await there('.trainer-a .active .mon'), ['moment-damage', 'moment-heal'], 'only on the Pokémon that took it');
+    });
+
+    it('do not take a change of the maximum HP for a hit', async () => {
+      await send('action:trainerA', { action: 'setMaxHP', slot: -1, max: 130 });
+      await hpText('100/130');
+      await wait(100);
+      await nothing();
+    });
+
+    it('start again when the same thing happens again before they are over, and last their whole time again', async () => {
+      const long = 1500;
+      await wear(`#stage .mon.moment-damage{animation:oto-hit 5s linear}@keyframes oto-hit{from{opacity:.5}to{opacity:1}}:root{--oto-moment-ms:${long}}`);
+      const tile = '.trainer-a .active .mon';
+      await starts();
+      await watch(`${tile}.moment-damage`);
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await page.waitForFunction(() => window.started.length === 1);
+      await wait(600);
+      await send('action:trainerA', { action: 'activeDamage', amount: 20 });
+      await played(tile, 'moment-damage', { amount: 20 });
+      await page.waitForFunction(() => window.started.length === 2);
+      const started = await page.evaluate(() => window.started);
+      assert.deepEqual(started.map((entry) => [entry.name, entry.mon]), [['oto-hit', true], ['oto-hit', true]]);
+      assert.ok(started[1].at - started[0].at >= 550, `the animation started over (${Math.round(started[1].at - started[0].at)} ms after it first did)`);
+      const stayed = await lasted();
+      assert.ok(stayed >= long + 450, `and the moment lasted its whole time again: ${stayed} ms in all`);
+      assert.equal(await page.$eval(tile, (node) => node.getAttribute('data-damage')), null);
+    });
+
+    it('run the animations of the design on them', async () => {
+      await wear('#stage .mon.moment-damage{animation:oto-hit 1s}@keyframes oto-hit{from{opacity:.5}to{opacity:1}}');
+      const tile = '.trainer-a .active .mon';
+      assert.equal(await page.$eval(tile, (node) => getComputedStyle(node).animationName), 'none');
+      await starts();
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await page.waitForFunction(() => window.started.length === 1);
+      assert.deepEqual(await page.evaluate(() => window.started.map((entry) => [entry.name, entry.mon])), [['oto-hit', true]]);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('mark a Pokémon that comes into play, on the bench or in the Active spot, and one that takes the place of another', async () => {
+      await bench(0, 'Eevee');
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      assert.deepEqual(await there('#stage'), ['moment-enter-a']);
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Mew', image: IMG, hp: 70 });
+      await played('.trainer-a .active .mon', 'moment-enter');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Mew');
+      // moved to a slot that was empty: it comes into that one, and nothing plays where it was
+      await forget();
+      await send('action:trainerA', { action: 'moveSlot', from: 0, to: 2 });
+      await played('.trainer-a .bench .mon:nth-child(3)', 'moment-enter');
+      assert.deepEqual(await there('.mon'), ['moment-enter']);
+    });
+
+    it('mark both Pokémon of a switch', async () => {
+      await benched(0, 'Eevee');
+      await send('action:trainerA', { action: 'swapWithActive', slot: 0 });
+      await played('.trainer-a .active .mon', 'moment-switch');
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-switch');
+      assert.deepEqual(await there('#stage'), ['moment-switch-a'], 'nobody came into play');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Eevee');
+    });
+
+    it('tell two copies of the same card apart: they change places, nobody is hit or healed', async () => {
+      const copy = (slot) => send('action:trainerA', { action: 'setBench', slot, cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+      await send('action:trainerA', { action: 'activeDamage', amount: 50 });
+      await copy(0);
+      await copy(1);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .bench .mon:not([hidden])').length === 2);
+      await over();
+      await forget();
+
+      await send('action:trainerA', { action: 'swapWithActive', slot: 0 });
+      await played('.trainer-a .active .mon', 'moment-switch');
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-switch');
+      await hpText('100/100');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-switch', 'moment-switch'], 'no damage, heal or energy');
+      assert.deepEqual(await there('#stage'), ['moment-switch-a']);
+
+      // two copies on the bench change places: each comes into the other's slot
+      await over();
+      await forget();
+      await send('action:trainerA', { action: 'moveSlot', from: 0, to: 1 });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      await played('.trainer-a .bench .mon:nth-child(2)', 'moment-enter');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-enter', 'moment-enter']);
+
+      // and the same card played again in a slot is another Pokémon, at full HP: it comes in, it is not healed
+      await over();
+      await forget();
+      await send('action:trainerA', { action: 'activeDamage', amount: 20 });
+      await played('.trainer-a .active .mon', 'moment-damage', { amount: 20 });
+      await forget();
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+      await played('.trainer-a .active .mon', 'moment-enter');
+      await wait(100);
+      assert.deepEqual(await there('.mon'), ['moment-enter']);
+    });
+
+    it('mark an evolution, and going back', async () => {
+      await send('action:card', { action: 'select', target: 'trainerA-active', cardId: 'a-2', evolve: true, cardData: { id: 'a-2', name: 'Raichu', hp: '120', images: { small: IMG, large: IMG }, abilities: [], attacks: [], retreat: 1 } });
+      await played('.trainer-a .active .mon', 'moment-evolve');
+      assert.deepEqual(await there('#stage'), ['moment-evolve-a'], 'not a Pokémon that came into play');
+      await send('action:trainerA', { action: 'devolve', slot: -1 });
+      await played('.trainer-a .active .mon', 'moment-devolve');
+      assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Pikachu');
+    });
+
+    it('mark energy that is attached (how many), a tool, a status condition (which) and an ability that is used', async () => {
+      const tile = '.trainer-a .active .mon';
+      await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'grass', count: 2 });
+      await played(tile, 'moment-energy', { amount: 2 });
+      await send('action:trainerA', { action: 'attachTool', slot: -1, name: 'Choice Belt' });
+      await played(tile, 'moment-tool');
+      await send('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
+      await played(tile, 'moment-status', { status: 'poisoned' });
+      assert.deepEqual(await there('#stage'), ['moment-energy-a', 'moment-status-a', 'moment-tool-a']);
+      await page.waitForSelector(`${tile}[data-status]`, { state: 'detached', timeout: MS * 6 });
+      assert.equal(await page.locator('.trainer-a .active .status-chip[data-status="poisoned"]').count(), 1, 'the condition itself stays');
+
+      await bench(0, 'Pichu', { abilities: ['Baby Rush'] });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: true });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-ability');
+      await forget();
+      await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: false });
+      await page.waitForSelector('.trainer-a .bench .ability:not(.used)');
+      await wait(100);
+      await nothing(); // (getting it back is not using it)
+    });
+
+    it('mark the prize cards that are taken, the turn that starts, what is used, a Stadium that comes into play and a game won', async () => {
+      await send('action:trainerA', { action: 'prizeMinus' });
+      await played('.trainer-a .prize:nth-child(6)', 'moment-taken');
+      assert.deepEqual(await there('.prize'), ['moment-taken']);
+      await send('action:trainerB', { action: 'prizeSet', count: 3 });
+      await page.waitForFunction(() => window.played.filter((entry) => entry.node.matches('.trainer-b .prize')).length === 3);
+      assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => window.played.some((entry) => entry.node === node))), [false, false, false, true, true, true]);
+      assert.deepEqual(await there('#stage'), ['moment-taken-a', 'moment-taken-b']);
+
+      await send('action:match', { action: 'toggleTurn' });
+      await played('.trainer-a', 'moment-turn');
+      assert.deepEqual(await there('.trainer-b'), []);
+      await send('action:trainerA', { action: 'supporterPlus' });
+      await played('.trainer-a .token[data-kind="supporter"]', 'moment-used');
+      await send('action:card', { action: 'setStadium', cardId: 's-1', name: 'Area Zero', image: IMG });
+      await played('.stadium', 'moment-enter');
+      await played('.trainer-a .token[data-kind="stadium"]', 'moment-used');
+      await played('#stage', 'moment-enter-a'); // (played by the trainer whose turn it is)
+      await send('action:match', { action: 'trainerBMatchWin' });
+      await played('.sb-b .sb-wins', 'moment-point');
+      await played('#stage', 'moment-point-b');
+      assert.deepEqual(await there('.sb-a .sb-wins'), []);
+    });
+
+    describe('for a knock out', () => {
+      const tile = '.trainer-a .active .mon';
+      const KO_MS = 3000; // (time enough to look at the tile while it is still there, even on a busy machine)
+      const animated = () => wear(`#stage .mon.moment-ko{opacity:.5}:root{--oto-moment-ms:${KO_MS}}`);
+      beforeEach(async () => {
+        await benched(0, 'Eevee'); // (so the trainer still has a Pokémon)
+      });
+
+      it('keep the Pokémon on its tile, as it was, while the design animates it, and hide it then', async () => {
+        await animated();
+        await watch(`${tile}.moment-ko:not([hidden])`);
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await played(tile, 'moment-ko');
+        const looked = await page.evaluate(() => window.played.filter((entry) => entry.name === 'moment-ko').map((entry) => [entry.hidden, entry.text, entry.opacity]));
+        assert.deepEqual(looked, [[false, 'Pikachu', '0.5']], 'shown as it was, as the design animates it');
+        assert.equal((await live()).trainerA.active.name, '', 'though the slot is empty');
+        await played('.trainer-b .prize:nth-child(6)', 'moment-taken');
+        assert.deepEqual(await there('#stage'), ['moment-ko-a', 'moment-taken-b']);
+
+        // something else changes meanwhile: the tile stays
+        await send('action:trainerB', { action: 'setName', name: 'Misty' });
+        assert.deepEqual(await page.evaluate(() => new Promise((resolve) => {
+          const check = () => {
+            if (document.querySelector('.sb-b .sb-name').textContent !== 'Misty') return window.requestAnimationFrame(check);
+            const node = document.querySelector('.trainer-a .active .mon');
+            return resolve([node.hidden, node.classList.contains('moment-ko')]);
+          };
+          check();
+        })), [false, true]);
+        const stayed = await lasted();
+        assert.ok(stayed > KO_MS - 100 && stayed < KO_MS + 1000, `it stayed ${stayed} ms`);
+        assert.deepEqual(await page.$eval(tile, (node) => [node.hidden, node.classList.contains('moment-ko')]), [true, false], 'hidden, and the moment is over');
+        await wait(300);
+        assert.equal(await page.locator(tile).isHidden(), true, 'and stays hidden');
+        assert.deepEqual(page.problems, []);
+      });
+
+      it('mark the stage when the knock out comes in one change with the Pokémon that takes the Active spot (a draft), and the tile plays the newcomer', async () => {
+        await animated();
+        const started = producer.expect('draft:state', (draft) => draft.active);
+        producer.emit('draft:start');
+        await started;
+        try {
+          await producer.draftAct('action:trainerA', { action: 'knockOut', slot: -1 });
+          await producer.draftAct('action:trainerA', { action: 'swapWithActive', slot: 0 });
+          producer.emit('draft:send', {});
+          await played(tile, 'moment-enter');
+          await played('#stage', 'moment-ko-a');
+          await played('.trainer-b .prize:nth-child(6)', 'moment-taken');
+          assert.deepEqual(await there(tile), ['moment-enter'], 'the tile plays the newcomer, not the knock out');
+          assert.equal(await page.locator(`${tile} .mon-name`).textContent(), 'Eevee');
+        } finally {
+          const closed = producer.expect('draft:state', (draft) => !draft.active, 2000).catch(() => null);
+          producer.emit('draft:discard');
+          await closed;
+        }
+      });
+
+      it('let a Pokémon that comes into the slot take the tile at once', async () => {
+        await animated();
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await page.waitForSelector(`${tile}.moment-ko`);
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-7', name: 'Raichu', image: IMG, hp: 120 });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .mon-name').textContent === 'Raichu');
+        assert.deepEqual(await page.$eval(tile, (node) => [node.hidden, node.classList.contains('moment-ko'), getComputedStyle(node).opacity]), [false, false, '1']);
+        await played(tile, 'moment-enter');
+        assert.equal(await page.locator(`${tile} .hp-text`).textContent(), '120/120');
+        await wait(KO_MS + 300);
+        assert.equal(await page.locator(tile).isVisible(), true, 'the knock out does not hide the newcomer');
+        assert.equal(await page.locator(`${tile} .mon-name`).textContent(), 'Raichu');
+      });
+
+      it('hide the tile at once when the design does not animate a knock out, and when a Pokémon is only taken off the table', async () => {
+        await send('action:trainerA', { action: 'knockOut', slot: -1 });
+        await played(tile, 'moment-ko'); // (the moment is there all the same)
+        assert.equal(await page.locator(tile).isHidden(), true, 'nothing would show it');
+
+        await over();
+        await animated();
+        await forget();
+        await send('action:trainerA', { action: 'clearSlot', slot: 0 });
+        await page.waitForSelector('.trainer-a .bench .mon:nth-child(1)', { state: 'hidden' });
+        await wait(100);
+        assert.deepEqual(await there('.mon'), [], 'no prize card was taken: it was not knocked out');
+      });
+    });
+
+    it('play nothing for the game sent whole when the page reconnects, nor for the same state drawn again', async () => {
+      await page.evaluate(() => window.oto.socket.disconnect());
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await send('action:trainerB', { action: 'prizeMinus' });
+      await bench(0, 'Eevee');
+      await page.evaluate(() => window.oto.socket.connect());
+      await hpText('70/100');
+      await wait(150);
+      await nothing(); // (what happened while the page was away is not played)
+      await page.evaluate(() => window.oto.update(window.oto.state));
+      await nothing();
+      // and the next change plays
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await played('.trainer-a .active .mon', 'moment-damage', { amount: 10 });
+    });
+
+    it('play nothing for a configuration that is imported: it is another game, drawn as it is, and no Pokémon of the last one stays', async () => {
+      await wear(':root{--oto-moment-ms:2000}#stage .mon.moment-ko{opacity:.6}');
+      await benched(0, 'Eevee');
+      const config = await live();
+      config.trainerA.active = { ...config.trainerA.active, cardId: '', name: '', image: '' };
+      config.trainerA.bench = config.trainerA.bench.map((slot) => ({ ...slot, cardId: '', name: '', image: '' }));
+      config.trainerB.prizes = { ...config.trainerB.prizes, count: 3 };
+      config.trainerB.isTurn = true;
+      for (const importing of [
+        () => send('action:settings', { action: 'import', config }),
+        () => fetch(`${server.base}/api/config/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) })
+      ]) {
+        await importing();
+        await page.waitForFunction(() => window.oto.state.trainerA.active.name === '' && window.oto.state.trainerB.prizes.count === 3);
+        assert.equal(await page.locator('.trainer-a .active .mon').isHidden(), true, 'the tile goes at once');
+        await wait(150);
+        await nothing();
+        await send('action:reset', { action: 'full', confirm: 'FULL_RESET' });
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
+        await benched(0, 'Eevee');
+      }
+      await nothing();
+    });
+
+    it('play nothing while the design animations are switched off, on the overlay or on one screen', async () => {
+      assert.equal(await page.evaluate(() => window.OTO_DISPLAY.DEFAULTS.moments), true, 'they are on unless switched off');
+      await send('action:settings', { action: 'update', display: { moments: false } });
+      await page.waitForFunction(() => window.oto.state.settings.display.moments === false);
+      await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+      await hpText('70/100');
+      await wait(150);
+      await nothing();
+
+      await send('action:settings', { action: 'update', display: { moments: true } });
+      await send('action:settings', { action: 'update', screens: [{ id: 'quiet', name: 'Quiet', display: { moments: false } }] });
+      const quiet = await openPage(browser, `${server.base}/overlay?screen=quiet`, { viewport: { width: 960, height: 540 } });
+      try {
+        await quiet.waitForSelector('.trainer-a .active .mon:not([hidden])');
+        await recordMoments(quiet);
+        await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+        await played('.trainer-a .active .mon', 'moment-damage', { amount: 10 });
+        await quiet.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '60/100');
+        await wait(150);
+        assert.deepEqual(await playedThere(quiet, '*'), [], 'the screen that switched them off plays none');
+      } finally {
+        await quiet.context().close();
+      }
+    });
+
+    it('play nothing about a piece the producer switched off, so no design can show what it would have shown', async () => {
+      const off = { hpBars: false, statusConditions: false, turnIndicator: false, matchScore: false, attachments: false, abilityTokens: false, toolCards: false, prizes: false, energyCounter: false, stadiumCounter: false, supporterCounter: false, stadium: false };
+      const noTrace = () => page.evaluate(() => ({
+        classes: Array.from(document.querySelectorAll('[class*="moment-"]')).map((node) => node.className),
+        numbers: Array.from(document.querySelectorAll('[data-damage], [data-heal], [data-energy], .mon[data-status]')).map((node) => node.className)
+      }));
+      await bench(0, 'Pichu', { abilities: ['Baby Rush'] });
+      await played('.trainer-a .bench .mon:nth-child(1)', 'moment-enter');
+      await over();
+      await forget();
+      try {
+        await send('action:settings', { action: 'update', display: off });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp').classList.contains('opt-off'));
+        await send('action:trainerA', { action: 'activeDamage', amount: 30 });
+        await send('action:trainerA', { action: 'toggleStatus', condition: 'poisoned', enabled: true });
+        await send('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'grass', count: 1 });
+        await send('action:trainerA', { action: 'attachTool', slot: -1, name: 'Choice Belt' });
+        await send('action:trainerA', { action: 'setAbilityUsed', slot: 0, index: 0, used: true });
+        await send('action:match', { action: 'toggleTurn' });
+        await send('action:trainerA', { action: 'supporterPlus' });
+        await send('action:trainerB', { action: 'prizeMinus' });
+        await send('action:card', { action: 'setStadium', cardId: 's-1', name: 'Area Zero', image: IMG });
+        await send('action:match', { action: 'trainerBMatchWin' });
+        await hpText('70/100');
+        await page.waitForFunction(() => window.oto.state.matchScore.trainerBWins === 1 && window.oto.state.stadium.inPlay);
+        await wait(150);
+        await nothing();
+        assert.deepEqual(await noTrace(), { classes: [], numbers: [] }, 'nothing on the tiles, the trainers or the stage');
+
+        // what is still shown plays: a Pokémon that comes in, and a knock out
+        await bench(1, 'Eevee');
+        await played('.trainer-a .bench .mon:nth-child(2)', 'moment-enter');
+        // and the Active Pokémon and the bench switched off take theirs with them
+        await over();
+        await forget();
+        await send('action:settings', { action: 'update', display: { activePokemon: false, benchPokemon: false } });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active').classList.contains('opt-off'));
+        await send('action:trainerA', { action: 'setActive', cardId: 'a-9', name: 'Mew', image: IMG, hp: 70 });
+        await send('action:trainerA', { action: 'knockOut', slot: 1 });
+        await page.waitForFunction(() => window.oto.state.trainerA.active.name === 'Mew' && !window.oto.state.trainerA.bench[1].name);
+        await wait(150);
+        await nothing();
+      } finally {
+        await send('action:settings', { action: 'update', display: Object.assign(Object.fromEntries(Object.keys(off).map((key) => [key, true])), { activePokemon: true, benchPokemon: true }) });
+      }
+    });
+
+    it('last as long as the design says, between a fifth of a second and ten seconds, and a second and a half when it says nothing', async () => {
+      const lasting = (value) => page.evaluate((text) => {
+        const root = document.documentElement;
+        if (text === null) root.style.removeProperty('--oto-moment-ms');
+        else root.style.setProperty('--oto-moment-ms', text);
+        const ms = window.oto.momentDuration();
+        root.style.removeProperty('--oto-moment-ms');
+        return ms;
+      }, value);
+      assert.equal(await lasting('2500'), 2500);
+      assert.equal(await lasting('1.2s'), 1200);
+      assert.equal(await lasting('800ms'), 800);
+      assert.equal(await lasting('50'), 200);
+      assert.equal(await lasting('60000'), 10000);
+      assert.equal(await lasting('soon'), 1500);
+      await page.evaluate(() => window.oto.applyTheme(null));
+      assert.equal(await lasting(null), 1500);
+    });
+
+    it('can be played on a piece as if they had happened, without hiding a knocked out Pokémon', async () => {
+      assert.equal(await page.evaluate(() => window.oto.playMoment('damage', 'a', 'active', 60)), true);
+      await played('.trainer-a .active .mon', 'moment-damage', { amount: 60 });
+      assert.deepEqual(await there('#stage'), ['moment-damage-a']);
+      assert.equal(await page.evaluate(() => window.oto.playMoment('taken', 'b', 'prize2')), true);
+      await played('.trainer-b .prize:nth-child(3)', 'moment-taken');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('enter', 'b', 'stadium')), true);
+      await played('.stadium', 'moment-enter');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('used', 'a', 'token-supporter')), true);
+      await played('.trainer-a .token[data-kind="supporter"]', 'moment-used');
+      assert.equal(await page.evaluate(() => window.oto.playMoment('ko', 'a', 'active')), true);
+      await played('.trainer-a .active .mon', 'moment-ko');
+      await over();
+      assert.equal(await page.locator('.trainer-a .active .mon').isVisible(), true, 'the tile stays');
+      await forget();
+      for (const [moment, side, target] of [['boom', 'a', 'active'], ['damage', 'c', 'active'], ['damage', 'a', 'bench9'], ['damage', 'a', 'toString']]) {
+        assert.equal(await page.evaluate((args) => window.oto.playMoment(...args), [moment, side, target]), false, `${moment} ${side} ${target}`);
+      }
+      await nothing();
+    });
+  });
+
   describe('inside the design editor', () => {
     let editor;
     beforeEach(async () => {
@@ -2052,6 +2783,35 @@ describe('overlay', { skip }, () => {
       const moved = await editor.evaluate(() => window.oto.blockRects().scoreboard);
       assert.ok(Math.abs(moved.w - rects.scoreboard.w / 2) < 3, 'measured as it looks, so it is half as wide');
       assert.ok(moved.y > rects.scoreboard.y + 150, 'and lower');
+    });
+
+    it('plays a moment it is asked for on the piece it names, as if it had happened, and says when it has', async () => {
+      await editor.evaluate(() => {
+        window.drawn = 0;
+        window.addEventListener('message', (event) => { if (event.data && event.data.kind === 'drawn') window.drawn++; });
+      });
+      await tell({ kind: 'state', state: await live() });
+      await tell({ kind: 'design', theme: { name: 'Draft', colors: {}, images: {}, css: ':root{--oto-moment-ms:2500}#stage .mon.moment-ko{opacity:.3}' } });
+      await editor.waitForSelector('.trainer-a .active .mon:not([hidden])');
+      await editor.waitForFunction(() => window.drawn === 2);
+      await recordMoments(editor);
+
+      await tell({ kind: 'moment', moment: 'damage', side: 'a', target: 'active', amount: 60 });
+      await playedOn(editor, '.trainer-a .active .mon', 'moment-damage', { amount: 60 });
+      await playedOn(editor, '#stage', 'moment-damage-a');
+      await editor.waitForFunction(() => window.drawn === 3);
+
+      // a knock out plays on the tile as it is, and the tile stays (the made-up match is not changed)
+      await tell({ kind: 'moment', moment: 'ko', side: 'a', target: 'active' });
+      await editor.waitForSelector('.trainer-a .active .mon.moment-ko');
+      assert.equal(await editor.$eval('.trainer-a .active .mon', (node) => getComputedStyle(node).opacity), '0.3');
+      await editor.waitForSelector('.moment-ko', { state: 'detached' });
+      await wait(200);
+      assert.equal(await editor.locator('.trainer-a .active .mon').isVisible(), true);
+
+      await tell({ kind: 'moment', moment: 'status', side: 'b', target: 'trainer' });
+      await playedOn(editor, '.trainer-b', 'moment-status', { status: 'asleep' });
+      assert.deepEqual(editor.problems, []);
     });
 
     it('can show a banner that stays, and take it away', async () => {

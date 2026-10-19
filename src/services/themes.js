@@ -1,5 +1,5 @@
 /**
- * Designs: the colors, pictures, font and sounds that give the overlay its own look and feel.
+ * Designs: the colors, pictures, font, sounds and style sheet that give the overlay its own look and feel.
  * (The code and the API call them "themes".)
  *
  * A design is a folder, so artists can open it, swap a file and share it:
@@ -7,9 +7,11 @@
  *   themes/store-league/
  *     design.json            the colors and which file fills each slot
  *     images/logoImage.png   one picture per slot (logo, background, avatars, card backs, energy icons)
+ *     images/css-glow.png    a picture for the style sheet, with a name the designer chose (css-<name>): optional, 24 at most
  *     fonts/font.woff2       the main font, for names, numbers and announcements
  *     fonts/names.woff2      a font for one group of text (names, numbers, labels, banners, subtitles, text): optional
  *     sounds/damage.mp3      a sound for any cue; used by the overlay while this design is on air
+ *     styles.css             a style sheet that restyles and animates the overlay (checked by public/js/theme-css.js): optional
  *
  *   design.json
  *   {
@@ -26,7 +28,8 @@
  *     "fonts": { "names": "fonts/names.woff2" },
  *     "fontFamilies": { "numbers": "Impact, Arial Black, sans-serif" },
  *     "orientation": "portrait",
- *     "spaces": [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ]
+ *     "spaces": [ { "id": 1, "name": "Camera", "shape": "rounded", "x": 700, "y": 400, "w": 480, "h": 270 } ],
+ *     "styles": "styles.css"
  *   }
  *
  * "layout" moves and resizes pieces of the overlay (see BLOCKS in public/js/theme-options.js); "crop"
@@ -35,10 +38,13 @@
  * cards: "english" or "japanese" card back, or a "pokeball" (left out, they keep the design's card back, or have the English one);
  * "prizeLayout" is how the six are laid out: "column", "two-rows" or "three-rows" (left out, a row of six); "orientation" is the screen:
  * "portrait" for a tall mobile one (left out, a wide 1920 x 1080 one); "spaces" are places kept clear for a camera feed or the like, each with
- * a picture of its own that can be drawn over it (the image slot "spaceFrame<id>").
+ * a picture of its own that can be drawn over it (the image slot "spaceFrame<id>"); "styles" says the design has a style sheet.
  *
  * Everything a design uses is a file inside its folder: nothing is fetched from the web while it is on
  * air, so it works offline, and a shared design can never make an overlay contact someone's server.
+ * The style sheet is kept as it was written (so its author can read it), checked when it is saved or
+ * installed, and checked again and written out anew each time it is handed to an overlay: it can only
+ * use the design's own pictures and fonts, and only restyle the overlay's stage.
  */
 
 const fs = require('node:fs');
@@ -46,7 +52,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 // What a design may set comes from shared lists (also used by the control panel's design editor)
-const { COLOR_KEYS, IMAGE_KEYS, FONT_ROLE_KEYS } = require('../../public/js/theme-options');
+const { COLOR_KEYS, IMAGE_KEYS, FONT_ROLE_KEYS, CSS_FILE, CSS_MAX_BYTES, CSS_IMAGE_KEY, CSS_IMAGE_MAX, isImageKey } = require('../../public/js/theme-options');
 const EXTRA_FONT_ROLES = FONT_ROLE_KEYS.filter((role) => role !== 'display'); // ("display" is the main font: the file `font`)
 const SOUND = require('../../public/js/sound-options');
 const { sniff: sniffSound, MAX_SOUND_BYTES } = require('./sounds');
@@ -69,7 +75,8 @@ const SOUND_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'webm'];
 const MIME = {
   png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
   woff2: 'font/woff2', woff: 'font/woff', otf: 'font/otf', ttf: 'font/ttf',
-  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', webm: 'audio/webm'
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', webm: 'audio/webm',
+  css: 'text/css; charset=utf-8'
 };
 
 class ThemeError extends Error {
@@ -103,12 +110,14 @@ const cleanText = (value, max) => (typeof value === 'string' ? value.replace(/[\
 // The rules live in one file shared with the design editor (public/js/theme-rules.js); a complaint
 // from them is a ThemeError here, so the API answers with it.
 const rules = require('../../public/js/theme-rules');
+// (and so does the reader of a design's style sheet: public/js/theme-css.js)
+const cssRules = require('../../public/js/theme-css');
 
 function asThemeError(work) {
   try {
     return work();
   } catch (error) {
-    throw error instanceof rules.RuleError ? new ThemeError(error.message) : error;
+    throw error instanceof rules.RuleError || error instanceof cssRules.CssError ? new ThemeError(error.message) : error;
   }
 }
 
@@ -131,6 +140,8 @@ const sanitizePrizeLayout = (input, options) => asThemeError(() => rules.sanitiz
 const sanitizeOrientation = (input, options) => asThemeError(() => rules.sanitizeOrientation(input, options));
 const sanitizeSpaces = (input, options) => asThemeError(() => rules.sanitizeSpaces(input, options));
 const sanitizeFontFamilies = (input, options) => asThemeError(() => rules.sanitizeFontFamilies(input, options));
+// The style sheet of a design, checked and written out again: { css, dropped }. With `strict` a problem is refused, with its line.
+const sanitizeCss = (text, options) => asThemeError(() => cssRules.sanitizeCss(text, options));
 
 // ------------------------------------------------------------------------------------- files
 
@@ -191,6 +202,37 @@ function checkSound(buffer, label = 'The sound') {
   return kind;
 }
 
+// The colors of a design written before (in its folder, or in the old format): a value that is not allowed (written by hand, or before
+// the rules were tightened, like a url() in a color) is left out on its own, and the others stay. What is sent to be saved or installed
+// is checked whole with sanitizeColors, which says what is wrong.
+function readColors(input) {
+  const colors = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return colors;
+  for (const [key, value] of Object.entries(input)) {
+    try {
+      Object.assign(colors, sanitizeColors({ [key]: value }));
+    } catch {
+      /* only this color is left out */
+    }
+  }
+  return colors;
+}
+
+// A style sheet that came as a file (from a package): plain UTF-8 text, and nothing in it that is not allowed. Returns the text.
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+function checkCss(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new ThemeError('No style sheet was sent');
+  if (buffer.length > CSS_MAX_BYTES) throw new ThemeError(`The style sheet is too large (${CSS_MAX_BYTES / 1024} KB at most)`);
+  let text;
+  try {
+    text = utf8.decode(buffer).replace(/^﻿/, '');
+  } catch {
+    throw new ThemeError('The style sheet is not plain text (save it as UTF-8)');
+  }
+  sanitizeCss(text, { strict: true });
+  return text;
+}
+
 // Windows can keep a folder busy for a moment after it was deleted or while something (a virus scanner, the search
 // indexer, a picture still being sent) has a file of it open. Moving a folder into place is tried again briefly.
 const BUSY = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
@@ -221,8 +263,14 @@ function writeAtomic(file, data) {
 const imageRef = (key) => new RegExp(`^images/${key}\\.(${IMAGE_EXTENSIONS.join('|')})$`);
 const fontRef = new RegExp(`^fonts/font\\.(${FONT_EXTENSIONS.join('|')})$`);
 const fontRoleRef = (role) => new RegExp(`^fonts/${role}\\.(${FONT_EXTENSIONS.join('|')})$`);
-// Every file a design holds (pictures, fonts, sounds): the references, as they are in design.json
-const fileRefs = (design) => [...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : []), ...Object.values(design.fonts || {})];
+const cssRef = /^styles\.css$/;
+// Every file a design holds (pictures, fonts, sounds, the style sheet): the references, as they are in design.json
+const fileRefs = (design) => [
+  ...Object.values(design.images), ...Object.values(design.sounds), ...(design.font ? [design.font] : []), ...Object.values(design.fonts || {}),
+  ...(design.styles ? [design.styles] : [])
+];
+// The pictures a design has for its style sheet (css-<name>)
+const cssImagesOf = (design) => Object.keys(design.images).filter((key) => CSS_IMAGE_KEY.test(key));
 const soundRef = (cue) => new RegExp(`^sounds/${cue}\\.(${SOUND_EXTENSIONS.join('|')})$`);
 const extensionOf = (ref) => ref.slice(ref.lastIndexOf('.') + 1);
 
@@ -233,6 +281,7 @@ class ThemeStore {
   constructor(dir, db) {
     this.dir = dir;
     this.db = db;
+    this.cssCache = new Map(); // the style sheet of each design as the overlay last got it (see resolvedCss)
   }
 
   // Make the folder, and turn designs saved by an earlier version (one JSON file with the pictures
@@ -289,11 +338,14 @@ class ThemeStore {
     }
     if (!raw || typeof raw !== 'object') return null;
     const exists = (ref) => fs.existsSync(path.join(folder, ref));
+    const sizeOf = (ref) => {
+      try { return fs.statSync(path.join(folder, ref)).size; } catch { return 0; }
+    };
 
     let name;
     try { name = cleanName(raw.name); } catch { return null; }
     const design = { name, colors: {}, images: {}, sounds: {}, version: Math.round(stats.mtimeMs) };
-    try { design.colors = sanitizeColors(raw.colors); } catch { /* a bad color is dropped */ }
+    design.colors = readColors(raw.colors);
     const author = cleanText(raw.author, MAX_AUTHOR);
     const description = cleanText(raw.description, MAX_DESCRIPTION);
     if (author) design.author = author;
@@ -313,11 +365,15 @@ class ThemeStore {
     if (orientation) design.orientation = orientation;
     if (spaces.length) design.spaces = spaces;
 
-    for (const key of IMAGE_KEYS) {
-      const ref = raw.images && raw.images[key];
-      if (typeof ref === 'string' && imageRef(key).test(ref) && exists(ref)) design.images[key] = ref;
-    }
+    const images = raw.images && typeof raw.images === 'object' && !Array.isArray(raw.images) ? raw.images : {};
+    // the slots everybody knows, then the pictures for the style sheet (their names are the designer's: CSS_IMAGE_MAX of them at most)
+    const kept = (key) => typeof images[key] === 'string' && imageRef(key).test(images[key]) && exists(images[key]);
+    for (const key of IMAGE_KEYS) if (Object.hasOwn(images, key) && kept(key)) design.images[key] = images[key];
+    for (const key of Object.keys(images).filter((name) => CSS_IMAGE_KEY.test(name) && kept(name)).slice(0, CSS_IMAGE_MAX)) design.images[key] = images[key];
     if (typeof raw.font === 'string' && fontRef.test(raw.font) && exists(raw.font)) design.font = raw.font;
+    // the style sheet: only whether there is one (its text is read when it is needed, as this runs for every design, often). An empty
+    // file is none (so it is not put in a package either).
+    if (typeof raw.styles === 'string' && cssRef.test(raw.styles) && sizeOf(raw.styles) > 0) design.styles = raw.styles;
     // a font for a group of text, and the fonts to use for it
     for (const role of EXTRA_FONT_ROLES) {
       const ref = raw.fonts && raw.fonts[role];
@@ -340,6 +396,27 @@ class ThemeStore {
     }
   }
 
+  // The text of a design's style sheet, as it was written ('' when it has none)
+  cssOf(name) {
+    const design = this.get(name);
+    return design ? this.stylesOf(design) : '';
+  }
+
+  stylesOf(design) {
+    if (!design.styles) return '';
+    try {
+      return fs.readFileSync(path.join(this.folderFor(design.name), design.styles), 'utf8').replace(/^﻿/, '');
+    } catch {
+      return '';
+    }
+  }
+
+  // A design as the editor needs it: with the text of its style sheet (null when there is no such design)
+  forEditor(name) {
+    const design = this.get(name);
+    return design ? { ...design, css: this.stylesOf(design) } : null;
+  }
+
   // Write design.json (the version number is the file's own modification time, so every change is a new version)
   store(design) {
     const { version, ...plain } = design;
@@ -347,7 +424,8 @@ class ThemeStore {
     return this.get(design.name);
   }
 
-  // Make a design, or change its colors, author, description, layout, crop, tile and prize style. Pictures, font and sounds have their own calls.
+  // Make a design, or change its colors, author, description, layout, crop, tile, prize style and style sheet ("css": its text; ''
+  // removes it). Pictures, font and sounds have their own calls.
   save(name, input = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ThemeError('A design must be an object');
     const clean = cleanName(name ?? input.name);
@@ -374,7 +452,28 @@ class ThemeStore {
     if (design.layout && !Object.keys(design.layout).length) delete design.layout;
     if (design.crop && !Object.keys(design.crop).length) delete design.crop;
     if (design.tile && !Object.keys(design.tile).length) delete design.tile;
+    // the style sheet last, once everything else is known to be fine: it is kept as it was written, comments and all
+    if ('css' in input) this.writeStyles(design, input.css);
     return this.store(design);
+  }
+
+  // Check a style sheet and write it into the design's folder (or remove it, for ''); `design` then says whether it has one
+  writeStyles(design, text) {
+    if (typeof text !== 'string') throw new ThemeError('The style sheet must be text');
+    const file = path.join(this.folderFor(design.name), CSS_FILE);
+    if (text === '') {
+      fs.rmSync(file, { force: true });
+      delete design.styles;
+      return;
+    }
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > CSS_MAX_BYTES) throw new ThemeError(`The style sheet is too large (${CSS_MAX_BYTES / 1024} KB at most)`);
+    sanitizeCss(text, { strict: true });
+    if (this.totalBytes(design) - (design.styles ? this.sizeOf(design.name, design.styles) : 0) + bytes > MAX_DESIGN_BYTES) {
+      throw new ThemeError('This design has reached its size limit (40 MB). Remove something first.');
+    }
+    writeAtomic(file, text);
+    design.styles = CSS_FILE;
   }
 
   remove(name) {
@@ -452,13 +551,22 @@ class ThemeStore {
     return this.store(design);
   }
 
+  // A picture for a slot, or for the style sheet ("css-<name>": a design can have CSS_IMAGE_MAX of those)
   setImage(name, key, buffer) {
-    if (!IMAGE_KEYS.includes(key)) throw new ThemeError('There is no such picture slot');
-    return this.place(name, (d) => d.images[key], buffer, (b) => checkImage(b), (ext) => `images/${key}.${ext}`, (d, ref) => { d.images[key] = ref; });
+    if (!isImageKey(key)) throw new ThemeError('There is no such picture slot');
+    const check = (b) => {
+      const kind = checkImage(b);
+      const design = CSS_IMAGE_KEY.test(key) && this.get(name);
+      if (design && !design.images[key] && cssImagesOf(design).length >= CSS_IMAGE_MAX) {
+        throw new ThemeError(`A design can have at most ${CSS_IMAGE_MAX} pictures for its style sheet.`);
+      }
+      return kind;
+    };
+    return this.place(name, (d) => d.images[key], buffer, check, (ext) => `images/${key}.${ext}`, (d, ref) => { d.images[key] = ref; });
   }
 
   removeImage(name, key) {
-    if (!IMAGE_KEYS.includes(key)) throw new ThemeError('There is no such picture slot');
+    if (!isImageKey(key)) throw new ThemeError('There is no such picture slot');
     return this.discard(name, (d) => d.images[key], (d) => { delete d.images[key]; });
   }
 
@@ -525,7 +633,36 @@ class ThemeStore {
     if (design.font) resolved.font = url(design.font);
     if (design.fonts) resolved.fonts = Object.fromEntries(Object.entries(design.fonts).map(([role, ref]) => [role, url(ref)]));
     if (design.fontFamilies) resolved.fontFamilies = design.fontFamilies;
+    const css = this.resolvedCss(design, url, byName);
+    if (css) resolved.css = css;
     return resolved;
+  }
+
+  // The style sheet of a design as the overlay gets it: checked again (it may have been changed by hand), with what is not allowed
+  // left out, and each of the design's files at the address `url` gives it. Only its pictures and fonts can be used (the overlay
+  // can load nothing else of a design); one it does not have is left out. The same file of the same design is written the same way,
+  // so it is kept until one of them changes (an overlay asks for its design each time it loads, and a long style sheet takes a moment).
+  resolvedCss(design, url, byName) {
+    if (!design.styles) return '';
+    const file = path.join(this.folderFor(design.name), design.styles);
+    try {
+      const stats = fs.statSync(file);
+      if (stats.size > CSS_MAX_BYTES) return ''; // (it would be left out anyway)
+      const held = fileRefs(design);
+      const key = [design.version, byName, stats.mtimeMs, stats.size, ...held].join('|');
+      const kept = this.cssCache.get(`${file}|${byName}`);
+      if (kept && kept.key === key) return kept.css;
+      // (a file is found whatever ending the style sheet gives it: each is kept under the type it really is)
+      const resolve = (ref) => {
+        const stored = cssRules.heldFile(ref, held);
+        return stored ? url(stored) : null;
+      };
+      const { css } = cssRules.sanitizeCss(this.stylesOf(design), { resolve });
+      this.cssCache.set(`${file}|${byName}`, { key, css });
+      return css;
+    } catch {
+      return ''; // a style sheet that cannot be read is no style sheet
+    }
   }
 
   // The sounds of the design on air: { cue: { mime, size, version } }
@@ -574,7 +711,8 @@ class ThemeStore {
   }
 
   // Add a design from files that came from outside (a package). Everything is checked; the design appears
-  // all at once or not at all. `parts`: { name, author, description, colors, images: { key: Buffer }, font: Buffer, sounds: { cue: Buffer } }
+  // all at once or not at all. `parts`: { name, author, description, colors, images: { key: Buffer }, font: Buffer, sounds: { cue: Buffer },
+  // css: Buffer } (the images may be pictures for the style sheet, "css-<name>"; a style sheet with anything not allowed in it fails it all)
   // With `replace`, a design of the same name is overwritten; otherwise the new one gets a free name.
   addDesign(parts, { replace = false } = {}) {
     // replacing reuses the folder (it only depends on the letters and digits of the name)
@@ -610,10 +748,18 @@ class ThemeStore {
         writeAtomic(path.join(stage, ref), buffer);
       };
       for (const [key, buffer] of Object.entries(parts.images || {})) {
-        if (!IMAGE_KEYS.includes(key)) continue;
+        if (!isImageKey(key)) continue;
+        if (CSS_IMAGE_KEY.test(key) && cssImagesOf(design).length >= CSS_IMAGE_MAX) {
+          throw new ThemeError(`A design can have at most ${CSS_IMAGE_MAX} pictures for its style sheet.`);
+        }
         const kind = checkImage(buffer, `The picture for "${key}"`);
         design.images[key] = `images/${key}.${kind.ext}`;
         put(design.images[key], buffer);
+      }
+      if (parts.css && parts.css.length > 0) { // (an empty style sheet is none)
+        checkCss(parts.css);
+        design.styles = CSS_FILE;
+        put(CSS_FILE, parts.css);
       }
       for (const role of EXTRA_FONT_ROLES) {
         const buffer = parts.fonts && parts.fonts[role];
@@ -660,11 +806,11 @@ class ThemeStore {
       const buffer = IMAGE_KEYS.includes(key) ? decode(value) : null;
       if (buffer) images[key] = buffer;
     }
-    return this.addDesign({ name: legacy.name, colors: legacy.colors, images, font: decode(legacy.font) }, { replace: true });
+    return this.addDesign({ name: legacy.name, colors: readColors(legacy.colors), images, font: decode(legacy.font) }, { replace: true });
   }
 }
 
 module.exports = {
-  ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, MIME,
-  sniffImage, sniffFont, checkImage, checkFont, checkSound, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, sanitizeFontFamilies, cleanName, cleanText, folderName
+  ThemeStore, ThemeError, COLOR_KEYS, IMAGE_KEYS, MAX_DESIGN_BYTES, MAX_IMAGE_BYTES, CSS_MAX_BYTES, CSS_IMAGE_MAX, MIME,
+  sniffImage, sniffFont, checkImage, checkFont, checkSound, checkCss, sanitizeColors, sanitizeLayout, sanitizeCrop, sanitizeTile, sanitizePrize, sanitizePrizeLayout, sanitizeOrientation, sanitizeSpaces, sanitizeFontFamilies, sanitizeCss, isImageKey, cleanName, cleanText, folderName
 };

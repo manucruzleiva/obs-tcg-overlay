@@ -1,11 +1,13 @@
 /**
  * The design editor in a real browser: creating a design, the canvas (drag, resize, snap, zoom, pan, pinch),
- * the code view, the card crop selector, and saving.
+ * the code view, the card crop selector, the style sheet (with its pictures and the moments to try, and on the live overlay), and saving.
  * Run with: npm run test:ui
  */
 
 const { describe, it, before, after, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { startServer, wait } = require('../support/harness');
 const S = require('../support/samples');
 const { findBrowser, launch, openPage } = require('./browser');
@@ -402,6 +404,31 @@ describe('design editor', { skip }, () => {
     });
     const input = () => page.locator('.code-input');
     const type = async (text) => { await input().fill(text); await wait(450); };
+
+    it('asks before closing when the text has a mistake (it is not in the design yet, but it is not saved either)', async () => {
+      await input().fill('{ "layout": ');
+      await wait(450);
+      assert.match(await page.locator('.code-status').textContent(), /The overlay keeps the last version that made sense/);
+      assert.match(await page.locator('.editor-status').textContent(), /^Unsaved changes/);
+      await editorModal('Code Test').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      const ask = page.locator('.modal[aria-label="Close without saving?"]');
+      await ask.waitFor();
+      await ask.getByRole('button', { name: 'Close without saving' }).click();
+      await editorModal('Code Test').waitFor({ state: 'detached' });
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('lets Tab move on to the next control once Ctrl+M says so', async () => {
+      await input().press('Control+m');
+      await input().press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Format');
+      await input().focus();
+      await input().press('Control+m');
+      await input().press('Control+End');
+      const before = await input().inputValue();
+      await input().press('Tab');
+      assert.equal(await input().inputValue(), `${before}  `);
+    });
 
     it('shows the design as text, with line numbers', async () => {
       const text = await input().inputValue();
@@ -836,7 +863,7 @@ describe('design editor', { skip }, () => {
         await page.locator('.crop-panel .btn[data-preset="art"]').click();
         assert.deepEqual(await prizeCrop(), ART);
         await drawn();
-        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--cp-w') === '0.86');
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--cp-w') === '0.86');
         const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .prize').getBoundingClientRect().height);
         assert.ok(Math.abs(height - (56 * 0.385) / 0.86) < 0.1, `the prize card is as tall as the art: ${height}`);
         assert.deepEqual(await crop(), { prize: ART }, 'and the Pokémon are as they were');
@@ -862,7 +889,7 @@ describe('design editor', { skip }, () => {
       it('shows the whole card on the tools of the canvas when asked, written down, and goes back to the picture', async () => {
         await page.locator('.crop-panel .btn[data-preset="full"]').click();
         assert.deepEqual(await toolCrop(), { x: 0, y: 0, w: 1, h: 1 });
-        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.documentElement.style.getPropertyValue('--ct-w') === '1');
+        await page.waitForFunction(() => document.querySelector('iframe[src*="editor=1"]').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ct-w') === '1');
         const height = await overlayFrame().evaluate(() => document.querySelector('.trainer-a .active .tool-card').getBoundingClientRect().height);
         assert.ok(Math.abs(height - 104 * 1.393333) < 1, `the tool is as tall as the whole card: ${height}`);
         assert.deepEqual(await crop(), { tool: { x: 0, y: 0, w: 1, h: 1 } }, 'and the Pokémon are as they were');
@@ -1022,7 +1049,7 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(design.crop.active, { x: 0, y: 0, w: 1, h: 1 });
       assert.deepEqual(design.tile, { active: { hp: 'bottom' } });
       await overlay.waitForSelector('.scoreboard.moved');
-      await overlay.waitForFunction(() => document.documentElement.style.getPropertyValue('--ca-w') === '1');
+      await overlay.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--ca-w') === '1');
       await overlay.waitForSelector('.trainer-a .active .band-bottom .band-bar .hp', { state: 'attached' });
       assert.match(await page.locator('.toast-success').first().textContent(), /on the overlay, so you see it on stream/);
       assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true, 'nothing left to save');
@@ -1469,7 +1496,7 @@ describe('design editor', { skip }, () => {
     const tab = () => page.locator('.editor-side .tab[data-tab="fonts"]');
     const row = (role) => page.locator(`.font-row[data-role="${role}"]`);
     const draftFamilies = () => page.evaluate(() => JSON.parse(JSON.stringify(window.oto.designEditor.model.draft.fontFamilies)));
-    const frameVar = (name) => overlayFrame().evaluate((key) => document.documentElement.style.getPropertyValue(key).trim(), name);
+    const frameVar = (name) => overlayFrame().evaluate((key) => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue(key).trim(), name);
 
     it('has a row for the main font and for each group of text, with what each is for', async () => {
       await openEditorFor('Type Test');
@@ -1485,7 +1512,7 @@ describe('design editor', { skip }, () => {
       await tab().click();
       await row('names').locator('input').fill('Impact, "Arial Black", sans-serif');
       assert.deepEqual(await draftFamilies(), { names: 'Impact, "Arial Black", sans-serif' });
-      await page.waitForFunction(() => /^Impact/.test(document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names')));
+      await page.waitForFunction(() => /^Impact/.test(document.querySelector('.editor-frame').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names')));
       assert.match(await overlayFrame().$eval('.sb-name', (node) => getComputedStyle(node).fontFamily), /^Impact/);
 
       await row('numbers').locator('input').fill('url(http://x.example/f.woff)');
@@ -1501,7 +1528,7 @@ describe('design editor', { skip }, () => {
       await tab().click();
       await row('names').locator('input').fill('');
       assert.deepEqual(await draftFamilies(), { numbers: 'Georgia' });
-      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.documentElement.style.getPropertyValue('--font-names') === '');
+      await page.waitForFunction(() => document.querySelector('.editor-frame').contentDocument.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--font-names') === '');
       assert.equal(await frameVar('--font-names'), '');
     });
 
@@ -1547,6 +1574,355 @@ describe('design editor', { skip }, () => {
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
       assert.deepEqual((await api('GET', '/api/themes/Type%20Test')).json.fontFamilies, { banners: 'Verdana' });
+    });
+  });
+
+  describe('the style sheet', () => {
+    const tab = () => page.locator('.editor-side .tab[data-tab="css"]');
+    const input = () => page.locator('.css-input');
+    const status = () => page.locator('.css-status');
+    const draftCss = () => page.evaluate(() => window.oto.designEditor.model.draft.css);
+    // what the overlay in the editor has in the design's <style>, and how it draws a piece
+    const frameSheet = () => overlayFrame().evaluate(() => document.getElementById('oto-design-css').textContent);
+    const frameStyle = (selector, property) => overlayFrame().$eval(selector, (node, name) => getComputedStyle(node)[name], property);
+    const untilFrame = (read, arg) => overlayFrame().waitForFunction(read, arg);
+    // the status says something that matches (once the text has been read, 300 ms after the last key)
+    const says = (pattern) => page.waitForFunction((source) => new RegExp(source).test(document.querySelector('.css-status').textContent), pattern.source);
+    const SPACED = '.sb-name {\n  letter-spacing: 7px;\n}';
+
+    it('is a tab of its own, with line numbers, and the overlay follows what is typed, on the stage', async () => {
+      await openEditorFor('Sheet Test');
+      await tab().click();
+      assert.equal(await tab().textContent(), 'Style sheet');
+      assert.equal(await input().inputValue(), '', 'a design has none to begin with');
+      assert.equal(await frameSheet(), '');
+      const plain = await frameStyle('.sb-name', 'letterSpacing');
+
+      await input().fill(SPACED);
+      assert.equal(await page.locator('.css-panel .code-gutter').textContent(), '1\n2\n3');
+      await says(/^Applied\.$/);
+      assert.equal(await draftCss(), SPACED);
+      await untilFrame(() => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === '7px');
+      assert.equal(await frameSheet(), '#stage .sb-name{letter-spacing:7px}', 'the overlay gets it cleaned, and put on the stage');
+      assert.equal(await page.locator('.editor-status').textContent(), 'Unsaved changes');
+
+      // Tab writes two spaces
+      await input().press('Control+End');
+      await input().press('Tab');
+      assert.equal(await input().inputValue(), `${SPACED}  `);
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains('css-input')), true);
+
+      // it is not in the code view, and what is typed there leaves it alone
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      assert.equal('css' in JSON.parse(await page.locator('.code-input').inputValue()), false);
+      await page.locator('.code-input').fill(JSON.stringify({ author: 'Mina' }));
+      await page.waitForFunction(() => window.oto.designEditor.model.draft.author === 'Mina');
+      assert.equal(await draftCss(), `${SPACED}  `);
+
+      // an undo (outside the box) puts it back the way it was, in the box and on the overlay
+      await page.evaluate(() => { window.oto.designEditor.model.undo(); window.oto.designEditor.model.undo(); window.oto.designEditor.model.undo(); });
+      await tab().click();
+      assert.equal(await input().inputValue(), '');
+      await untilFrame((before) => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === before, plain);
+      assert.equal(await frameSheet(), '');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('says which line is not allowed and why, and the overlay keeps the last version that made sense', async () => {
+      await openEditorFor('Sheet Test');
+      await tab().click();
+      await input().fill(SPACED);
+      await says(/^Applied\.$/);
+
+      const refused = [
+        [`${SPACED}\n@import url(https://e.x/a.css);`, 'Line 4: @import is not allowed (a design can only use the files it carries).'],
+        ['.sb-name { letter-spacing: 9px !important; }', 'Line 1: !important is not allowed (it could show what the producer switched off).'],
+        ['.sb-name { background: url(https://e.x/a.png); }', 'Line 1: a web address is not allowed in url() (a design can only use its own pictures and fonts, as url(images/css-name.png)).'],
+        ['\nbody { background: #000; }', 'Line 2: rules for body are not allowed (the overlay\'s page must stay see-through).'],
+        ['.sb-name { letter-spacing: 9px;', 'Line 1: a { is not closed (add the } that ends it).']
+      ];
+      for (const [text, complaint] of refused) {
+        await input().fill(text);
+        await page.waitForFunction((said) => document.querySelector('.css-status').textContent === said, `${complaint} The overlay keeps the last version that made sense.`);
+        assert.equal(await status().evaluate((node) => node.classList.contains('bad')), true);
+        assert.equal(await input().getAttribute('aria-invalid'), 'true');
+        assert.equal(await draftCss(), SPACED, `${text}: the design keeps what could be used`);
+        assert.equal(await frameStyle('.sb-name', 'letterSpacing'), '7px');
+        assert.equal(await frameSheet(), '#stage .sb-name{letter-spacing:7px}');
+      }
+
+      await input().fill('.sb-name { letter-spacing: 3px; }');
+      await says(/^Applied\.$/);
+      assert.equal(await input().getAttribute('aria-invalid'), null);
+      await untilFrame(() => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === '3px');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is not thrown away without a question: text with a mistake, or typed just before Close, counts as a change that is not saved', async () => {
+      await openEditorFor('Sheet Unsaved');
+      await tab().click();
+      const close = () => editorModal('Sheet Unsaved').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      const ask = page.locator('.modal[aria-label="Close without saving?"]');
+      const editorStatus = () => page.locator('.editor-status').textContent();
+
+      // a rule with a mistake in it never reaches the draft, but it is not saved either
+      const mistake = '.scoreboard {\n  border-radius: 40px !important;\n  background: hotpink;\n}';
+      await input().fill(mistake);
+      await says(/!important is not allowed/);
+      assert.equal(await draftCss(), '');
+      assert.match(await editorStatus(), /^Unsaved changes/);
+      assert.equal(await page.getByRole('button', { name: 'Undo all changes' }).isDisabled(), false);
+      await close();
+      await ask.waitFor();
+      assert.match(await ask.locator('.confirm-text').textContent(), /style sheet has text with a mistake/);
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      await ask.waitFor({ state: 'detached' });
+      assert.equal(await input().inputValue(), mistake, 'the text is still there');
+
+      // "Undo all changes" takes it away, with what was said about it
+      await page.getByRole('button', { name: 'Undo all changes' }).click();
+      assert.equal(await input().inputValue(), '');
+      assert.equal(await status().textContent(), '');
+      assert.equal(await input().getAttribute('aria-invalid'), null);
+      assert.equal(await editorStatus(), 'Saved');
+
+      // what was typed a moment ago is read before the editor closes
+      await input().fill('.scoreboard { border-radius: 40px; }');
+      await close();
+      await ask.waitFor();
+      assert.equal(await draftCss(), '.scoreboard { border-radius: 40px; }');
+      await ask.getByRole('button', { name: 'Close without saving' }).click();
+      await editorModal('Sheet Unsaved').waitFor({ state: 'detached' });
+      await wait(500); // (nothing waits to be read after the editor has gone)
+      assert.equal((await api('GET', '/api/themes/Sheet%20Unsaved')).json.css, '');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is read before it is saved, even when Save comes right after the last key', async () => {
+      await openEditorFor('Sheet Quick');
+      await tab().click();
+      await input().fill(SPACED);
+      await page.evaluate(() => window.oto.designEditor.save());
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.equal((await api('GET', '/api/themes/Sheet%20Quick')).json.css, SPACED);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('is saved with the design, written as it was typed, and is there when the editor opens again', async () => {
+      await openEditorFor('Sheet Saved');
+      await tab().click();
+      const text = `/* a comment and the spaces are kept */\n${SPACED}\n:root { --oto-moment-ms: 900; }`;
+      await input().fill(text);
+      await says(/^Applied\.$/);
+      assert.equal((await api('GET', '/api/themes/Sheet%20Saved')).json.css, '', 'nothing is saved before Save');
+
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      const saved = (await api('GET', '/api/themes/Sheet%20Saved')).json;
+      assert.equal(saved.css, text);
+      assert.equal(saved.styles, 'styles.css');
+      assert.equal(await page.evaluate(() => window.oto.designEditor.model.dirty), false, 'nothing left to save');
+      assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+
+      // another change saves without sending the style sheet again, and leaves it as it is
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      await page.locator('.code-input').fill(JSON.stringify({ author: 'Mina' }));
+      await page.waitForFunction(() => window.oto.designEditor.model.dirty);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      assert.deepEqual([(await api('GET', '/api/themes/Sheet%20Saved')).json.author, (await api('GET', '/api/themes/Sheet%20Saved')).json.css], ['Mina', text]);
+
+      await editorModal('Sheet Saved').locator('.modal-foot').getByRole('button', { name: 'Close', exact: true }).click();
+      await editorModal('Sheet Saved').waitFor({ state: 'detached' });
+      await page.locator('button', { hasText: 'Layout and crop' }).click();
+      await editorModal('Sheet Saved').waitFor();
+      await page.waitForFunction(() => window.oto.designEditor && Object.keys(window.oto.designEditor.canvas.rects).length > 0);
+      await tab().click();
+      assert.equal(await input().inputValue(), text);
+      assert.equal(await status().textContent(), '');
+      await untilFrame(() => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === '7px');
+      assert.equal(await overlayFrame().evaluate(() => window.oto.momentDuration()), 900);
+
+      // emptying it takes the file away
+      await input().fill('');
+      await page.waitForFunction(() => window.oto.designEditor.model.draft.css === '');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      const emptied = (await api('GET', '/api/themes/Sheet%20Saved')).json;
+      assert.deepEqual([emptied.css, emptied.styles], ['', undefined]);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('says at once what is not allowed in one written outside OTO, which the overlay leaves out, and the rest of the design still saves', async () => {
+      await api('PUT', '/api/themes/Sheet%20By%20Hand', { colors: {}, css: SPACED });
+      // the file is changed by hand, in the design's folder
+      const themes = path.join(server.dir, 'themes');
+      const folder = fs.readdirSync(themes).find((entry) => fs.existsSync(path.join(themes, entry, 'styles.css')));
+      const byHand = `${SPACED}\n.logo { opacity: 0 !important; }`;
+      fs.writeFileSync(path.join(themes, folder, 'styles.css'), byHand);
+
+      await openEditorFor('Sheet By Hand');
+      await tab().click();
+      assert.equal(await input().inputValue(), byHand);
+      assert.equal(await status().textContent(), 'Line 4: !important is not allowed (it could show what the producer switched off). The overlay leaves out what is not allowed.');
+      await untilFrame(() => getComputedStyle(document.querySelector('.sb-name')).letterSpacing === '7px');
+      assert.equal(await frameSheet(), '#stage .sb-name{letter-spacing:7px}\n#stage .logo{opacity:0}', 'without the !important');
+
+      await page.locator('.editor-side .tab', { hasText: 'Code' }).click();
+      await page.locator('.code-input').fill(JSON.stringify({ author: 'Mina' }));
+      await page.waitForFunction(() => window.oto.designEditor.model.dirty);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.editor-status').textContent === 'Saved');
+      const saved = (await api('GET', '/api/themes/Sheet%20By%20Hand')).json;
+      assert.deepEqual([saved.author, saved.css], ['Mina', byHand], 'the style sheet is left as it was');
+      assert.equal(await page.locator('.toast-error').count(), 0);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('takes pictures by name, saved at once, that it uses as var(--css-name) or url(images/css-name.png)', async () => {
+      await openEditorFor('Sheet Pictures');
+      await tab().click();
+      assert.equal(await page.locator('.css-pictures').textContent(), 'None yet.');
+      const addPicture = async (name) => {
+        await page.locator('.css-panel').getByRole('button', { name: 'Add a picture' }).click();
+        const ask = page.locator('.modal[aria-label="Add a picture for the style sheet"]');
+        await ask.locator('input').fill(name);
+        const chooser = page.waitForEvent('filechooser');
+        await ask.getByRole('button', { name: 'Choose the picture' }).click();
+        await (await chooser).setFiles({ name: `${name}.png`, mimeType: 'image/png', buffer: S.PNG });
+        await page.waitForSelector(`.css-picture[data-key="css-${name}"] img`);
+      };
+
+      // a name it cannot be, or one it has, is refused before a file is asked for
+      await page.locator('.css-panel').getByRole('button', { name: 'Add a picture' }).click();
+      const ask = page.locator('.modal[aria-label="Add a picture for the style sheet"]');
+      await ask.locator('input').fill('Wood grain');
+      assert.match(await ask.locator('.prompt-complaint').textContent(), /letters from a to z, digits and dashes/);
+      assert.equal(await ask.getByRole('button', { name: 'Choose the picture' }).isDisabled(), true);
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      await ask.waitFor({ state: 'detached' });
+
+      await addPicture('wood');
+      assert.equal((await api('GET', '/api/themes/Sheet%20Pictures')).json.images['css-wood'], 'images/css-wood.png', 'saved at once, with the design\'s pictures');
+      assert.match(await page.locator('.css-picture[data-key="css-wood"]').textContent(), /var\(--css-wood\) or url\(images\/css-wood\.png\)/);
+      assert.equal(await page.locator('.css-panel .section-label .hint').textContent(), `1 of ${THEME_OPTIONS.CSS_IMAGE_MAX}`);
+      await page.locator('.css-panel').getByRole('button', { name: 'Add a picture' }).click();
+      await ask.locator('input').fill('Wood');
+      assert.match(await ask.locator('.prompt-complaint').textContent(), /has a picture with that name already/);
+      await ask.getByRole('button', { name: 'Cancel' }).click();
+      await ask.waitFor({ state: 'detached' });
+
+      await input().fill('.scoreboard { background-image: var(--css-wood); }\n.sb-name { background-image: url(images/css-wood.png); }\n.stadium { background-image: url(images/css-grain.png); }');
+      await says(/^Applied\. Not in the design, so left out: images\/css-grain\.png\.$/);
+      await untilFrame(() => /css-wood\.png/.test(getComputedStyle(document.querySelector('.scoreboard')).backgroundImage));
+      assert.match(await frameStyle('.scoreboard', 'backgroundImage'), /\/api\/themes\/Sheet%20Pictures\/assets\/images\/css-wood\.png\?v=\d+/);
+      assert.match(await frameStyle('.sb-name', 'backgroundImage'), /\/api\/themes\/Sheet%20Pictures\/assets\/images\/css-wood\.png\?v=\d+/);
+      assert.doesNotMatch(await frameSheet(), /css-grain/, 'a picture the design does not have is left out');
+
+      // once it has that one too, the overlay uses it
+      await addPicture('grain');
+      await says(/^Applied\.$/);
+      await untilFrame(() => /css-grain\.png/.test(getComputedStyle(document.querySelector('.stadium')).backgroundImage));
+      assert.deepEqual(await page.locator('.css-picture strong').allTextContents(), ['css-grain', 'css-wood']);
+
+      await page.locator('.css-picture[data-key="css-wood"]').getByRole('button', { name: 'Remove css-wood' }).click();
+      await page.waitForFunction(() => !document.querySelector('.css-picture[data-key="css-wood"]'));
+      assert.equal((await api('GET', '/api/themes/Sheet%20Pictures')).json.images['css-wood'], undefined);
+      await says(/^Applied\. Not in the design, so left out: images\/css-wood\.png\.$/);
+      await untilFrame(() => !/css-wood/.test(getComputedStyle(document.querySelector('.sb-name')).backgroundImage));
+      assert.deepEqual(nativeDialogs, []);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('plays the moments on the overlay, as if they had happened, so their animations can be seen', async () => {
+      await openEditorFor('Sheet Moments');
+      await tab().click();
+      await input().fill(':root { --oto-moment-ms: 10000; }\n.mon.moment-damage { outline: 6px solid rgb(255, 0, 0); }');
+      await says(/^Applied\.$/);
+      await untilFrame(() => getComputedStyle(document.documentElement).getPropertyValue('--oto-moment-ms').trim() === '10000');
+      const moment = page.locator('select[aria-label="The moment to play"]');
+      const play = page.locator('.css-try').getByRole('button', { name: 'Play' });
+
+      await page.locator('select[aria-label="The trainer it happens to"]').selectOption('b');
+      await play.click();
+      await untilFrame(() => document.querySelector('.trainer-b .active .mon.moment-damage'));
+      assert.deepEqual(await overlayFrame().$eval('.trainer-b .active .mon', (node) => [node.dataset.damage, getComputedStyle(node).outlineColor, getComputedStyle(node).outlineWidth]), ['30', 'rgb(255, 0, 0)', '6px']);
+      assert.equal(await overlayFrame().evaluate(() => document.getElementById('stage').classList.contains('moment-damage-b')), true);
+      assert.equal(await overlayFrame().locator('.trainer-a .moment-damage').count(), 0, 'only for the trainer chosen');
+
+      // every moment on the list plays on a piece of the overlay
+      const listed = await moment.locator('option').evaluateAll((nodes) => nodes.map((node) => [node.value, /\((moment-[a-z]+)\)$/.exec(node.textContent)[1]]));
+      assert.ok(listed.length >= 15, listed.join(' '));
+      await page.locator('select[aria-label="The trainer it happens to"]').selectOption('a');
+      for (const [value, name] of listed) {
+        const before = await overlayFrame().evaluate((cls) => document.querySelectorAll(`#stage .${cls}`).length, name);
+        await moment.selectOption(value);
+        await play.click();
+        // (one more piece has it: each moment of the list plays on a piece of its own)
+        await untilFrame(([cls, count]) => document.querySelectorAll(`#stage .${cls}`).length > count && document.getElementById('stage').classList.contains(`${cls}-a`), [name, before]);
+      }
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('plays "Supporter played" on a tracker that is drawn, for the trainer who does not have the turn too', async () => {
+      await openEditorFor('Sheet Used');
+      await tab().click();
+      await input().fill(':root { --oto-moment-ms: 10000; }\n.token.moment-used { outline: 6px solid rgb(255, 0, 0); }');
+      await says(/^Applied\.$/);
+      await page.locator('select[aria-label="The moment to play"]').selectOption('used');
+      for (const side of ['a', 'b']) {
+        await page.locator('select[aria-label="The trainer it happens to"]').selectOption(side);
+        await page.locator('.css-try').getByRole('button', { name: 'Play' }).click();
+        await untilFrame((which) => document.querySelector(`.trainer-${which} .token.moment-used`), side);
+        assert.deepEqual(await overlayFrame().$$eval(`.trainer-${side} .token.moment-used`, (nodes) => nodes.map((node) => getComputedStyle(node).visibility)), ['visible'], `Trainer ${side.toUpperCase()}`);
+      }
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('lets Tab move on to the next control once Ctrl+M says so, and indent again after another Ctrl+M', async () => {
+      await openEditorFor('Sheet Keys');
+      await tab().click();
+      await input().fill('.a {}');
+      await says(/^Applied\.$/);
+      await input().press('Control+m');
+      assert.match(await status().textContent(), /Tab now moves to the next control/);
+      await input().press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Add a picture', 'the next control');
+      assert.equal(await input().inputValue(), '.a {}', 'and nothing was typed');
+      await input().focus();
+      await input().press('Control+m');
+      assert.match(await status().textContent(), /Tab now indents/);
+      await input().press('Control+End');
+      await input().press('Tab');
+      assert.equal(await input().inputValue(), '.a {}  ');
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains('css-input')), true);
+      assert.match(await page.locator('.css-help').textContent(), /Ctrl\+M/, 'and the help says so');
+    });
+
+    it('reaches the live overlay once the design is on air: cleaned, on the stage, with its pictures from the overlay\'s own address', async () => {
+      const overlay = await openPage(browser, `${server.base}/overlay`);
+      await overlay.waitForSelector('.scoreboard');
+      assert.equal(await overlay.$eval('#oto-design-css', (node) => node.textContent), '');
+      const picture = overlay.waitForResponse((response) => response.url().includes('/api/theme/assets/images/css-glow.png'));
+
+      await api('PUT', '/api/themes/Sheet%20Live', { colors: {}, css: `${SPACED}\n:root { --oto-moment-ms: 900; }\nhtml.has-logo .logo { opacity: .5; }\n.scoreboard { background-image: url(images/css-glow.png); }` });
+      const png = await fetch(`${server.base}/api/themes/Sheet%20Live/images/css-glow`, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: S.PNG });
+      assert.equal(png.status, 200);
+      await api('POST', '/api/theme/active', { name: 'Sheet Live' });
+
+      await overlay.waitForFunction(() => /css-glow/.test(document.getElementById('oto-design-css').textContent));
+      const sheet = await overlay.$eval('#oto-design-css', (node) => node.textContent);
+      assert.match(sheet, /^#stage \.sb-name\{letter-spacing:7px\}\n:root\{--oto-moment-ms:900\}\nhtml\.has-logo #stage \.logo\{opacity:\.5\}\n#stage \.scoreboard\{background-image:url\("\/api\/theme\/assets\/images\/css-glow\.png\?v=\d+"\)\}$/);
+      assert.equal((await picture).status(), 200, 'the picture comes from the overlay\'s address for the design on air');
+      assert.equal(await overlay.$eval('.sb-name', (node) => getComputedStyle(node).letterSpacing), '7px');
+      assert.equal(await overlay.evaluate(() => window.oto.momentDuration()), 900);
+      assert.equal(await overlay.evaluate(() => document.head.lastElementChild.id), 'oto-design-css', 'after the built-in style sheets');
+
+      // and off air, the built-in look again
+      await api('POST', '/api/theme/active', { name: null });
+      await overlay.waitForFunction(() => document.getElementById('oto-design-css').textContent === '');
+      assert.deepEqual(overlay.problems, []);
+      await overlay.context().close();
     });
   });
 

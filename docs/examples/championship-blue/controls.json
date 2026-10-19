@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "settings": {
+    "display": {
+      "benchAttacks": true,
+      "turnIndicator": true,
+      "moments": true
+    }
+  }
+}
