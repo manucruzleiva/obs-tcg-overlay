@@ -197,7 +197,7 @@ Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The ha
 - Energy and status: `attachEnergy` / `attachSpecialEnergy` (with `countsAsTurn`), `toggleStatus` / `clearStatus`, `gxPlus` / `vstarPlus` (and `Minus`, `Reset`).
 - Prizes: `prizePenaltySet`, `prizeCardsSet` (`{ cards }`: up to six `{ cardId, name, image }`, or `null`).
 - Deck: `setDeck` (`{ deck }`), `setDeckIcon` (`{ icon }`).
-- Feature cards: `addFeatureCard`, `addFeatureSeparator` (`{ symbol, at }`), `moveFeature` (`{ id, to }`).
+- Feature cards: `addFeatureCard`, `addFeatureSeparator` (`{ symbol, at }`), `moveFeature` (`{ id, to }`), `toggleFeatures` (`{ enabled }`: shown or hidden) and `setFeatureSide` (`{ side }`: the trainer whose bench they cover while they are shown; the game keeps both in `featureView: { visible, side }`).
 - On `action:match`: `nextGame`, `startGame`, `togglePause` (`{ enabled }`), `toggleTurn`. A Stadium put in play with `select` (target `stadium`) or `setStadium` takes `playedBy` and `consume`.
 - On `action:settings`: `update` with `display`, `screens`, sound and announcement settings.
 

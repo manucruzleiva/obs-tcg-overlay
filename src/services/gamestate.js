@@ -185,6 +185,8 @@ class GameStateService {
       trainerB: this.getDefaultTrainer('Trainer B'),
       stadium: { cardId: '', name: '', image: '', inPlay: false },
       featureCards: [],
+      // The feature cards are shown over the bench of a trainer, which they cover while they are shown (see setFeaturesVisible)
+      featureView: { visible: true, side: 'trainerA' },
       favoriteCardIds: [],
       matchScore: { trainerAWins: 0, trainerBWins: 0, bestOf: 3 },
       // Shown on the scoreboard, for example "Round 3" or "Top 8"
@@ -237,6 +239,9 @@ class GameStateService {
     merged.featureCards = (Array.isArray(merged.featureCards) ? merged.featureCards : [])
       .filter((entry) => entry && typeof entry === 'object' && (entry.separator === undefined ? typeof entry.name === 'string' : GAME.FEATURE_SEPARATORS.some((one) => one.symbol === entry.separator)))
       .slice(-MAX_FEATURE_ENTRIES);
+    // (they were shown in the middle before they went over a bench: shown, and over Trainer A's until the producer says otherwise)
+    const view = merged.featureView && typeof merged.featureView === 'object' ? merged.featureView : {};
+    merged.featureView = { visible: view.visible !== false, side: view.side === 'trainerB' ? 'trainerB' : 'trainerA' };
     // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
     if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
     if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
@@ -852,6 +857,19 @@ class GameStateService {
 
   clearFeatureCards() {
     this.state.featureCards = [];
+  }
+
+  // Show the feature cards (over the bench of the trainer setFeatureSide says, which they cover while they are shown) or hide them; omit
+  // `visible` to toggle. Returns whether they are shown now. (With no card to show nothing is shown either way.)
+  setFeaturesVisible(visible) {
+    const view = this.state.featureView;
+    view.visible = visible === undefined ? !view.visible : Boolean(visible);
+    return view.visible;
+  }
+
+  // Which trainer's bench the feature cards go over: 'trainerA' or 'trainerB'
+  setFeatureSide(side) {
+    if (side === 'trainerA' || side === 'trainerB') this.state.featureView.side = side;
   }
 
   // ---------------------------------------------------------------- settings

@@ -876,6 +876,22 @@ const CARD = {
     targets: () => ['featureCards'],
     run: (gs) => gs.clearFeatureCards(),
     label: () => 'Feature cards cleared'
+  },
+  // Show the feature cards over a trainer's bench (they cover it while they are shown), or hide them. `enabled` says which is wanted, so two
+  // producers pressing it at once agree; without it they are toggled.
+  toggleFeatures: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : ['featureView']),
+    run: (gs, side, p) => gs.setFeaturesVisible(typeof p.enabled === 'boolean' ? p.enabled : undefined),
+    label: (gs) => (gs.state.featureView.visible ? `Feature cards shown over ${who(gs, gs.state.featureView.side)}'s bench` : 'Feature cards hidden')
+  },
+  // Which trainer's bench the feature cards go over
+  setFeatureSide: {
+    targets: () => null,
+    run: (gs, side, p) => {
+      if (!isSide(p.side)) throw new ActionError('side must be trainerA or trainerB');
+      gs.setFeatureSide(p.side);
+    },
+    label: (gs) => `Feature cards over ${who(gs, gs.state.featureView.side)}'s bench`
   }
 };
 

@@ -717,6 +717,38 @@ describe('GameStateService', () => {
     assert.ok(loaded.state.featureCards.every((card) => !('note' in card)));
   });
 
+  it('shows the feature cards over Trainer A\'s bench to begin with, and can hide them or put them over the other bench', () => {
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
+    assert.equal(gs.setFeaturesVisible(false), false);
+    assert.equal(gs.setFeaturesVisible(), true, 'without a value it is toggled');
+    assert.equal(gs.setFeaturesVisible(), false);
+    gs.setFeatureSide('trainerB');
+    assert.equal(gs.state.featureView.side, 'trainerB');
+    gs.setFeatureSide('trainerC');
+    gs.setFeatureSide(undefined);
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' }, 'a side that is not a trainer changes nothing');
+    gs.addFeatureCard({ cardId: 'a', name: 'Boss Orders', image: IMG });
+    gs.clearFeatureCards();
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' }, 'the cards come and go, and where they show stays');
+    gs.fullReset();
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
+  });
+
+  it('loads where the feature cards show, and shows them over Trainer A\'s bench for a game saved before they went over a bench', () => {
+    const saved = makeGame().state;
+    saved.featureView = { visible: false, side: 'trainerB' };
+    assert.deepEqual(makeGame({ saved }).state.featureView, { visible: false, side: 'trainerB' });
+    delete saved.featureView;
+    assert.deepEqual(makeGame({ saved }).state.featureView, { visible: true, side: 'trainerA' });
+    for (const view of [null, 'over there', 7, [], { visible: 'no', side: 'middle', extra: 1 }]) {
+      saved.featureView = view;
+      assert.deepEqual(makeGame({ saved }).state.featureView, { visible: true, side: 'trainerA' }, JSON.stringify(view));
+    }
+    // and from an imported configuration
+    gs.importState({ featureView: { visible: false, side: 'trainerB', extra: 1 } });
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' });
+  });
+
   it('snapshots and restores while the revision keeps counting up', () => {
     const snapshot = gs.snapshot();
     gs.state.trainerA.name = 'Changed';
@@ -1026,6 +1058,23 @@ describe('actions', () => {
     }
     assert.throws(() => actions.resolve('action:trainerB', { action: 'toggleStatus', condition: 'asleep' }).run(gs), /no Active Pokémon/);
     assert.deepEqual(gs.state.trainerB.active.status, []);
+  });
+
+  it('shows and hides the feature cards, puts them over either bench, and says so', () => {
+    gs.state.trainerB.name = 'Gary';
+    assert.deepEqual(actions.resolve('action:card', { action: 'toggleFeatures' }).targets(), ['featureView']);
+    assert.equal(actions.resolve('action:card', { action: 'toggleFeatures', enabled: false }).targets(), null, 'last writer wins');
+    assert.equal(actions.resolve('action:card', { action: 'setFeatureSide', side: 'trainerB' }).targets(), null);
+    assert.equal(run('action:card', { action: 'toggleFeatures' }).label, 'Feature cards hidden');
+    assert.equal(run('action:card', { action: 'toggleFeatures', enabled: false }).label, 'Feature cards hidden', 'two producers agree');
+    assert.equal(gs.state.featureView.visible, false);
+    assert.equal(run('action:card', { action: 'setFeatureSide', side: 'trainerB' }).label, 'Feature cards over Gary\'s bench');
+    assert.equal(run('action:card', { action: 'toggleFeatures', enabled: true }).label, 'Feature cards shown over Gary\'s bench');
+    assert.equal(run('action:card', { action: 'setFeatureSide', side: 'trainerA' }).label, 'Feature cards over Trainer A\'s bench');
+    for (const payload of [{}, { side: 'both' }, { side: 7 }]) {
+      assert.throws(() => actions.resolve('action:card', { action: 'setFeatureSide', ...payload }).run(gs), actions.ActionError, JSON.stringify(payload));
+    }
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
   });
 
   it('applies a draft to a fork without touching the live game', () => {

@@ -815,6 +815,27 @@ describe('server', () => {
     assert.deepEqual(state.favoriteCardIds, []);
   });
 
+  it('shows the feature cards over a trainer\'s bench, hides them, and an undo puts them back as they were', async () => {
+    let { state } = await producer.act('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Boss Orders', image: IMG });
+    assert.deepEqual(state.featureView, { visible: true, side: 'trainerA' }, 'shown over Trainer A\'s bench to begin with');
+    ({ state } = await producer.act('action:card', { action: 'setFeatureSide', side: 'trainerB' }));
+    assert.deepEqual(state.featureView, { visible: true, side: 'trainerB' });
+    ({ state } = await producer.act('action:card', { action: 'toggleFeatures', enabled: false }));
+    assert.deepEqual(state.featureView, { visible: false, side: 'trainerB' });
+    assert.match(producer.last('activity').label, /Feature cards hidden/);
+    const refused = await producer.act('action:card', { action: 'setFeatureSide', side: 'middle' });
+    assert.equal(refused.ok, false);
+    assert.match(refused.rejected.message, /trainerA or trainerB/);
+
+    ({ state } = await producer.act('action:undo', {}));
+    assert.deepEqual(state.featureView, { visible: true, side: 'trainerB' });
+    ({ state } = await producer.act('action:undo', {}));
+    assert.deepEqual(state.featureView, { visible: true, side: 'trainerA' });
+    ({ state } = await producer.act('action:redo', {}));
+    assert.deepEqual(state.featureView, { visible: true, side: 'trainerB' });
+    assert.deepEqual(state.featureCards.map((card) => card.name), ['Boss Orders'], 'the cards stay');
+  });
+
   it('records a finished match without dropping the score update', async () => {
     // games won earlier in this file (a trainer taking the last prize card adds a win) are not part of this one
     await producer.act('action:match', { action: 'resetMatchScore' });
