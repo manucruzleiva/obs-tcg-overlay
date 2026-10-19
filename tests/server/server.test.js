@@ -565,7 +565,10 @@ describe('server', () => {
       assert.equal(fine.state.trainerA.prizes.count, 5);
 
       const seenAgain = other.state.revision;
-      await choose('trainerA', [prizeCard(2), prizeCard(3)]); // and somebody else chooses the cards
+      // and somebody else chooses the cards, having seen Noa's (their page may not have been told of it yet, so the revision is given: without it a
+      // slow machine sends the producer's older one, the server refuses that change as a conflict with Noa's, and there is nothing for Noa to clash with)
+      const chosen = await choose('trainerA', [prizeCard(2), prizeCard(3)], { baseRevision: fine.state.revision });
+      assert.equal(chosen.ok, true, JSON.stringify(chosen.rejected));
       const late = await other.act('action:trainerA', { action: 'prizeCardsSet', cards: [prizeCard(5)] }, { baseRevision: seenAgain });
       assert.equal(late.ok, false);
       assert.equal(late.rejected.reason, 'conflict');
