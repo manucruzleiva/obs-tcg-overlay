@@ -233,9 +233,19 @@ describe('packing and unpacking', () => {
     assert.deepEqual(opened.ignored, Array.from({ length: 6 }, (unused, n) => `images/css-p${n + 34}.png`));
   });
 
-  it('reads a style sheet of 256 KB at most', () => {
+  it('reads a style sheet of 256 KB at most, and says so in KB, whether the package is a folder zipped or not', () => {
     assert.ok(unpack(zip({ 'design.json': { name: 'x' }, 'styles.css': Buffer.alloc(256 * 1024, 0x20) }), DEFAULTS).design.css);
-    refuses(() => unpack(zip({ 'design.json': { name: 'x' }, 'styles.css': Buffer.alloc(256 * 1024 + 1, 0x20) })), /"styles.css" is too large/, ZipError);
+    for (const size of [256 * 1024 + 1, 270 * 1024, 300 * 1024]) {
+      for (const folder of ['', 'my-design/']) {
+        refuses(() => unpack(zip({ [`${folder}design.json`]: { name: 'x' }, [`${folder}styles.css`]: Buffer.alloc(size, 0x20) })), /^The style sheet is too large \(256 KB at most\)$/, PackageError);
+      }
+    }
+  });
+
+  it('takes an empty styles.css for no style sheet', () => {
+    const opened = unpack(zip({ 'design.json': { name: 'x' }, 'styles.css': Buffer.alloc(0) }), DEFAULTS);
+    assert.equal(opened.design.css, null);
+    assert.deepEqual(opened.ignored, [], 'it is not a file it has no use for');
   });
 
   it('reads the settings whether they are wrapped or bare, and drops what is not shareable', () => {
@@ -545,6 +555,25 @@ describe('the package service', () => {
       assert.equal(installed.images['css-glow'], 'images/css-glow.png');
       assert.equal(themes.cssOf(installed.name), css);
       assert.match(themes.resolved(installed.name).css, /^#stage \.logo\{background:url\("\/api\/theme\/assets\/images\/css-glow\.png\?v=\d+"\);animation:glow 2s infinite\}/);
+    });
+
+    it('installs a design whose styles.css is empty, as one without a style sheet, and one it exported itself with an emptied one', () => {
+      const empty = zip({ 'design.json': { name: 'Empty Css' }, 'styles.css': Buffer.alloc(0) });
+      assert.equal(service.inspect(empty).design.css, null, 'the install dialog does not say it has a style sheet');
+      const installed = themes.get(service.install(empty).design.name);
+      assert.equal(installed.styles, undefined);
+
+      // emptied by hand in the design's folder, then exported
+      themes.save('Hand', { css: '.score { color: red; }' });
+      fs.writeFileSync(path.join(themes.folderFor('Hand'), 'styles.css'), '');
+      assert.equal(themes.get('Hand').styles, undefined, 'an empty file is no style sheet');
+      const exported = service.exportPackage({ design: 'Hand' }).buffer;
+      assert.equal(readZip(exported).has('styles.css'), false);
+      assert.equal(service.inspect(exported).design.css, null);
+      assert.ok(themes.get(service.install(exported).design.name));
+
+      // a design added from elsewhere with an empty style sheet
+      assert.equal(themes.addDesign({ name: 'Added', css: Buffer.alloc(0) }).styles, undefined);
     });
 
     it('installs nothing at all when the style sheet of a package has something not allowed in it', () => {

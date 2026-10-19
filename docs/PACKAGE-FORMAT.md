@@ -142,7 +142,7 @@ Pictures and fonts must be **files in the package**, for the style sheet too. A 
 
 A design's style sheet restyles and animates the overlay. How to write one, and the moments of a match it can animate (`moment-damage`, `moment-ko`, `moment-taken`...), are in the [design guide](DESIGNING.md#style-sheet-and-animations). This is exactly what OTO lets through.
 
-**The file.** One file, `styles.css`, next to `design.json` (OTO reads it when the package has a `design.json`, as it does the pictures). Plain UTF-8 text, up to 256 KB; a byte order mark at the start is dropped. Control characters other than tabs and line ends are refused.
+**The file.** One file, `styles.css`, next to `design.json` (OTO reads it when the package has a `design.json`, as it does the pictures). Plain UTF-8 text, up to 256 KB; a byte order mark at the start is dropped. Control characters other than tabs and line ends are refused. An empty `styles.css` is the same as none: the design is installed without a style sheet (and OTO does not export an empty one).
 
 **When it is checked.** When a package is installed, a style sheet with anything not allowed in it makes the whole install fail, with the line and the reason (`Line 3: @import is not allowed (a design can only use the files it carries).`), and nothing is installed. The design editor and the API refuse it the same way when it is saved. OTO keeps the file as it was written, comments and all. Each time an overlay gets the design, the file is read again: what is not allowed is left out (the smallest part that is bad: a declaration, a selector, a rule or an at-rule, for a file that was changed by hand), and the rest is written out anew from what was read, never copied from the text.
 

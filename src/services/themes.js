@@ -338,6 +338,9 @@ class ThemeStore {
     }
     if (!raw || typeof raw !== 'object') return null;
     const exists = (ref) => fs.existsSync(path.join(folder, ref));
+    const sizeOf = (ref) => {
+      try { return fs.statSync(path.join(folder, ref)).size; } catch { return 0; }
+    };
 
     let name;
     try { name = cleanName(raw.name); } catch { return null; }
@@ -368,8 +371,9 @@ class ThemeStore {
     for (const key of IMAGE_KEYS) if (Object.hasOwn(images, key) && kept(key)) design.images[key] = images[key];
     for (const key of Object.keys(images).filter((name) => CSS_IMAGE_KEY.test(name) && kept(name)).slice(0, CSS_IMAGE_MAX)) design.images[key] = images[key];
     if (typeof raw.font === 'string' && fontRef.test(raw.font) && exists(raw.font)) design.font = raw.font;
-    // the style sheet: only whether there is one (its text is read when it is needed, as this runs for every design, often)
-    if (typeof raw.styles === 'string' && cssRef.test(raw.styles) && exists(raw.styles)) design.styles = raw.styles;
+    // the style sheet: only whether there is one (its text is read when it is needed, as this runs for every design, often). An empty
+    // file is none (so it is not put in a package either).
+    if (typeof raw.styles === 'string' && cssRef.test(raw.styles) && sizeOf(raw.styles) > 0) design.styles = raw.styles;
     // a font for a group of text, and the fonts to use for it
     for (const role of EXTRA_FONT_ROLES) {
       const ref = raw.fonts && raw.fonts[role];
@@ -748,7 +752,7 @@ class ThemeStore {
         design.images[key] = `images/${key}.${kind.ext}`;
         put(design.images[key], buffer);
       }
-      if (parts.css) {
+      if (parts.css && parts.css.length > 0) { // (an empty style sheet is none)
         checkCss(parts.css);
         design.styles = CSS_FILE;
         put(CSS_FILE, parts.css);

@@ -108,7 +108,7 @@ function pack({ name, design = null, controls = null, app = '' }) {
 // The most a file of this name may hold (unknown files are read, bounded, and then ignored)
 function limitFor(name) {
   if (['manifest.json', 'design.json', 'controls.json'].includes(name)) return MB;
-  if (name === CSS_FILE) return CSS_MAX_BYTES;
+  if (name === CSS_FILE) return MB; // (checked against its own limit once it is read, wrapped in a folder or not: see unpack)
   if (name.startsWith('images/')) return MAX_IMAGE_BYTES;
   if (name.startsWith('fonts/')) return MAX_IMAGE_BYTES;
   if (name.startsWith('sounds/')) return MAX_SOUND_BYTES;
@@ -206,10 +206,12 @@ function unpack(buffer, defaults = null) {
       if (cssImages.length < CSS_IMAGE_MAX) cssImages.push(match[1]);
     }
     for (const key of cssImages) design.images[key] = findFile(files, 'images', key, IMAGE_EXTENSIONS, claimed[key]);
-    // the style sheet, next to design.json
+    // the style sheet, next to design.json (an empty file is no style sheet)
     if (files.has(CSS_FILE)) {
-      design.css = files.get(CSS_FILE);
+      const css = files.get(CSS_FILE);
       used.add(CSS_FILE);
+      if (css.length > CSS_MAX_BYTES) throw new PackageError(`The style sheet is too large (${CSS_MAX_BYTES / 1024} KB at most)`);
+      if (css.length > 0) design.css = css;
     }
     design.font = findFile(files, 'fonts', 'font', FONT_EXTENSIONS, rawDesign.font);
     const claimedFonts = rawDesign.fonts && typeof rawDesign.fonts === 'object' ? rawDesign.fonts : {};

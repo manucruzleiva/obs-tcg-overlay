@@ -175,6 +175,8 @@ describe('refusing what is not safe or not a package', () => {
     const many = rawZip(Array.from({ length: 5 }, (_, i) => ({ name: `f${i}`, data: text('x') })));
     refuses(many, /too many files/, { count: 4 });
     refuses(rawZip([{ name: 'big.bin', data: Buffer.alloc(3 * MB) }]), /"big.bin" is too large \(2 MB at most\)/, { entry: () => 2 * MB });
+    refuses(rawZip([{ name: 'small.css', data: Buffer.alloc(270 * 1024) }]), /"small.css" is too large \(256 KB at most\)/, { entry: () => 256 * 1024 });
+    refuses(rawZip([{ name: 'odd.bin', data: Buffer.alloc(2 * MB) }]), /"odd.bin" is too large \(1.5 MB at most\)/, { entry: () => 1.5 * MB });
     refuses(rawZip([{ name: 'secret.bin', data: text('x') }]), /"secret.bin" is too large/, { entry: (name) => (name === 'secret.bin' ? 0 : MB) });
     refuses(rawZip([{ name: 'a', data: Buffer.alloc(2 * MB) }, { name: 'b', data: Buffer.alloc(2 * MB) }]), /too large \(3 MB at most once unpacked\)/, { total: 3 * MB });
     refuses(rawZip([{ name: 'a', data: text('x'), packed: 0xffffffff }]), /too large/);
