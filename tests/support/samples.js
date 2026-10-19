@@ -130,6 +130,7 @@ const CSS_ATTACKS = [
   ['<!-- and -->', '<!-- .t { color: red } -->'],
   ['!important', '.t { display: block!important } .u { display: block ! important } .v { display: block !IMPORTANT }'],
   ['!important in a layer', '@layer x { [hidden] { display: block !important } }'],
+  ['a transition of display, which beats !important', '.t, [hidden] { transition: display 100000s step-end allow-discrete } .u { transition-behavior: allow-discrete }'],
   ['body', 'body { background: #000 url(//e.x/ao) }'],
   [':root', ':root { background: #000 }'],
   ['html', 'html { opacity: 0 }'],

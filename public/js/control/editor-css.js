@@ -102,7 +102,7 @@ export class CssPanel {
     return h('details', { class: 'css-help' },
       h('summary', {}, 'How to use it'),
       h('ul', {},
-        h('li', {}, 'Every rule is for the overlay\'s stage: ', code('.scoreboard'), ' is read as ', code('#stage .scoreboard'), ', so it wins over the built-in look without ', code('!important'), ' (which is not allowed: it could show what the producer switched off).'),
+        h('li', {}, 'Every rule is for the overlay\'s stage: ', code('.scoreboard'), ' is read as ', code('#stage .scoreboard'), ', so it wins over the built-in look without ', code('!important'), ' (which is not allowed, nor is a transition of ', code('display'), ' with ', code('allow-discrete'), ': either could show what the producer switched off).'),
         h('li', {}, 'A rule for ', code(':root'), ' alone can only set custom properties, such as ', code('--accent: #ff00aa'), ' or how long a moment lasts: ', code('--oto-moment-ms: 1200'), ' (1500 unless it says).'),
         h('li', {}, 'The design\'s pictures and fonts: ', code('var(--logoImage)'), ', ', code('var(--css-name)'), ', ', code('url(images/css-name.png)'), ', ', code('url(fonts/font.woff2)'), '. Nothing else can be loaded: no web addresses, no ', code('@import'), '.'),
         h('li', {}, 'For a short while after something happens, the overlay puts a class on the piece it happened to. On a Pokémon\'s tile (', code('.mon'), '): ',

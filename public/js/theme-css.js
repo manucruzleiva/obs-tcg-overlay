@@ -4,8 +4,8 @@
  * types, and previews the cleaned one). Loaded in the browser as OTO_THEME_CSS.
  *
  * A style sheet can restyle and animate anything on the overlay's stage, and nothing else: it cannot load anything but the design's own
- * pictures and fonts, cannot paint the page around the stage (OBS needs it see-through), and cannot use !important (which could show
- * what the producer switched off).
+ * pictures and fonts, cannot paint the page around the stage (OBS needs it see-through), and cannot use !important or a transition of
+ * display (allow-discrete), either of which could show what the producer switched off.
  *
  * It is read the way a browser reads CSS (CSS Syntax Level 3): escapes are decoded, comments are dropped, url(...) and strings are read
  * as browsers read them, so a name written with an escape, or cut in two by a comment, is seen for what it is. What comes out is written
@@ -679,7 +679,12 @@
       for (const item of items) {
         switch (item.type) {
           case 'ws': pieces.push(SPACE); break;
-          case 'ident': case 'number': case 'percentage': case 'dimension': case 'hash': case ',':
+          case 'ident':
+            // (a transition of display beats the !important that keeps a piece the producer switched off hidden)
+            if (lower(item.value) === 'allow-discrete') fail(item.line, 'allow-discrete is not allowed (it could show what the producer switched off)');
+            pieces.push(tokenPiece(item));
+            break;
+          case 'number': case 'percentage': case 'dimension': case 'hash': case ',':
             pieces.push(tokenPiece(item));
             break;
           case 'string':

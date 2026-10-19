@@ -2097,6 +2097,29 @@ describe('overlay', { skip }, () => {
       assert.ok(await page.evaluate(() => window.sheetWrites) > 0, 'a change is written');
       await page.evaluate(() => window.oto.applyTheme(null));
     });
+
+    // (the check of a style sheet refuses allow-discrete: this is what the overlay does about one that would get here all the same)
+    it('cannot keep a piece the producer switched off on the stage with a transition of display, which beats !important', async () => {
+      const pieces = ['.scoreboard', '.trainer-a .active', '.trainer-a .prizes'];
+      const shown = () => page.evaluate((selectors) => selectors.map((selector) => getComputedStyle(document.querySelector(selector)).display), pieces);
+      await wear(`${pieces.map((selector) => `#stage ${selector}`).join(',')}{transition:display 100000s step-end allow-discrete}`);
+      assert.ok((await shown()).every((display) => display !== 'none'), 'they are there to begin with');
+      try {
+        await send('action:settings', { action: 'update', display: { scoreboard: false, activePokemon: false, prizes: false } });
+        await page.waitForFunction(() => document.querySelector('.scoreboard').classList.contains('opt-off'));
+        await wait(200);
+        assert.deepEqual(await shown(), ['none', 'none', 'none'], 'switched off at once');
+        // and still, after the next change of the game
+        await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+        await page.waitForFunction(() => document.querySelector('.trainer-a .active .hp-text').textContent === '90/100');
+        await wait(200);
+        assert.deepEqual(await shown(), ['none', 'none', 'none']);
+        assert.equal(await page.evaluate(() => document.querySelector('.scoreboard').checkVisibility()), false);
+      } finally {
+        await send('action:settings', { action: 'update', display: { scoreboard: true, activePokemon: true, prizes: true } });
+        await page.evaluate(() => window.oto.applyTheme(null));
+      }
+    });
   });
 
   // What happens in the game is marked for a while on the piece it happened to ("moments": classes a design's style sheet can animate), and

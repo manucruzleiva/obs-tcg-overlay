@@ -18,8 +18,10 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-[hidden] { display: none !important; }
-.opt-off { display: none !important; }
+/* What is hidden, and what the producer switched off, stays off. A running transition beats !important (a design's
+   "transition: display 9s allow-discrete" would keep a piece on the stage for that long), so none can start or go on here. */
+[hidden] { display: none !important; transition: none !important; }
+.opt-off { display: none !important; transition: none !important; }
 
 /* A design can move and resize pieces of the overlay: overlay.js sets --lx, --ly (pixels) and --ls (scale) */
 [data-block].moved { transform: translate(var(--lx, 0px), var(--ly, 0px)) scale(var(--ls, 1)); }

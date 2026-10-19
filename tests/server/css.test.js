@@ -105,6 +105,7 @@ function assertSafe(css, own = isOwnRef) {
   tokens.forEach((token, index) => {
     assert.ok(!['url', 'bad-url', 'bad-string', 'cdo', 'cdc'].includes(token.type), `no ${token.type} token in ${css}`);
     assert.ok(!(token.type === 'delim' && token.value === '!'), `no ! (so no !important) in ${css}`);
+    assert.ok(!(token.type === 'ident' && token.value.toLowerCase() === 'allow-discrete'), `no allow-discrete (no transition of display) in ${css}`);
     if (token.type === 'at') assert.ok(AT_RULES.includes(token.value.toLowerCase()), `@${token.value} in ${css}`);
     if (token.type === 'function') {
       const name = token.value.toLowerCase();
@@ -194,6 +195,7 @@ describe('the style sheet of a design', () => {
       assert.equal(out('an attribute selector that tells what an attribute holds'), '#stage [data-x^="a"]{}');
       assert.equal(out('!important'), '#stage .t{display:block}\n#stage .u{display:block}\n#stage .v{display:block}', 'the declaration stays, without !important');
       assert.equal(out('!important in a layer'), '@layer x{\n#stage [hidden]{display:block}\n}');
+      assert.equal(out('a transition of display, which beats !important'), '#stage .t,#stage [hidden]{}\n#stage .u{}');
       assert.equal(out(':root'), ':root{}');
       assert.equal(out('html'), 'html{}');
       assert.equal(out('body'), '');
@@ -403,6 +405,19 @@ describe('the style sheet of a design', () => {
         refuses(text, /!/);
         assert.equal(written(text), '#stage .a{}', text);
       }
+    });
+
+    it('refuses a transition of display (allow-discrete), which would beat the !important that keeps a piece switched off', () => {
+      for (const text of [
+        '.a{transition:display 100000s step-end allow-discrete}', '.a{transition-behavior:allow-discrete}', '.a{TRANSITION:display 9s ALLOW-DISCRETE}',
+        '.a{transition:display 9s allow\\-discrete}', '.a{transition:opacity 1s, display 9s allow-discrete}', '.a{--b:allow-discrete}', '.a{transition-behavior:var(--b, allow-discrete)}'
+      ]) {
+        refuses(text, /^Line 1: allow-discrete is not allowed \(it could show what the producer switched off\)\.$/);
+        assert.equal(written(text), '#stage .a{}', text);
+      }
+      assert.equal(written('.a{transition:display 9s allow-discrete;opacity:.5}'), '#stage .a{opacity:.5}', 'the rest of the rule stays');
+      assert.equal(strict('.a{transition:opacity .3s ease, transform 1s;transition-behavior:normal}').css, '#stage .a{transition:opacity .3s ease, transform 1s;transition-behavior:normal}', 'other transitions are fine');
+      assert.throws(() => checkValue('allow-discrete'), /allow-discrete is not allowed/, 'nor in a color of a design');
     });
 
     it('refuses the properties that could run code, however they are written', () => {
