@@ -1,0 +1,113 @@
+{
+  "name": "Championship Blue",
+  "author": "OTO",
+  "description": "Two blue columns that frame a top-down table camera, in the style of big tournament streams.",
+  "colors": {
+    "--accent": "#4fc3ff",
+    "--accent-hover": "#8ad8ff",
+    "--trainer-a": "#ffd23f",
+    "--trainer-b": "#ffd23f",
+    "--ability": "#ff5a6e",
+    "--tool": "#b18cff",
+    "--stadium": "#3ee0a0",
+    "--supporter": "#ffb547",
+    "--bg-panel": "rgba(10, 42, 102, 0.94)",
+    "--bg-card": "rgba(16, 56, 128, 0.96)",
+    "--bg-primary": "#071a40",
+    "--bg-secondary": "#0d2a5e",
+    "--bg-tertiary": "#163a7a",
+    "--fg-primary": "#ffffff",
+    "--fg-secondary": "#bcd4ff",
+    "--fg-muted": "#7390c4",
+    "--success": "#3a8dff",
+    "--warning": "#f5c42c",
+    "--danger": "#ff7a1a",
+    "--info": "#4fc3ff",
+    "--border": "rgba(120, 190, 255, 0.55)",
+    "--shadow": "rgba(0, 10, 40, 0.6)",
+    "--radius": "10px",
+    "--radius-sm": "6px"
+  },
+  "fontFamilies": {
+    "display": "\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif"
+  },
+  "tile": {
+    "active": {
+      "hp": "bottom",
+      "energy": "bottom-left",
+      "retreat": "bottom-right",
+      "status": "top-right"
+    }
+  },
+  "prizeStyle": "pokeball",
+  "crop": {
+    "stadium": {
+      "x": 0.082,
+      "y": 0.2,
+      "w": 0.836,
+      "h": 0.1
+    }
+  },
+  "layout": {
+    "trainerA": {
+      "x": 0,
+      "y": 0,
+      "scale": 1.3
+    },
+    "trainerA.prizes": {
+      "x": 0,
+      "y": -19,
+      "scale": 0.538
+    },
+    "trainerA.active": {
+      "x": -71,
+      "y": -133,
+      "scale": 0.554
+    },
+    "trainerA.bench": {
+      "x": 68,
+      "y": -179,
+      "scale": 1.0
+    },
+    "trainerA.tokens": {
+      "x": -15,
+      "y": 673,
+      "scale": 0.615
+    },
+    "trainerB": {
+      "x": 0,
+      "y": 0,
+      "scale": 1.3
+    },
+    "trainerB.prizes": {
+      "x": 0,
+      "y": -19,
+      "scale": 0.538
+    },
+    "trainerB.active": {
+      "x": 62,
+      "y": -133,
+      "scale": 0.554
+    },
+    "trainerB.bench": {
+      "x": -68,
+      "y": -179,
+      "scale": 1.0
+    },
+    "trainerB.tokens": {
+      "x": 15,
+      "y": 673,
+      "scale": 0.615
+    },
+    "scoreboard": {
+      "x": 0,
+      "y": 958,
+      "scale": 0.74
+    },
+    "stadium": {
+      "x": 0,
+      "y": -939,
+      "scale": 1
+    }
+  }
+}

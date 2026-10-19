@@ -39,10 +39,11 @@ Everything a design uses is a **file inside it**. A design can never point at a 
 
 ## Learn from the built-in look
 
-Two ways to see how the default look is made, so you can change it instead of starting from nothing:
+Three ways to see how a design is made, so you can change one instead of starting from nothing:
 
 - **In the app:** *Copy of the built-in look* (Look tab) creates a design with every color and the font lists of the built-in look written out. Open the editor's **Code** tab to read it as text.
 - **In the repository:** [docs/examples/built-in-look/design.json](examples/built-in-look/design.json) is the same design as a file. Every field is written out with its usual value: colors, `fontFamilies`, `layout`, `crop`, `tile`, `prizeStyle`, `prizeLayout`, `orientation` and `spaces`. Delete what you do not need, change what you like, put it in a folder named after your design (see [Making a design by hand](#making-a-design-by-hand)). A test keeps this file in step with the real defaults, so it stays honest.
+- **A finished example:** [docs/examples/championship-blue](examples/championship-blue/README.md) frames a top-down table camera with two blue columns, with its `.oto` ready to install.
 
 ---
 
