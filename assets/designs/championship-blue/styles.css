@@ -67,8 +67,8 @@
 .t-top::after {
   content: "";
   position: absolute;
-  top: 304px;
-  height: 754px;
+  top: 228px;
+  height: 830px;
   width: 8px;
   border-radius: 4px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 5%, #e6faff 50%, #ffffff 95%, rgba(255, 255, 255, 0) 100%);
@@ -277,7 +277,7 @@
 .sb-round[hidden] + .sb-bo, .sb-round.opt-off + .sb-bo { padding-left: 0; border-left: 0; }
 
 /* ============================================================== the prize strip: on the inner edge at the top, a ball for each prize card
-   (under it, in the same bump of the frame, the tray of the locks: see below) */
+   (the locks that are on come out under it: see below) */
 
 .prizes {
   position: absolute;
@@ -354,36 +354,18 @@
 .marker-icon { height: 24px; }
 .token.marker.no-icon { padding: 0 8px; border-radius: 999px; background: rgba(140, 200, 255, 0.14); }
 
-/* ============================================================== the locks: the player's, in a tray under the prize strip
-   The tray has a place for each lock, faint while it is off (.prizes::after, so it goes with the prize strip). A lock that is on is an
-   orange ball with its picture in its place, like a prize ball, with its name in a pill that comes out over the table beside it. */
+/* ============================================================== the locks: the player's, under the prize strip, only while they are on
+   A lock that is on is an orange pill with its picture in a ball at the end next to the column, coming out over the table. With no
+   lock on, nothing is drawn (the engine hides .locks). */
 
-.prizes::after {
-  content: "";
-  position: absolute;
-  left: -1.5px;
-  top: calc(100% + 4px);
-  width: 36px;
-  height: 72px;
-  box-sizing: border-box;
-  border-radius: 8px;
-  border: 1.5px solid #3f80da;
-  background:
-    var(--css-lock-item, none) 50% 8px / 22px 22px no-repeat,
-    var(--css-lock-evolution, none) 50% 38px / 22px 22px no-repeat,
-    linear-gradient(180deg, #0c2f80 0%, #031a5e 100%);
-  background-blend-mode: luminosity, luminosity, normal;
-  box-shadow: inset 0 1px 0 rgba(200, 232, 255, 0.4), inset 0 0 10px rgba(90, 160, 255, 0.25), 0 2px 4px rgba(0, 8, 42, 0.5);
-  opacity: 0.55;
-}
 .locks {
   position: absolute;
   z-index: 3;
-  top: 216px;
+  top: 222px;
   width: 36px;
   height: 56px;
-  display: block;
 }
+.locks[hidden] { display: none; }
 .trainer-a .locks { left: 445px; }
 .trainer-b .locks { left: -41px; }
 .lock {
@@ -1101,7 +1083,7 @@
 .trainer.moment-turn::after {
   content: "";
   position: absolute;
-  top: 304px;
+  top: 228px;
   width: 12px;
   height: 200px;
   margin-left: -2px;
@@ -1196,7 +1178,7 @@
   70% { opacity: 0.6; transform: perspective(200px) rotateY(180deg) scale(1.08); filter: grayscale(0.5); box-shadow: 0 0 10px 3px rgba(140, 230, 255, 0.5); }
   100% { opacity: 0.16; transform: perspective(200px) rotateY(360deg) scale(1); filter: grayscale(1); box-shadow: none; }
 }
-@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(570px); } }
+@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(650px); } }
 @keyframes chb-head-on { 0% { opacity: 0; } 25% { opacity: 1; box-shadow: 0 0 30px 8px rgba(120, 225, 255, 0.95), inset 0 0 28px rgba(120, 225, 255, 0.65); } 100% { opacity: 1; } }
 @keyframes chb-token {
   0% { transform: scale(1); text-shadow: 0 0 0 rgba(140, 230, 255, 0); }
