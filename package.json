@@ -1,6 +1,6 @@
 {
   "name": "obs-tcg-overlay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "OTO (OBS TCG Overlay): streaming overlay and producer control panel for Pokémon TCG matches",
   "main": "electron/main.js",
   "scripts": {

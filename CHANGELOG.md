@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-21
+
 ### Added
 - **Decklists**: paste each trainer's decklist as Pokémon TCG Live exports it (the **Decklist** button, or `L`). Its cards are found in the card library on this computer (no internet needed) and every card picker for that trainer offers the ones that fit first, narrowed to what is typed; a card the library has not got is kept by its name and searched for when it is chosen. See [docs/USING.md](docs/USING.md#run-a-match)
 - **Discard pile and Lost Zone** for each trainer: on the overlay next to the prize cards (how many cards and the last three, each with a switch in Settings, Overlay, and a piece a design can move), and in the control panel (the **Discard** and **Lost Zone** buttons, or `O`) to put cards in from the decklist or a search, move them between the two piles and take them out. A knocked out Pokémon goes to the discard pile with its earlier stages, its tools and its Energy, or to the Lost Zone when the knock out says so. Next game and New match empty them. A design can color the Lost Zone with `--lost-zone`
