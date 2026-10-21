@@ -265,7 +265,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .prizes.compact .block-title .set-prizes { margin-left: auto; }
 .prizes.compact .prize-number { min-width: 30px; font-size: 30px; }
 .prizes.compact .pips { gap: 4px; margin-left: 4px; }
-.prizes.compact .pip { width: 18px; height: 25px; }
+/* (each pip is a button that takes that prize card or gives it back: big enough to click, the shape of a card) */
+.prizes.compact .pip { width: 23px; height: 32px; }
 .prize-extra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; }
 .prize-extra .switch { gap: 8px; font-size: 12.5px; }
 .prize-extra .penalty-row { margin-top: 0; gap: 6px; }
@@ -282,6 +283,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .pip-face { display: block; width: 100%; height: 100%; object-fit: cover; }
 .pip.has-card, .pip.has-card.penalty { background: var(--bg-tertiary); border-color: rgba(255, 255, 255, 0.4); }
 .pip.has-card:not(.on) { opacity: 0.4; filter: grayscale(1); }
+/* a taken prize card without a card is an empty place */
+.pip.taken:not(.has-card) { border-style: dashed; }
 .pip.has-card.penalty { border-color: var(--danger); }
 .pip.has-card.penalty::after { content: ""; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--danger); opacity: 0.55; }
 .toggle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 12px; }

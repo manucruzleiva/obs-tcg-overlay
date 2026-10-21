@@ -436,7 +436,7 @@ describe('control panel', { skip }, () => {
       }
       // it all still works from its new place
       await panel('a').locator('.pip').nth(2).click();
-      await expectLive((state) => state.trainerA.prizes.count, 3);
+      await expectLive((state) => [state.trainerA.prizes.taken, state.trainerA.prizes.count], [[false, false, true, false, false, false], 5]);
       await panel('a').getByRole('button', { name: 'Penalty: one more' }).click();
       await expectLive((state) => state.trainerA.prizes.penalty, 1);
       await panel('a').getByRole('button', { name: 'Penalty: one less' }).click();
@@ -472,14 +472,14 @@ describe('control panel', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
-    it('shows the cards on the prize pips of that trainer, grayed out when taken and red under a penalty, and a pip still sets the prizes that are left', async () => {
+    it('shows the cards on the prize pips of that trainer, grayed out when taken and red under a penalty, and a pip takes that prize card only', async () => {
       await producer.act('action:trainerA', { action: 'prizeCardsSet', cards: [PIKACHU, null, PIKACHU].map((card) => card && { cardId: card[0], name: card[1], image: card[2] }) });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.has-card').length === 2);
       const pips = panel('a').locator('.pip');
       assert.deepEqual(await pips.evaluateAll((nodes) => nodes.map((node) => node.classList.contains('has-card'))), [true, false, true, false, false, false]);
       assert.equal(await pips.nth(0).locator('img.pip-face').isVisible(), true);
       assert.equal(await pips.nth(0).locator('img.pip-face').getAttribute('src'), ART('pikachu-ex'));
-      assert.equal(await pips.nth(0).getAttribute('title'), 'Pikachu ex');
+      assert.equal(await pips.nth(0).getAttribute('title'), 'Prize card 1 (Pikachu ex): click when it is taken');
       assert.equal(await pips.nth(1).locator('img.pip-face').isVisible(), false, 'a prize card without a card is as it was');
       assert.equal(await panel('b').locator('.pip.has-card').count(), 0);
 
@@ -492,9 +492,44 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.penalty').length === 1);
       assert.equal(await pips.nth(0).evaluate((node) => getComputedStyle(node, '::after').backgroundColor !== 'rgba(0, 0, 0, 0)'), true, 'the penalty is a red mask on the card');
 
-      await pips.nth(3).click();
-      await expectLive((state) => state.trainerA.prizes.count, 4);
+      await pips.nth(0).click();
+      await expectLive((state) => [state.trainerA.prizes.taken, state.trainerA.prizes.count], [[true, false, true, true, true, true], 1]);
       assert.deepEqual((await live()).trainerA.prizes.cards.map((card) => card && card.name), ['Pikachu ex', null, 'Pikachu ex', null, null, null], 'the cards stay');
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.penalty').length === 1);
+      assert.deepEqual(await pips.evaluateAll((nodes) => nodes.map((node) => node.classList.contains('penalty'))), [false, true, false, false, false, false], 'the red one is the first one still there');
+      assert.deepEqual(page.problems, []);
+    });
+
+    // The player takes the second prize card: the producer clicks that one, and only that one is taken (the others stay as they are)
+    it('takes the very prize card that is clicked and gives it back with another click, says so in the activity, and the arrows still take the last one', async () => {
+      await producer.act('action:trainerA', { action: 'prizeCardsSet', cards: [{ cardId: 'p1', name: 'First', image: ART('first') }, { cardId: 'p2', name: 'Second', image: ART('second') }] });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.has-card').length === 2);
+      const pips = panel('a').locator('.pip');
+      const pressed = () => pips.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-pressed')));
+      assert.deepEqual(await pressed(), ['false', 'false', 'false', 'false', 'false', 'false']);
+      assert.equal(await pips.nth(1).getAttribute('aria-label'), 'Prize card 2');
+
+      await pips.nth(1).click();
+      await expectLive((state) => [state.trainerA.prizes.taken, state.trainerA.prizes.count], [[false, true, false, false, false, false], 5]);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-panel.side-a .pip.taken').length === 1);
+      assert.deepEqual(await pressed(), ['false', 'true', 'false', 'false', 'false', 'false']);
+      assert.equal((await prizeNumber('a').textContent()).trim(), '5');
+      assert.equal(await pips.nth(1).getAttribute('title'), 'Prize card 2 (Second): taken, click to give it back');
+      assert.match(await feedText(), /Ash took prize card 2: Second \(5 left\)/);
+
+      // the arrow takes the last one still there, and the Set prizes dialog fades the ones that are taken
+      await press('ArrowDown');
+      await expectLive((state) => state.trainerA.prizes.taken, [false, true, false, false, false, true]);
+      await setButton('a').click();
+      await dialog().waitFor();
+      assert.deepEqual(await dialog().locator('.prize-slot').evaluateAll((nodes) => nodes.map((node) => node.classList.contains('taken'))), [false, true, false, false, false, true]);
+      await press('Escape');
+      await dialogClosed();
+
+      await pips.nth(1).click();
+      await expectLive((state) => [state.trainerA.prizes.taken, state.trainerA.prizes.count], [[false, false, false, false, false, true], 5]);
+      assert.deepEqual(await pressed(), ['false', 'false', 'false', 'false', 'false', 'true']);
+      assert.deepEqual((await live()).trainerB.prizes.taken, [false, false, false, false, false, false], 'the other trainer is not touched');
       assert.deepEqual(page.problems, []);
     });
 

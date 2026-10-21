@@ -85,6 +85,15 @@
     return `url("${String(value).replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
   }
 
+  // Which prize cards of a trainer are taken: true or false for each, each taken on its own. A game that says only how many are left (from
+  // before, or a sample) has the last ones taken.
+  function prizesTaken(trainer) {
+    const prizes = (trainer && trainer.prizes) || {};
+    const taken = [];
+    for (let index = 0; index < PRIZE_SLOTS; index++) taken.push(Array.isArray(prizes.taken) ? prizes.taken[index] === true : index >= prizes.count);
+    return taken;
+  }
+
   // ------------------------------------------------------------------ moments
 
   // Who the Pokémon in a slot is, to tell whether the slot still holds the same one ('' for an empty slot): the id the game gives each
@@ -850,17 +859,19 @@
       refs.root.classList.toggle('is-turn', hasTurn);
       refs.turnTag.hidden = !hasTurn;
 
-      // prizes: the ones taken fade out. The OTHER trainer's penalty is that many prize cards this one counts as already taken, so that many
-      // of the ones still there are marked red
+      // prizes: the ones taken fade out, each on its own. The OTHER trainer's penalty is that many prize cards this one counts as already
+      // taken, so that many of the ones still there (the first ones) are marked red
       const opponent = state[side === 'trainerA' ? 'trainerB' : 'trainerA'];
-      const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
+      const taken = prizesTaken(trainer);
+      const penalty = Math.min(Number(opponent.prizes.penalty) || 0, taken.filter((one) => !one).length);
+      let stillThere = 0; // (the prize cards still there before this one)
       // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden: then the picture of the card is not given to
       // the prize card at all, so no style sheet can show a card that is face down)
       const faces = trainer.prizes.cards || [];
       const faceDown = Boolean(trainer.prizes.hidden);
       refs.prizeNodes.forEach((node, index) => {
-        node.classList.toggle('taken', index >= trainer.prizes.count);
-        node.classList.toggle('penalty', index < penalty);
+        node.classList.toggle('taken', taken[index]);
+        node.classList.toggle('penalty', !taken[index] && stillThere++ < penalty);
         const face = faces[index] && faces[index].image;
         node.classList.toggle('has-face', Boolean(face));
         if (face && !faceDown) node.style.setProperty('--prize-face', cssUrl(face));
@@ -1090,7 +1101,10 @@
         this.markPokemon(list, side, before, now, left(state[opponent]) < left(previous[opponent]));
 
         // the prize cards that were just taken, the turn that starts, a tracker or a marker that was used, a game won
-        for (let index = left(now); index < left(before); index++) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
+        const takenBefore = prizesTaken(before);
+        prizesTaken(now).forEach((taken, index) => {
+          if (taken && !takenBefore[index]) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
+        });
         if (now.isTurn && !before.isTurn) this.queueShown(list, refs.root, 'turn', side, {}, refs.turnTag);
         TOKENS.forEach(([key, resource]) => {
           const was = before.resources && before.resources[resource];

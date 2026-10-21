@@ -90,10 +90,11 @@ export class TrainerView {
     // prizes
     this.prizeCount = h('span', { class: 'prize-number', 'aria-live': 'polite' }, '6');
     this.penaltyCount = h('output', { class: 'penalty-number', 'aria-label': 'Prize cards in red' }, '0');
-    // (a prize card that has a card chosen for it shows that card)
+    // one button for each prize card: a click takes that very card, or gives it back, and leaves the others as they are (it says what it
+    // wants, so two producers clicking the same one agree). A prize card that has a card chosen for it shows that card.
     this.prizePips = Array.from({ length: 6 }, (_, index) => {
       const face = h('img', { class: 'pip-face', alt: '', hidden: true });
-      const pip = h('button', { class: 'pip', type: 'button', 'aria-label': `Set prizes to ${index + 1}`, onclick: () => act('prizeSet', { count: index + 1 }) }, face);
+      const pip = h('button', { class: 'pip', type: 'button', 'aria-pressed': 'false', 'aria-label': `Prize card ${index + 1}`, onclick: () => act('togglePrize', { slot: index, taken: !this.prizeTaken(index) }) }, face);
       pip.face = face;
       return pip;
     });
@@ -180,6 +181,12 @@ export class TrainerView {
     return state ? state[this.side].isTurn : false;
   }
 
+  // Whether one prize card (0 to 5) is taken, as this page shows it
+  prizeTaken(index) {
+    const state = this.app.conn.state;
+    return Boolean(state && state[this.side].prizes.taken && state[this.side].prizes.taken[index]);
+  }
+
   currentRecord() {
     const state = this.app.conn.state;
     const record = state ? state[this.side].record : { wins: 0, losses: 0, ties: 0 };
@@ -259,22 +266,26 @@ export class TrainerView {
 
     // prizes
     this.prizeCount.textContent = trainer.prizes.count;
-    // the other trainer's penalty is prize cards this one counts as taken: those pips are red, as the overlay shows them
+    // each prize card is taken or not on its own (on: still there). The other trainer's penalty is prize cards this one counts as taken: that
+    // many of the ones still there (the first ones) are red, as the overlay shows them.
     const opponent = state[this.side === 'trainerA' ? 'trainerB' : 'trainerA'];
     const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
     const faces = trainer.prizes.cards || [];
+    let stillThere = 0; // (the prize cards still there before this one)
     this.prizePips.forEach((pip, index) => {
       const card = faces[index];
-      pip.classList.toggle('on', index < trainer.prizes.count);
-      pip.classList.toggle('penalty', index < penalty);
+      const taken = Boolean(trainer.prizes.taken && trainer.prizes.taken[index]);
+      pip.classList.toggle('on', !taken);
+      pip.classList.toggle('taken', taken);
+      pip.classList.toggle('penalty', !taken && stillThere++ < penalty);
       pip.classList.toggle('has-card', Boolean(card && card.image));
+      pip.setAttribute('aria-pressed', String(taken));
       if (card && card.image) {
         if (pip.face.getAttribute('src') !== card.image) pip.face.src = card.image;
-        pip.title = card.name;
       } else {
         pip.face.removeAttribute('src');
-        pip.removeAttribute('title');
       }
+      pip.title = `Prize card ${index + 1}${card ? ` (${card.name})` : ''}: ${taken ? 'taken, click to give it back' : 'click when it is taken'}`;
       pip.face.hidden = !(card && card.image);
     });
     this.hiddenToggle.input.checked = Boolean(trainer.prizes.hidden);

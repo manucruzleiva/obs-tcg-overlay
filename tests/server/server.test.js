@@ -96,6 +96,18 @@ describe('server', () => {
     assert.equal(last.state.trainerA.prizes.count, 6);
   });
 
+  it('takes one prize card on its own, and the game says which ones are taken next to how many are left', async () => {
+    await trainer('trainerA', { action: 'togglePrize', slot: 1, taken: true });
+    let { state } = await trainer('trainerA', { action: 'prizeMinus' });
+    assert.deepEqual([state.trainerA.prizes.taken, state.trainerA.prizes.count], [[false, true, false, false, false, true], 4]);
+    const live = await fetch(`${server.base}/api/state`).then((r) => r.json());
+    assert.deepEqual([live.trainerA.prizes.taken, live.trainerA.prizes.count], [[false, true, false, false, false, true], 4]);
+    const refused = await trainer('trainerA', { action: 'togglePrize', slot: 6, taken: true });
+    assert.equal(refused.ok, false);
+    ({ state } = await producer.act('action:match', { action: 'resetGamePrizes' }));
+    assert.deepEqual([state.trainerA.prizes.taken, state.trainerA.prizes.count], [[false, false, false, false, false, false], 6]);
+  });
+
   it('resets both trainers prizes with resetGamePrizes', async () => {
     await trainer('trainerA', { action: 'prizeMinus' });
     await trainer('trainerB', { action: 'prizeMinus' });
@@ -930,6 +942,8 @@ describe('server', () => {
       { action: 'prizePenaltySet', count: 2 },
       { action: 'prizeSet', count: 4 },
       { action: 'prizeReset' },
+      { action: 'togglePrize', slot: 1, taken: true },
+      { action: 'togglePrize', slot: 1 },
       { action: 'benchSizePlus' },
       { action: 'benchSizeMinus' },
       { action: 'benchSizeReset' },

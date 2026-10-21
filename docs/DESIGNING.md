@@ -129,7 +129,7 @@ The overlay draws an outline of the shape, or **your own picture** over it: a fr
 
 ## Prize cards
 
-Choose the picture on the back of the prize cards: the design's own *Prize card back* picture (the English Pokémon card back when it has none), the **English** or **Japanese** Pokémon card back, or a **Poké Ball**. The card backs that come with OTO are files in [`assets/cardbacks`](../assets/README.md); a plain drawing shows when a file is missing. The prize cards stay cards: they fade out when taken.
+Choose the picture on the back of the prize cards: the design's own *Prize card back* picture (the English Pokémon card back when it has none), the **English** or **Japanese** Pokémon card back, or a **Poké Ball**. The card backs that come with OTO are files in [`assets/cardbacks`](../assets/README.md); a plain drawing shows when a file is missing. The prize cards stay cards: they fade out when taken, each on its own (the producer marks the very prize card a player took, so the taken ones are not always the last ones).
 
 Choose the **layout** too: a row of six (the usual), a column, two rows of three or three rows of two. In `design.json`: `prizeStyle` (`current`, `english`, `japanese`, `pokeball`) and `prizeLayout` (`row`, `column`, `two-rows`, `three-rows`).
 

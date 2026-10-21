@@ -145,6 +145,13 @@ describe('overlay', { skip }, () => {
       await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 4);
     });
 
+    it('marks the first prize cards still there, around one that was taken on its own', async () => {
+      await send('action:trainerB', { action: 'togglePrize', slot: 0, taken: true });
+      await send('action:trainerA', { action: 'prizePenaltySet', count: 2 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 2);
+      assert.deepEqual(await reds(), [false, true, true, false, false, false]);
+    });
+
     it('pulses unless the penalty animation is switched off', async () => {
       await send('action:trainerA', { action: 'prizePenaltySet', count: 1 });
       await page.waitForSelector('.trainer-b .prizes.pulse');
@@ -564,6 +571,22 @@ describe('overlay', { skip }, () => {
       assert.equal(layers[0], '1', 'the red mask is over the card');
       assert.equal(layers[1], 'auto');
       assert.notEqual(layers[2], 'rgba(0, 0, 0, 0)');
+    });
+
+    it('fades the very prize card that is taken, with its card on it, and the arrows still take the last one still there', async () => {
+      const taken = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.classList.contains('taken')));
+      const takenAre = (list) => page.waitForFunction((wanted) => Array.from(document.querySelectorAll('.trainer-a .prize')).map((node) => node.classList.contains('taken')).join() === wanted.join(), list);
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: ['one', 'two', 'three', 'four', 'five', 'six'].map(card) });
+      await waitFaces('a', 6);
+      await send('action:trainerA', { action: 'togglePrize', slot: 1, taken: true });
+      await takenAre([false, true, false, false, false, false]);
+      assert.match(await front('a', 1), /\/art\/two\.svg/, 'the second card, still on its prize card');
+      await send('action:trainerA', { action: 'prizeMinus' });
+      await takenAre([false, true, false, false, false, true]);
+      await send('action:trainerA', { action: 'togglePrize', slot: 1, taken: false });
+      await takenAre([false, false, false, false, false, true]);
+      assert.deepEqual(await taken('b'), [false, false, false, false, false, false], 'the other trainer is not touched');
+      assert.deepEqual(await faces('a'), [true, true, true, true, true, true]);
     });
 
     it('goes with the picture of the design on the back of the prize cards: the card is over it', async () => {
@@ -2615,6 +2638,17 @@ describe('overlay', { skip }, () => {
       await page.waitForFunction(() => window.played.filter((entry) => entry.node.matches('.trainer-b .prize')).length === 3);
       assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => window.played.some((entry) => entry.node === node))), [false, false, false, true, true, true]);
       assert.deepEqual(await there('#stage'), ['moment-taken-a', 'moment-taken-b']);
+
+      // a prize card taken on its own is the one marked, and giving it back marks nothing
+      await forget();
+      await send('action:trainerB', { action: 'togglePrize', slot: 1, taken: true });
+      await played('.trainer-b .prize:nth-child(2)', 'moment-taken');
+      assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => window.played.some((entry) => entry.node === node))), [false, true, false, false, false, false]);
+      await forget();
+      await send('action:trainerB', { action: 'togglePrize', slot: 1, taken: false });
+      await page.waitForFunction(() => !document.querySelector('.trainer-b .prize:nth-child(2)').classList.contains('taken'));
+      await wait(100);
+      assert.deepEqual(await there('.prize'), []);
 
       await send('action:match', { action: 'toggleTurn' });
       await played('.trainer-a', 'moment-turn');

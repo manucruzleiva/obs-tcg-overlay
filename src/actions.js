@@ -195,6 +195,24 @@ const TRAINER = {
     run: (gs, side) => gs.setPrizes(side, 6),
     label: (gs, side) => `${who(gs, side)} prizes reset`
   },
+  // One prize card taken, or given back (`slot` 0 to 5, from the left), the others as they are: the very card the player took. `taken`
+  // says what it is to be (without it, it toggles). It touches that prize card only: two producers marking two prize cards at once is no
+  // conflict, but a prize card taken with prizeMinus at the same time is (it may be the same one).
+  togglePrize: {
+    sfx: (side, p, ctx) => (ctx.taken ? 'prize' : null),
+    targets: (side, p) => [`${side}.prizes.${p.slot}`],
+    run: (gs, side, p, out, ctx) => {
+      const slot = integer(p.slot, 'slot', 0, PRIZE_CARDS - 1);
+      gs.setPrizeTaken(side, slot, p.taken === undefined ? undefined : bool(p.taken, 'taken'));
+      ctx.slot = slot;
+      ctx.taken = gs.state[side].prizes.taken[slot];
+    },
+    label: (gs, side, p, ctx) => {
+      const { cards, count } = gs.state[side].prizes;
+      const which = `prize card ${ctx.slot + 1}${cards[ctx.slot] ? `: ${cards[ctx.slot].name}` : ''}`;
+      return `${who(gs, side)} ${ctx.taken ? 'took' : 'gave back'} ${which} (${count} left)`;
+    }
+  },
   togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizesHidden(side, value)),
   // Choose the cards that are the prizes: up to six, one for each prize card (null leaves one without a card). They show on the overlay on
   // their prize cards, face down with a question mark while the prizes are hidden. An empty list takes them all away.

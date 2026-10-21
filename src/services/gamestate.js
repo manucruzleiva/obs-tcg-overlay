@@ -52,6 +52,25 @@ function cleanPrizeCards(list) {
   return cards;
 }
 
+// Which prize cards are taken: true or false for each prize card, each on its own (the overlay fades the taken ones). How many are left
+// (prizes.count) follows from it, and is kept next to it for everything that reads it.
+const noneTaken = () => Array.from({ length: MAX_PRIZES }, () => false);
+const cleanTaken = (list) => Array.from({ length: MAX_PRIZES }, (_, index) => list[index] === true);
+const prizesLeft = (taken) => taken.filter((one) => !one).length;
+
+// Take prize cards (a negative delta) or give them back (a positive one), one at a time. The one taken is the last one still there; the one
+// given back is the taken one right after the last one still there (so a prize card taken by mistake comes back), or, when the row ends
+// with one still there, the last one taken before it. A prize card taken on its own (see setPrizeTaken) stays as it is otherwise.
+function stepPrizes(prizes, delta) {
+  for (let step = 0; step < Math.abs(delta); step++) {
+    const last = prizes.taken.lastIndexOf(false); // the last prize card still there (-1: none is)
+    const at = delta < 0 ? last : last < MAX_PRIZES - 1 ? last + 1 : prizes.taken.lastIndexOf(true);
+    if (at === -1) break;
+    prizes.taken[at] = delta < 0;
+  }
+  prizes.count = prizesLeft(prizes.taken);
+}
+
 // What a Pokémon Tool is when it is kept: the card (its HP is the Pokémon's own: the maximum HP is changed on the Pokémon)
 function cleanTools(list) {
   if (!Array.isArray(list)) return [];
@@ -207,7 +226,8 @@ class GameStateService {
       record: { wins: 0, losses: 0, ties: 0 },
       // penalty: how many prize cards the OTHER trainer counts as already taken (0 to 6); they are marked red on that trainer's side
       // (hidden: the prize cards are face down until the producer shows them, and so are the cards put on them)
-      prizes: { count: MAX_PRIZES, hidden: true, penalty: 0, cards: emptyPrizeCards() },
+      // (taken: which prize cards are taken, each on its own; count: how many are left, which follows from it)
+      prizes: { count: MAX_PRIZES, taken: noneTaken(), hidden: true, penalty: 0, cards: emptyPrizeCards() },
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
@@ -266,8 +286,14 @@ class GameStateService {
       if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
       else if (!Number.isInteger(prizes.penalty)) prizes.penalty = 0;
       prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, prizes.penalty));
-      // and the cards of the prizes came later still
+      // and the cards of the prizes came later still, and each prize card taken on its own after them (count follows from it)
       prizes.cards = cleanPrizeCards(prizes.cards);
+      // (a game saved before says only how many are left: the taken ones were the last ones. A file written by hand can say a number that
+      // the list does not: the number is what is left, taking or giving back the way the arrows do)
+      const savedPrizes = (saved[side] && saved[side].prizes) || {};
+      prizes.taken = Array.isArray(savedPrizes.taken) ? cleanTaken(savedPrizes.taken) : noneTaken();
+      prizes.count = prizesLeft(prizes.taken);
+      if (Number.isInteger(savedPrizes.count)) stepPrizes(prizes, Math.max(0, Math.min(MAX_PRIZES, savedPrizes.count)) - prizes.count);
       // the deck came after the nationality
       for (const key of ['deck', 'deckIcon']) merged[side][key] = typeof merged[side][key] === 'string' ? merged[side][key].trim().slice(0, DECK.MAX_LENGTH) : '';
     }
@@ -346,17 +372,25 @@ class GameStateService {
     this.state[otherSide(side)].isTurn = !isTurn;
   }
 
+  // Take prize cards (a negative delta) or give them back (a positive one): see stepPrizes
   adjustPrizes(side, delta) {
-    const prizes = this.state[side].prizes;
-    prizes.count = Math.max(0, Math.min(MAX_PRIZES, prizes.count + delta));
+    stepPrizes(this.state[side].prizes, delta);
   }
 
+  // So many prize cards left (0 to 6), taking or giving back the ones adjustPrizes would
   setPrizes(side, count) {
-    this.state[side].prizes.count = Math.max(0, Math.min(MAX_PRIZES, count));
+    this.adjustPrizes(side, Math.max(0, Math.min(MAX_PRIZES, count)) - this.state[side].prizes.count);
+  }
+
+  // One prize card (0 to 5) taken, or given back; omit taken to toggle. The others stay as they are.
+  setPrizeTaken(side, slot, taken) {
+    const prizes = this.state[side].prizes;
+    prizes.taken[slot] = taken === undefined ? !prizes.taken[slot] : taken;
+    prizes.count = prizesLeft(prizes.taken);
   }
 
   // Choose the cards that are the prizes: a list of up to six, one for each prize card, where null (or nothing) leaves a prize card without
-  // a card. They show on the overlay on their prize cards, so which ones are taken is still the count.
+  // a card. They show on the overlay on their prize cards, and stay there whichever are taken.
   setPrizeCards(side, cards) {
     this.state[side].prizes.cards = cleanPrizeCards(cards);
   }
@@ -708,6 +742,7 @@ class GameStateService {
     this.matchStartTime = Date.now();
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.taken = noneTaken();
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true; // new prizes are face down again
@@ -770,6 +805,7 @@ class GameStateService {
   nextGame() {
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.taken = noneTaken();
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true;
