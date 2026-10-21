@@ -181,7 +181,8 @@ describe('design editor', { skip }, () => {
       assert.ok(first.zoom > 0.3 && first.zoom < 1.2 && 1920 * first.zoom <= area.w && 1080 * first.zoom <= area.h, `zoom ${first.zoom} in ${area.w}x${area.h}`);
       assert.ok(Math.abs(first.x - (area.w - 1920 * first.zoom) / 2) < 1, 'centred');
       await page.setViewportSize({ width: 1300, height: 800 });
-      await wait(250);
+      // (the editor fits the stage again once the window has settled, which can take a while on a busy machine)
+      await page.waitForFunction((before) => window.oto.designEditor.canvas.view.zoom < before, first.zoom, { timeout: 5000 }).catch(() => {});
       assert.ok((await zoom()) < first.zoom, 'smaller window, smaller picture');
     });
 
@@ -463,6 +464,8 @@ describe('design editor', { skip }, () => {
 
     it('moves the overlay as you type, and says what is wrong while it is not valid', async () => {
       await type(JSON.stringify({ layout: { scoreboard: { x: 0, y: 120, scale: 1 } } }, null, 2));
+      // (what is typed is read after a pause, which can be longer on a busy machine)
+      await page.waitForFunction(() => Boolean(window.oto.designEditor.model.draft.layout.scoreboard), null, { timeout: 5000 }).catch(() => {});
       assert.equal((await layout()).scoreboard.y, 120);
       await drawn();
       assert.equal(await overlayFrame().locator('.scoreboard.moved').count(), 1);
