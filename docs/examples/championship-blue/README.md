@@ -6,7 +6,7 @@ A design for a **top-down table camera**: two blue columns, one for each trainer
 
 <p align="center"><img src="preview-moments.png" alt="Five of its animations: damage, a switch, an evolution, a knock out and a promotion" width="720"></p>
 
-**Install it:** Settings, Look, **Install a .oto**, and choose [`../championship-blue.oto`](../championship-blue.oto). Install the control settings too: they switch on the attacks of the benched Pokémon, the turn highlight and the design animations (Settings, Overlay, *Design animations*), and switch off the toast banners at the bottom of the screen.
+**It is OTO's default look:** it comes with the app and is on the overlay until you choose another design (Settings, Look). Its files are in [`assets/designs/championship-blue`](../../../assets/designs/championship-blue); this page describes them. To put it on another computer or back the way it was, Settings, Look, **Install a .oto**, and choose [`../championship-blue.oto`](../championship-blue.oto) (made from those files with `npm run pack:example`). Install the control settings too: they switch on the attacks of the benched Pokémon, the turn highlight and the design animations (Settings, Overlay, *Design animations*), and switch off the toast banners at the bottom of the screen.
 
 ## What is where
 
@@ -35,7 +35,7 @@ The footer says what that trainer has used this turn: a counter that is still fr
 
 ## The style sheet
 
-`styles.css` comes after the built-in look and restyles the whole overlay:
+`styles.css` comes after the classic look and restyles the whole overlay:
 
 - **It places every piece.** The design has no layout entries: the header cards, the round tab, the prize strips, the Active cards, the benches, the feature cards, the footers, the locks, the TURN tags and the Stadium tab are where the style sheet puts them. Each column is 440 px wide at 10 px from the screen edge, and its cards are 424 px wide.
 - **It draws the cards**: the navy cards with their thin light borders and scanlines, the name bars, the rows, the HP boxes, the EMPTY plates (drawn on the bench, so they go when the producer hides the bench), the prize balls, the tray of the locks (drawn on the prize strip), the tabs.
@@ -89,7 +89,7 @@ The colors are taken from the stream frames that inspired the design:
 | Light bar | A white core, a cyan band (`#8be3ff`), a blue glow (`#3aa6ef`) and a wide blue halo over the table |
 | Moments | Damage `#d1102c` (the outline of the number), heal `#0f9a5a`, knock out `#ff3d55` |
 
-The colors in `design.json` fill what the style sheet leaves to the built-in look, such as the pause banner (`--bg-panel`, `--warning`), the orange of a penalty (`--danger`), and the dots of STADIUM and SUPPORTER (`--stadium`, `--supporter`). The font is the system's Segoe UI, or Inter, Helvetica Neue or Arial where it is missing: the design carries no font files.
+The colors in `design.json` fill what the style sheet leaves to the classic look, such as the pause banner (`--bg-panel`, `--warning`), the orange of a penalty (`--danger`), and the dots of STADIUM and SUPPORTER (`--stadium`, `--supporter`). The font is the system's Segoe UI, or Inter, Helvetica Neue or Arial where it is missing: the design carries no font files.
 
 ## Limits
 
@@ -103,6 +103,8 @@ The colors in `design.json` fill what the style sheet leaves to the built-in loo
 - **The screen.** The design is for the wide 1920 × 1080 screen.
 
 ## Files
+
+They are in [`assets/designs/championship-blue`](../../../assets/designs/championship-blue).
 
 | File | What it is |
 |------|-----------|
@@ -120,4 +122,4 @@ The colors in `design.json` fill what the style sheet leaves to the built-in loo
 
 The quickest way is in OTO itself: Settings, Look, choose the design, **Edit the style sheet**. The overlay in the editor changes as you type, and **Try a moment** plays an animation without a match.
 
-By hand: edit these files, zip the **contents** of this folder and rename the zip to `.oto` (see [Making a design by hand](../../DESIGNING.md#making-a-design-by-hand)). The style sheet's numbers fit the frames of the background picture: the columns, their cards and the bump that holds the prize strip. If you move a card or change the width of a column in `styles.css`, move its frame in `backgroundImage.svg` too. The colors of the cards are custom properties at the top of the style sheet (`--chb-card`, `--chb-bar`, `--chb-hp-ok`...), so one change there changes every card. The moments the style sheet can animate are listed in [the design guide](../../DESIGNING.md#the-moments).
+By hand: edit the files in `assets/designs/championship-blue`, then zip the **contents** of that folder and rename the zip to `.oto` (`npm run pack:example` does it for the example) (see [Making a design by hand](../../DESIGNING.md#making-a-design-by-hand)). The style sheet's numbers fit the frames of the background picture: the columns, their cards and the bump that holds the prize strip. If you move a card or change the width of a column in `styles.css`, move its frame in `backgroundImage.svg` too. The colors of the cards are custom properties at the top of the style sheet (`--chb-card`, `--chb-bar`, `--chb-hp-ok`...), so one change there changes every card. The moments the style sheet can animate are listed in [the design guide](../../DESIGNING.md#the-moments).

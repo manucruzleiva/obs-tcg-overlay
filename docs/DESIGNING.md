@@ -2,7 +2,7 @@
 
 A **design** gives the overlay its own identity: a store, a league, an event, a streamer. This guide shows how to make one, from a first color change to a full custom screen, and how to share it as a single `.oto` file. For the exact file format see [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md). If you only run matches, read the [producer guide](USING.md).
 
-**Contents:** [What a design can change](#what-a-design-can-change) · [Your first design in ten minutes](#your-first-design-in-ten-minutes) · [Learn from the built-in look](#learn-from-the-built-in-look) · [Colors and pictures](#colors-and-pictures) · [Fonts: one for each kind of text](#fonts-one-for-each-kind-of-text) · [Layout: move and resize](#layout-move-and-resize) · [Tall mobile screens](#tall-mobile-screens) · [Reserved spaces for a camera](#reserved-spaces-for-a-camera) · [Cards: crop and tile](#cards-crop-and-tile) · [Prize cards](#prize-cards) · [Sounds](#sounds) · [Style sheet and animations](#style-sheet-and-animations) · [Several overlays, several designs](#several-overlays-several-designs) · [Sharing: the .oto file](#sharing-the-oto-file) · [Making a design by hand](#making-a-design-by-hand) · [Tips](#tips)
+**Contents:** [What a design can change](#what-a-design-can-change) · [Your first design in ten minutes](#your-first-design-in-ten-minutes) · [Learn from the classic look](#learn-from-the-classic-look) · [Colors and pictures](#colors-and-pictures) · [Fonts: one for each kind of text](#fonts-one-for-each-kind-of-text) · [Layout: move and resize](#layout-move-and-resize) · [Tall mobile screens](#tall-mobile-screens) · [Reserved spaces for a camera](#reserved-spaces-for-a-camera) · [Cards: crop and tile](#cards-crop-and-tile) · [Prize cards](#prize-cards) · [Sounds](#sounds) · [Style sheet and animations](#style-sheet-and-animations) · [Several overlays, several designs](#several-overlays-several-designs) · [Sharing: the .oto file](#sharing-the-oto-file) · [Making a design by hand](#making-a-design-by-hand) · [Tips](#tips)
 
 ---
 
@@ -20,7 +20,7 @@ A **design** gives the overlay its own identity: a store, a league, an event, a 
 | **Sounds** | A sound for any moment of a match |
 | **Style sheet** | Your own CSS on top of all this: restyle any piece of the overlay, and animate the moments of a match (damage, a knock out, a prize card taken, a turn that starts) |
 
-Everything is optional. What a design leaves out is the built-in look.
+Everything is optional. What a design leaves out is the classic look.
 
 Everything a design uses is a **file inside it**. A design can never point at a web address, so it works offline and never makes an overlay contact anyone's server.
 
@@ -29,7 +29,7 @@ Everything a design uses is a **file inside it**. A design can never point at a 
 ## Your first design in ten minutes
 
 1. Open the control panel, **Settings**, **Look**.
-2. Click **New**, give it a name (`Store League`) and **Create**. (Or start from [a copy of the built-in look](#learn-from-the-built-in-look).)
+2. Click **New**, give it a name (`Store League`) and **Create**. (Or start from [a copy of the classic look](#learn-from-the-classic-look).)
 3. Change a few **colors**: *Highlight*, *Trainer A color*, *Trainer B color*. Leave a color empty to keep the built-in one.
 4. Upload a **Logo** and a **Background** under *Pictures and font*.
 5. Click **Put on the overlay**. If OBS is showing the overlay, you see it right away; changes save by themselves and reach the stream as you make them.
@@ -38,13 +38,13 @@ Everything a design uses is a **file inside it**. A design can never point at a 
 
 ---
 
-## Learn from the built-in look
+## Learn from the classic look
 
 Three ways to see how a design is made, so you can change one instead of starting from nothing:
 
-- **In the app:** *Copy of the built-in look* (Look tab) creates a design with every color and the font lists of the built-in look written out. Open the editor's **Code** tab to read it as text.
+- **In the app:** *Copy of the classic look* (Look tab) creates a design with every color and the font lists of the classic look written out. Open the editor's **Code** tab to read it as text.
 - **In the repository:** [docs/examples/built-in-look/design.json](examples/built-in-look/design.json) is the same design as a file. Every field is written out with its usual value: colors, `fontFamilies`, `layout`, `crop`, `tile`, `prizeStyle`, `prizeLayout`, `orientation` and `spaces`. Delete what you do not need, change what you like, put it in a folder named after your design (see [Making a design by hand](#making-a-design-by-hand)). A test keeps this file in step with the real defaults, so it stays honest.
-- **A finished example:** [docs/examples/championship-blue](examples/championship-blue/README.md) frames a top-down table camera with two blue columns, with its `.oto` ready to install.
+- **A finished example:** [Championship Blue](examples/championship-blue/README.md), OTO's default look, frames a top-down table camera with two blue columns. Its files are in [assets/designs/championship-blue](../assets/designs/championship-blue), and its `.oto` is ready to install.
 
 ---
 
@@ -143,7 +143,7 @@ A design can bring a sound for any moment: deploy, bench, damage, heal, knock ou
 
 ## Style sheet and animations
 
-A design can carry a **style sheet**: one file of CSS, `styles.css`, next to `design.json`. It comes after the built-in look and after everything else the design sets, so it can restyle any piece of the overlay and animate it with `@keyframes`. For the animations, the overlay marks what just happened in the match (a Pokémon took damage, a prize card was taken, a turn started) with a class on that piece, for a short while. These are the **moments**.
+A design can carry a **style sheet**: one file of CSS, `styles.css`, next to `design.json`. It comes after the classic look and after everything else the design sets, so it can restyle any piece of the overlay and animate it with `@keyframes`. For the animations, the overlay marks what just happened in the match (a Pokémon took damage, a prize card was taken, a turn started) with a class on that piece, for a short while. These are the **moments**.
 
 A style sheet is checked when it is saved and when a design is installed, and again each time an overlay gets it. It can only restyle the overlay's stage, and it can only use the design's own pictures and fonts. It can be up to 256 KB.
 
@@ -158,7 +158,7 @@ The overlay is drawn on a **stage**, `#stage`: the 1920 × 1080 box (1080 × 192
 
 The `#stage` in front also gives your rule more weight than the built-in rule for the same piece, so yours wins without `!important`. The built-in rules that name the stage themselves weigh more: those for a tall screen (`#stage.portrait .trainer`) and for the bench in a row (`#stage.bench-row .bench`). To change those, write the same selector: yours comes after the built-in one, so it wins. What the overlay writes on a piece itself (the width of an HP bar, the scaling of the stage) wins over your rules; only an animation goes over it while it plays (see [the tips](#tips-for-the-style-sheet)).
 
-**The page around the stage** must stay see-through for OBS. A rule for `:root` or `html` alone can only set custom properties (`--name: value`), and anything else in it is refused. That is the place for `--oto-moment-ms` (see [the moments](#the-moments)), for variables of your own, which every piece can then use (`box-shadow: var(--glow)`), and for the design's own colors and pictures: a rule for `:root` comes after them, so `:root { --accent: #ff00aa; }` wins over the design's highlight color. (Write it for `:root`: a rule for `html` weighs less than the variables of the built-in look and of the design, so it only sets variables of your own.)
+**The page around the stage** must stay see-through for OBS. A rule for `:root` or `html` alone can only set custom properties (`--name: value`), and anything else in it is refused. That is the place for `--oto-moment-ms` (see [the moments](#the-moments)), for variables of your own, which every piece can then use (`box-shadow: var(--glow)`), and for the design's own colors and pictures: a rule for `:root` comes after them, so `:root { --accent: #ff00aa; }` wins over the design's highlight color. (Write it for `:root`: a rule for `html` weighs less than the variables of the classic look and of the design, so it only sets variables of your own.)
 
 ```css
 :root { --oto-moment-ms: 1200; --glow: 0 0 12px #7c8cff; }
@@ -187,7 +187,7 @@ Some pieces also say what they are in an attribute, whatever their text says:
 
 So a bigger bench can have a layout of its own, for example smaller tiles when it has 6 places or more: `.bench[data-size="6"] .mon.mini, .bench[data-size="7"] .mon.mini, .bench[data-size="8"] .mon.mini { height: 72px; }`.
 
-**The feature cards** are in the piece of the trainer whose bench they cover, after the bench: `.trainer-a .features` or `.trainer-b .features`. While they are shown that trainer has `features-on` (and the stage `features-on-a` or `features-on-b`), and the built-in look hides its bench with `#stage .trainer.features-on .bench { display: none; }` (write the same selector to keep the bench, under the cards). In the built-in look they take the bench's place under the Active Pokémon; a design that places the bench itself (`position: absolute`) places the cards there too: `.features { position: absolute; left: 8px; top: 464px; width: 424px; }`. Each card is a `figure.feature` with its picture, `img.feature-img`, and no name written on it (it is the picture's `alt` and the card's `title`). Cards joined by a sign are a stack, `.feature-stack`, with `data-cards` (how many cards) and the signs between them (`.feature-sep`, whose text is the sign); a card on its own is a `.feature` of its own, and `.features.combo` says there is at least one sign.
+**The feature cards** are in the piece of the trainer whose bench they cover, after the bench: `.trainer-a .features` or `.trainer-b .features`. While they are shown that trainer has `features-on` (and the stage `features-on-a` or `features-on-b`), and the classic look hides its bench with `#stage .trainer.features-on .bench { display: none; }` (write the same selector to keep the bench, under the cards). In the classic look they take the bench's place under the Active Pokémon; a design that places the bench itself (`position: absolute`) places the cards there too: `.features { position: absolute; left: 8px; top: 464px; width: 424px; }`. Each card is a `figure.feature` with its picture, `img.feature-img`, and no name written on it (it is the picture's `alt` and the card's `title`). Cards joined by a sign are a stack, `.feature-stack`, with `data-cards` (how many cards) and the signs between them (`.feature-sep`, whose text is the sign); a card on its own is a `.feature` of its own, and `.features.combo` says there is at least one sign.
 
 ### What is not allowed, and why
 
@@ -203,7 +203,7 @@ So a bigger bench can have a layout of its own, for example smaller tiles when i
 | `@charset` | A style sheet is always read as UTF-8 |
 | Anything else that is not in the lists of [the package format](PACKAGE-FORMAT.md#stylescss-the-style-sheet) (`@property`, `@page`, `::backdrop`, `:host`...) | A design can use what is listed there, which has the exact rules |
 
-**What the checks do not stop: a slow overlay.** A style sheet that is allowed can still be heavy to draw. A few `drop-shadow()` or `blur()` filters stacked on many pieces, with an animation that redraws them, can make the overlay slow or stop it drawing at all, and so can an SVG picture of the design with stacked filters and an animation in it. Keep filters few and small, and check the design in OBS. Install designs only from people you trust. If a design makes the overlay slow, choose another design (or the built-in look) in the Look tab, then refresh the browser source in OBS.
+**What the checks do not stop: a slow overlay.** A style sheet that is allowed can still be heavy to draw. A few `drop-shadow()` or `blur()` filters stacked on many pieces, with an animation that redraws them, can make the overlay slow or stop it drawing at all, and so can an SVG picture of the design with stacked filters and an animation in it. Keep filters few and small, and check the design in OBS. Install designs only from people you trust. If a design makes the overlay slow, choose another design (or the classic look) in the Look tab, then refresh the browser source in OBS.
 
 ### Pictures for the style sheet
 
@@ -253,7 +253,7 @@ When something happens in the match, the overlay puts a class on the piece it ha
 
 **The numbers.** Each numbered moment writes its number under its own name, as an attribute of the tile and a custom property on it: `data-damage` and `--moment-damage` (how much damage), `data-heal` and `--moment-heal` (how much healing), `data-energy` and `--moment-energy` (how many Energy were attached). So a Pokémon that takes damage and gets Energy in the same change shows both numbers. Show one with `content: "-" attr(data-damage)` on the tile itself (`.mon.moment-damage::after`), or, on a piece inside the tile, with a counter, since the custom property reaches it: `counter-reset: amount var(--moment-damage); content: "-" counter(amount);`. Each goes when the moment that wrote it ends. `data-status` names the condition that came: `.mon.moment-status[data-status="poisoned"]`.
 
-**Knock outs.** When your style sheet names `moment-ko` somewhere (a rule for `.mon.moment-ko`, or for `#stage.moment-ko-a` or `#stage.moment-ko-b`; a comment does not count), the tile of a knocked out Pokémon stays on the overlay as it was, with its picture, name and HP, for as long as the moment lasts, and then goes: you can animate it on its way out. A Pokémon that comes into the slot meanwhile takes the tile at once. When another Pokémon takes the slot in the same change (a draft sent with the knock out and the next Active Pokémon), only the stage gets `moment-ko-a` or `moment-ko-b`: the tile shows the newcomer, and plays its `moment-enter`. When the style sheet does not name `moment-ko`, the tile goes at once, as in the built-in look; the stage still gets `moment-ko-a` or `moment-ko-b`.
+**Knock outs.** When your style sheet names `moment-ko` somewhere (a rule for `.mon.moment-ko`, or for `#stage.moment-ko-a` or `#stage.moment-ko-b`; a comment does not count), the tile of a knocked out Pokémon stays on the overlay as it was, with its picture, name and HP, for as long as the moment lasts, and then goes: you can animate it on its way out. A Pokémon that comes into the slot meanwhile takes the tile at once. When another Pokémon takes the slot in the same change (a draft sent with the knock out and the next Active Pokémon), only the stage gets `moment-ko-a` or `moment-ko-b`: the tile shows the newcomer, and plays its `moment-enter`. When the style sheet does not name `moment-ko`, the tile goes at once, as in the classic look; the stage still gets `moment-ko-a` or `moment-ko-b`.
 
 **What plays.** The overlay compares the game before and after each change. A page that just opened or reconnected plays nothing for what happened before, and nothing plays for a game that replaces the whole of the one there: an imported configuration, a full reset, or undoing or redoing one. The game keeps no record of what was done, only how it is now, so undoing something plays its reverse: undoing damage is a heal.
 

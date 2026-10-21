@@ -352,6 +352,8 @@ async function startServer({ env = {}, label = 'srv', prepare, appRoot = ROOT } 
       OTO_SCRYDEX_API_URL: 'http://127.0.0.1:9/pokemon/v1',
       OTO_SCRYDEX_RETRY_MS: '1',
       OTO_PASSWORD: '',
+      // The tests start from the classic look: the default design is put in only where a test asks for it
+      OTO_DEFAULT_DESIGN: '0',
       // A machine busy with several servers and browsers at once can leave a socket unanswered for longer than the usual 5 seconds, and a
       // test client does not reconnect: give it room, so a slow moment does not turn into a cascade of "no answer" failures
       OTO_PING_TIMEOUT_MS: '60000',

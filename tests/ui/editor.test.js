@@ -1943,7 +1943,7 @@ describe('design editor', { skip }, () => {
       assert.equal(await overlay.evaluate(() => window.oto.momentDuration()), 900);
       assert.equal(await overlay.evaluate(() => document.head.lastElementChild.id), 'oto-design-css', 'after the built-in style sheets');
 
-      // and off air, the built-in look again
+      // and off air, the classic look again
       await api('POST', '/api/theme/active', { name: null });
       await overlay.waitForFunction(() => document.getElementById('oto-design-css').textContent === '');
       assert.deepEqual(overlay.problems, []);

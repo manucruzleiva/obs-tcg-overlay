@@ -78,7 +78,7 @@ That is all. Open the control panel, type the trainers' names and run the match.
 
 A **design** is the look of the overlay: colors, logo, background, avatars, card backs, icons, fonts, sounds, and where every piece sits on the screen. Everything is made in the **Look** tab of Settings, with a canvas that shows the overlay as you change it, and shared as a single `.oto` file.
 
-- **Start from the built-in look.** *Copy of the built-in look* gives you a design with every color and font written out. The same design is in this repository as code, [docs/examples/built-in-look/design.json](docs/examples/built-in-look/design.json), so you can read it, change it and drop it into a folder.
+- **Start from the classic look.** *Copy of the classic look* gives you a design with every color and font written out. The same design is in this repository as code, [docs/examples/built-in-look/design.json](docs/examples/built-in-look/design.json), so you can read it, change it and drop it into a folder.
 - **A font for each kind of text.** Names, numbers, labels, banner titles, subtitles and small text can each have their own font file, or a list of fonts installed on the machine that shows the overlay.
 - **Move and resize every piece** on a zoomable canvas with snapping lines and a grid. A design can be a wide screen (1920 × 1080) or a **tall mobile screen** (1080 × 1920).
 - **Reserve spaces** for a camera feed (up to six: rectangle, rounded or oval) and draw your own frame over each.

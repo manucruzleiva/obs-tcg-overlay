@@ -20,6 +20,7 @@ const { CardUsage } = require('./services/card-usage');
 const GameStateService = require('./services/gamestate');
 const { Auth } = require('./services/auth');
 const { ThemeStore } = require('./services/themes');
+const { installDefaultDesign } = require('./services/default-design');
 const { SoundStore } = require('./services/sounds');
 const { ImageCache } = require('./services/images');
 const { CatalogService } = require('./services/catalog');
@@ -172,6 +173,7 @@ let authService = null; // the control panel password (the desktop app sets and 
 
 async function initialize() {
   await db.init();
+  const freshInstall = db.loadGameState() === null; // (no game saved yet: the first start on this computer)
   gameState = new GameStateService(db, pokemonTCG);
   applyApiSettings(gameState.state);
 
@@ -193,6 +195,20 @@ async function initialize() {
     emit: (event) => io.emit(event),
     appVersion: require('../package.json').version
   });
+
+  // Championship Blue is OTO's default look: put in once for each version of it, on the overlay when no design is (see default-design.js).
+  // OTO_DEFAULT_DESIGN=0 leaves it out (the tests start from the classic look).
+  if (process.env.OTO_DEFAULT_DESIGN !== '0') {
+    try {
+      installDefaultDesign({
+        db, themes, packages, fresh: freshInstall,
+        assetsDir: process.env.OTO_ASSETS_DIR || path.join(__dirname, '..', 'assets'),
+        log: (level, message, meta) => getLogger()[level](message, meta)
+      });
+    } catch (error) {
+      getLogger().error('The default design could not be installed', { error: error.message });
+    }
+  }
 
   // Card pictures and the card library are kept on disk beside the database
   const images = new ImageCache({ dir: path.join(dataDir, 'images') });
