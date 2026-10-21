@@ -438,6 +438,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .ko-row-name small { color: var(--fg-muted); }
 .segmented.small .seg { padding: 3px 10px; font-size: 12px; }
 .ko-summary { margin-top: 10px; }
+.ko-pile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.ko-pile-label { font-size: 13px; color: var(--fg-secondary); }
 /* moving damage: where it comes from and where it goes */
 .move-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .move-column .choice-list { max-height: 300px; overflow: auto; }
@@ -805,3 +807,43 @@ body.dragging::after { content: 'Drop a .oto file to install it'; position: fixe
 .health-list li.good { border-left-color: var(--success); }
 .health-list li.bad { border-left-color: var(--warning); }
 .health-list small { color: var(--fg-muted); }
+
+/* the decklist and the cards out of play (the discard pile and the Lost Zone): a row of buttons in each trainer's column, and their dialogs */
+.pile-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pile-btn { display: inline-flex; align-items: center; gap: 6px; }
+.pile-btn .count { min-width: 1.4em; padding: 0 6px; border-radius: 999px; background: var(--bg-tertiary); color: var(--fg-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
+.pile-btn.on .count { background: var(--side, var(--accent)); color: var(--bg-primary); }
+.decklist-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.decklist-text { width: 100%; min-height: 300px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-primary); color: var(--fg-primary); font: 13px/1.5 var(--font-mono); resize: vertical; }
+.decklist-text:focus { outline: none; border-color: var(--accent); }
+.decklist-input .hint-line { margin-top: 8px; }
+.decklist-preview { max-height: 420px; overflow-y: auto; }
+.decklist-section + .decklist-section { margin-top: 12px; }
+.decklist-section ul { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.decklist-section li { display: flex; align-items: center; gap: 8px; }
+.decklist-section li img, .decklist-section li .thumb-empty { flex: none; width: 26px; height: 36px; border-radius: 3px; object-fit: cover; background: var(--bg-tertiary); }
+.decklist-section li .count { min-width: 1.6em; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.decklist-section li small { margin-left: auto; color: var(--fg-muted); }
+.decklist-section li.not-found { color: var(--fg-secondary); }
+.decklist-section li.not-found small::after { content: " · not in the library"; color: var(--warning); }
+.deck-cards { margin: 4px 0 10px; }
+.deck-card-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+.deck-card { position: relative; display: flex; flex: none; flex-direction: column; align-items: center; gap: 3px; width: 78px; padding: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--fg-primary); font-size: 11px; transition: border-color var(--transition), transform var(--transition); }
+.deck-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.deck-card img, .deck-card .art-fallback { width: 68px; height: 95px; border-radius: 4px; object-fit: contain; }
+.deck-card .art-fallback { display: flex; align-items: center; justify-content: center; background: var(--bg-secondary); color: var(--fg-muted); }
+.deck-card.not-found { border-style: dashed; color: var(--fg-secondary); }
+.deck-card-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-card-count { position: absolute; top: 6px; right: 6px; padding: 0 5px; border-radius: 999px; background: var(--bg-primary); color: var(--fg-secondary); font-weight: 700; }
+.piles-editor .section-label .bench-controls { margin-left: auto; display: inline-flex; gap: 6px; }
+.pile-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; margin: 6px 0 14px; max-height: 360px; overflow-y: auto; }
+.pile-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); font-size: 12px; }
+.pile-card img { width: 90px; height: 126px; border-radius: 5px; object-fit: contain; }
+.pile-card img.energy-icon { width: 60px; height: 126px; }
+.pile-card-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pile-card-actions { display: flex; align-items: center; gap: 4px; }
+.pile-card-actions .btn { padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.pile-card .art-fallback { display: flex; align-items: center; justify-content: center; width: 90px; height: 126px; border-radius: 5px; background: var(--bg-secondary); color: var(--fg-muted); }
+@media (max-width: 760px) {
+  .decklist-editor { grid-template-columns: 1fr; }
+}

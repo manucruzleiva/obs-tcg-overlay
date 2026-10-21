@@ -11,6 +11,7 @@
     "--tool": "#a78bfa",
     "--stadium": "#4ade80",
     "--supporter": "#fb923c",
+    "--lost-zone": "#a78bfa",
     "--bg-panel": "rgba(10, 14, 24, 0.82)",
     "--bg-card": "rgba(18, 24, 38, 0.94)",
     "--bg-primary": "#0a0d14",

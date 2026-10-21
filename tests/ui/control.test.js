@@ -987,6 +987,99 @@ describe('control panel', { skip }, () => {
     await page.waitForFunction(() => !document.querySelector('.modal'));
   });
 
+  describe('the decklist and the cards out of play', () => {
+    const LIST = 'Pokémon: 6\n4 Dreepy TWM 128\n2 Dragapult ex TWM 130\nTrainer: 4\n4 Arven SVI 166\nEnergy: 3\n3 Basic {R} Energy SVE 2';
+    const buttons = (side = 'a') => page.locator(`.trainer-panel.side-${side} .pile-row`);
+
+    it('pastes a decklist with L: it is read as it is typed, saved for that trainer, and counted on its button', async () => {
+      assert.equal(await buttons().locator('.pile-btn', { hasText: 'Decklist' }).locator('.count').textContent(), 'none');
+      await press('l');
+      await page.waitForSelector('.modal[aria-label="Decklist · Ash"]');
+      await modal().locator('.decklist-text').fill(`${LIST}\nthis is not a card`);
+      await modal().locator('.decklist-section', { hasText: 'Pokémon · 6' }).waitFor();
+      assert.match(await modal().locator('.hint-line').textContent(), /13 cards \(a deck has 60\) · 1 line not read: "this is not a card"/);
+      assert.deepEqual(await modal().locator('.decklist-section .deck-line-name').allTextContents(), ['Dreepy', 'Dragapult ex', 'Arven', 'Fire Energy']);
+      await modal().locator('.modal-foot .btn.primary').click();
+      await dialogClosed();
+      await expectLive((state) => state.trainerA.decklist.cards.map((card) => `${card.count} ${card.name}`), ['4 Dreepy', '2 Dragapult ex', '4 Arven', '3 Fire Energy']);
+      await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .pile-btn .count').textContent === '13');
+      assert.equal(await buttons('b').locator('.pile-btn', { hasText: 'Decklist' }).locator('.count').textContent(), 'none', 'the other trainer has none');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('offers the cards of the deck that fit first in the card picker, and looks up one the card library has not got by its name', async () => {
+      await producer.act('action:trainerA', { action: 'setDecklist', text: LIST });
+      await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .pile-btn .count').textContent === '13');
+      await press('a');
+      await page.waitForSelector('.modal .deck-cards');
+      assert.deepEqual(await modal().locator('.deck-card .deck-card-name').allTextContents(), ['Dreepy', 'Dragapult ex'], 'only the Pokémon, for the Active spot');
+      await modal().locator('.search-input').fill('drag');
+      await page.waitForFunction(() => document.querySelectorAll('.modal .deck-card').length === 1);
+      await modal().locator('.search-input').fill('');
+      await page.waitForFunction(() => document.querySelectorAll('.modal .deck-card').length === 2);
+      await modal().locator('.deck-card', { hasText: 'Dreepy' }).click();
+      assert.equal(await modal().locator('.search-input').inputValue(), 'Dreepy', 'not in the library: searched for by its name');
+      await modal().locator('.card-pick', { hasText: 'Pikachu ex' }).waitFor();
+      await press('Escape');
+      await dialogClosed();
+
+      // Gary has no decklist: nothing is offered for him
+      await press('2');
+      await press('a');
+      await page.waitForSelector('.modal .search-input');
+      assert.equal(await modal().locator('.deck-cards').count(), 0);
+    });
+
+    it('opens the discard pile and the Lost Zone with O: a card of the deck goes in with one click, moves to the Lost Zone, and comes out again', async () => {
+      await producer.act('action:trainerA', { action: 'setDecklist', text: LIST });
+      await page.waitForFunction(() => document.querySelector('.trainer-panel.side-a .pile-btn .count').textContent === '13');
+      await press('o');
+      await page.waitForSelector('.modal[aria-label="Cards out of play · Ash"]');
+      assert.match(await modal().locator('.empty').textContent(), /Nothing in the Discard pile yet/);
+      await modal().locator('.deck-card', { hasText: 'Arven' }).click();
+      await modal().locator('.deck-card', { hasText: 'Fire Energy' }).click();
+      await expectLive((state) => state.trainerA.discard.map((card) => [card.name, card.energy || '']), [['Arven', ''], ['Fire Energy', 'fire']]);
+      // the newest first
+      await page.waitForFunction(() => document.querySelectorAll('.modal .pile-card').length === 2);
+      assert.deepEqual(await modal().locator('.pile-card-name').allTextContents(), ['Fire Energy', 'Arven']);
+      assert.equal(await page.locator('.trainer-panel.side-a .pile-btn[data-pile="discard"] .count').textContent(), '2');
+
+      await modal().locator('.pile-card', { hasText: 'Arven' }).getByRole('button', { name: '→ Lost Zone' }).click();
+      await expectLive((state) => [state.trainerA.discard.length, state.trainerA.lostZone.map((card) => card.name)], [1, ['Arven']]);
+      await modal().locator('.seg[data-pile="lostZone"]').click();
+      await modal().locator('.pile-card', { hasText: 'Arven' }).getByRole('button', { name: 'Take Arven out' }).click();
+      await expectLive((state) => state.trainerA.lostZone.length, 0);
+
+      // any card, by searching: the picker stays open to put in several
+      await modal().locator('.section-label button', { hasText: 'Search a card' }).click();
+      await page.waitForSelector('.modal[aria-label="Lost Zone · Ash"]');
+      await page.locator('.modal[aria-label="Lost Zone · Ash"] .search-input').fill('pika');
+      await page.locator('.modal[aria-label="Lost Zone · Ash"] .card-pick', { hasText: 'Pikachu ex' }).click();
+      await expectLive((state) => state.trainerA.lostZone.map((card) => card.name), ['Pikachu ex']);
+      assert.match(await page.locator('.modal[aria-label="Lost Zone · Ash"] .picker-status').textContent(), /Pikachu ex is in the Lost Zone/);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('sends the cards of a knocked out Pokémon to the discard pile, or to the Lost Zone when the knock out says so', async () => {
+      await producer.act('action:trainerA', { action: 'attachEnergy', slot: -1, energyType: 'lightning', count: 2 });
+      await press('k');
+      await page.waitForSelector('.modal');
+      assert.equal(await modal().locator('.ko-pile .seg.on').textContent(), 'Discard pile');
+      await modal().locator('.modal-foot button.danger').click();
+      await expectLive((state) => state.trainerA.discard.map((card) => card.name), ['Pikachu', 'Lightning Energy', 'Lightning Energy']);
+      await page.waitForSelector('.modal[aria-label="Deploy the Active Pokémon · Ash"]');
+      await press('Escape');
+      await dialogClosed();
+
+      await press('2');
+      await press('k');
+      await page.waitForSelector('.modal .ko-pile');
+      await modal().locator('.ko-pile .seg', { hasText: 'Lost Zone' }).click();
+      await modal().locator('.modal-foot button.danger').click();
+      await expectLive((state) => [state.trainerB.lostZone.map((card) => card.name), state.trainerB.discard.length], [['Charizard'], 0]);
+    });
+  });
+
   describe('the Pokémon on the table', () => {
     const active = (side = 'a') => `.trainer-panel.side-${side} .active-slot .mon-card`;
     const pickCard = async (name) => { await modal().locator('.card-pick', { hasText: name }).click(); await dialogClosed(); };

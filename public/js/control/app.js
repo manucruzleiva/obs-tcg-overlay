@@ -8,6 +8,7 @@ import { TrainerView } from './trainer-view.js';
 import { CenterView } from './center-view.js';
 import { TopBar, DraftBanner } from './topbar-view.js';
 import * as modals from './modals.js';
+import { openDecklist, openPiles } from './piles.js';
 import { openSettings } from './settings.js';
 import { openImportDialog } from './packages.js';
 
@@ -55,6 +56,8 @@ export const KEYMAP = [
   { group: 'Dialogs', keys: ['K'], label: 'Knock out', test: plain('k'), run: (app) => app.openKO(app.focus) },
   { group: 'Dialogs', keys: ['S'], label: 'Stadium', test: plain('s'), run: (app) => app.openPicker({ kind: 'stadium' }) },
   { group: 'Dialogs', keys: ['X'], label: 'Abilities', test: plain('x'), run: (app) => app.openAbilities(app.focus) },
+  { group: 'Dialogs', keys: ['O'], label: 'Discard pile and Lost Zone (focused trainer)', test: plain('o'), run: (app) => app.openPiles(app.focus) },
+  { group: 'Dialogs', keys: ['L'], label: 'Decklist (focused trainer)', test: plain('l'), run: (app) => app.openDecklist(app.focus) },
 
   { group: 'Hype', keys: ['C'], label: 'Announce an attack', test: plain('c'), run: (app) => app.openAttack() },
   { group: 'Hype', keys: ['T'], label: 'Announce a Top Deck', test: plain('t'), run: (app) => app.act('action:toast', { action: 'topDeck', target: app.focus }) },
@@ -379,6 +382,8 @@ class App {
   openEnergy(side, slot) { modals.openEnergy(this, side, slot); }
   openBench(side) { modals.openBench(this, side); }
   openPrizes(side) { modals.openPrizes(this, side); }
+  openDecklist(side) { openDecklist(this, side); }
+  openPiles(side, pile) { openPiles(this, side, pile); }
   openAbilities(side) { modals.openAbilities(this, side); }
   openAttack() { modals.openAttack(this); }
   openHelp() { modals.openHelp(this); }

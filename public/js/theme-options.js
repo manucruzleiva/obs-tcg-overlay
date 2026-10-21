@@ -17,6 +17,7 @@
     { key: '--tool', label: 'Pokémon Tools', group: 'Kinds of card' },
     { key: '--stadium', label: 'Stadium', group: 'Kinds of card' },
     { key: '--supporter', label: 'Supporter', group: 'Kinds of card' },
+    { key: '--lost-zone', label: 'Lost Zone', group: 'Kinds of card' },
     { key: '--bg-panel', label: 'Panel background', group: 'Surfaces' },
     { key: '--bg-card', label: 'Card background', group: 'Surfaces' },
     { key: '--bg-primary', label: 'Page background', group: 'Surfaces' },
@@ -82,6 +83,7 @@
     { key: `${side}.prizes`, label: `Trainer ${letter}: prize cards`, selector: `.trainer-${letter.toLowerCase()} .prizes` },
     { key: `${side}.tokens`, label: `Trainer ${letter}: turn tokens`, selector: `.trainer-${letter.toLowerCase()} .tokens` },
     { key: `${side}.locks`, label: `Trainer ${letter}: locks`, selector: `.trainer-${letter.toLowerCase()} .locks` },
+    { key: `${side}.piles`, label: `Trainer ${letter}: discard pile and Lost Zone`, selector: `.trainer-${letter.toLowerCase()} .piles` },
     { key: `${side}.active`, label: `Trainer ${letter}: Active Pokémon`, selector: `.trainer-${letter.toLowerCase()} .active` },
     { key: `${side}.bench`, label: `Trainer ${letter}: bench`, selector: `.trainer-${letter.toLowerCase()} .bench` }
   ];

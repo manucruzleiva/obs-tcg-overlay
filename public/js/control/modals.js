@@ -4,8 +4,10 @@
  */
 import { h, icon, replace, ago, personColor, debounce, energyStyle } from './dom.js';
 import { openModal, closeModal } from './ui.js';
+import { deckRow, asSearchResult, PILES } from './piles.js';
 
 const GAME = window.OTO_GAME;
+const DECKLIST = window.OTO_DECKLIST;
 const SIDES = ['trainerA', 'trainerB'];
 const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
 const otherSide = (side) => (side === 'trainerA' ? 'trainerB' : 'trainerA');
@@ -73,10 +75,11 @@ const FILTERS = [
 // What kinds of search the picker does: Active, bench, stadium, a feature card, an evolution (the egg: two tabs, Evolution and Devolution, and
 // `tab` says which opens first), a Special Energy
 // card for a Pokémon (`countsAsTurn` and `onDone` belong to that one: whether it uses up the turn's energy
-// attachment, and what to do when a card has been attached), or one of the prize cards (`onPick` gets the card: nothing is sent,
-// the prize cards dialog behind it holds the choice).
+// attachment, and what to do when a card has been attached), one of the prize cards (`onPick` gets the card: nothing is sent,
+// the prize cards dialog behind it holds the choice), or a card for the discard pile or the Lost Zone (`pile`: it stays open, to put in several).
+// The cards of the trainer's decklist are offered above the search (see deckRow).
 export function openPicker(app, purpose) {
-  const { kind, side, slot, countsAsTurn, onDone, onPick } = purpose;
+  const { kind, side, slot, countsAsTurn, onDone, onPick, pile } = purpose;
   const state = app.state;
   const fixedFilter = kind === 'stadium' ? 'Stadium' : kind === 'special-energy' ? 'Energy' : kind === 'tool' ? 'Trainer' : kind === 'active' || kind === 'bench' || kind === 'evolve' ? 'Pokémon' : '';
   let filter = fixedFilter;
@@ -126,7 +129,8 @@ export function openPicker(app, purpose) {
     evolve: `Evolution · ${(slot !== undefined && side && ((slot === -1 ? state[side].active : state[side].bench[slot]) || {}).name) || ''}`,
     tool: `Pokémon Tool · ${side && slot !== undefined ? ((slot === -1 ? state[side].active : state[side].bench[slot]) || {}).name || '' : ''}`,
     'special-energy': `Special Energy · ${side && trainerName(state, side)}`,
-    prize: `Prize card ${slot + 1} · ${side && trainerName(state, side)}`
+    prize: `Prize card ${slot + 1} · ${side && trainerName(state, side)}`,
+    pile: `${(PILES.find((entry) => entry.key === pile) || PILES[0]).label} · ${side && trainerName(state, side)}`
   };
 
   const input = h('input', { type: 'search', class: 'search-input', placeholder: kind === 'stadium' ? 'Search stadium cards…' : kind === 'special-energy' ? 'Search Special Energy cards, for example Double Turbo…' : 'Search by card name…', 'aria-label': 'Card name', 'data-autofocus': true, autocomplete: 'off' });
@@ -173,7 +177,7 @@ export function openPicker(app, purpose) {
     box.addEventListener('change', () => { consume = box.checked; drawPlay(); });
     replace(playRow,
       h('div', { class: 'section-label' }, 'Played by'),
-      sideTabs(app, playedBy, (next) => { playedBy = next; drawPlay(); }),
+      sideTabs(app, playedBy, (next) => { playedBy = next; drawPlay(); drawDeck(); }),
       h('label', { class: 'switch inline' }, box, h('span', { class: 'track' }), h('span', { class: 'switch-label' }, `Uses ${trainerName(app.state, playedBy)}'s Stadium play for the turn`)),
       h('p', { class: `hint-line${consume && used ? ' warn' : ''}` }, consume
         ? (used ? `${trainerName(app.state, playedBy)} already played a Stadium this turn. Turn this off for a correction or an effect.` : "Uses up the turn's Stadium play.")
@@ -185,6 +189,18 @@ export function openPicker(app, purpose) {
     // where the card came from goes with it, so the details (attacks, abilities) are asked of the same service
     const cardData = { id: card.id, name: card.name, hp: card.hp, images: card.images, source: card.source, language: card.language };
     let result;
+    if (kind === 'pile') {
+      // (it stays open: a card often goes to the discard pile with others)
+      const where = (PILES.find((entry) => entry.key === pile) || PILES[0]).label;
+      const added = await app.act(`action:${side}`, {
+        action: 'pileAdd', pile, cardId: card.id || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined
+      });
+      if (added.ok) {
+        status.textContent = `${card.name} is in the ${where}. Choose another card, or close this window.`;
+        if (card.id && !card.fromDeck) fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
+      }
+      return;
+    }
     if (card.stage) {
       // the card it evolved from is on file with its attacks and retreat cost: back to it as it was
       result = await app.act(`action:${side}`, { action: 'devolve', slot });
@@ -211,7 +227,7 @@ export function openPicker(app, purpose) {
     }
     if (result.ok) {
       // counted, so it is offered first next time (nobody waits for this); the card it evolved from is only on file here, it is no search result
-      if (!card.stage) fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
+      if (!card.stage && !card.fromDeck) fetch('/api/cards/used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card) }).catch(() => {});
       closeModal();
       if (onDone) onDone();
     }
@@ -251,12 +267,31 @@ export function openPicker(app, purpose) {
     for (const star of results.querySelectorAll('.star-btn')) showStar(star, app.state.favoriteCardIds.includes(star.dataset.card));
   });
 
+  // The cards of the trainer's decklist that fit, above the search and narrowed to what is typed. A card the card library did not find is looked
+  // up by its name, unless any card will do (a prize card, a card for a pile)
+  const deckBox = h('div', {});
+  const deckSide = kind === 'stadium' ? () => playedBy : () => side;
+  const deckKind = () => (kind === 'stadium' ? ['Trainer', 'Stadium'] : kind === 'tool' ? ['Trainer', 'Pokémon Tool'] : kind === 'special-energy' ? ['Energy', 'Special']
+    : asItem ? ['Trainer', 'Item'] : kind === 'active' || kind === 'bench' || kind === 'evolve' ? ['Pokémon', ''] : [filter, '']);
+  const drawDeck = () => {
+    if (kind === 'feature' || (kind === 'evolve' && tab === 'devolve')) return;
+    const [supertype, subtype] = deckKind();
+    replace(deckBox, deckRow(app.state, deckSide(), {
+      supertype, subtype, query: input.value,
+      onPick: (card) => {
+        if (card.cardId || kind === 'prize' || kind === 'pile') pick(asSearchResult(card));
+        else { input.value = card.name; search(); }
+      }
+    }));
+  };
+
   // Load one page of results: the first replaces the list, later ones ("Show more") add to it
   let listed = [];
   const moreButton = h('button', { class: 'btn', type: 'button', hidden: true }, 'Show more');
   const load = async (pageNumber) => {
     const text = input.value.trim();
     const mine = ++token;
+    if (pageNumber === 1) drawDeck();
     // Items that are played as a Pokémon are looked for by name
     if (asItem && !text) {
       replace(results);
@@ -376,9 +411,9 @@ export function openPicker(app, purpose) {
     }, pokemon.image && h('img', { src: pokemon.image, alt: '' }), h('span', { class: 'choice-text' }, h('strong', {}, pokemon.name), h('span', {}, `Bench ${benchSlot + 1} · ${hpText(pokemon)}`))))));
 
   openModal({
-    title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy' || kind === 'prize', // over the energy editor or the prize cards that asked for it
+    title: titles[kind], size: 'lg', name: 'picker', stacked: kind === 'special-energy' || kind === 'prize' || kind === 'pile', // over the energy editor, the prize cards or the piles that asked for it
     onClose: followStars,
-    body: [fromBench, playRow, modeRow, tabRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, status, results, h('div', { class: 'more-row' }, moreButton)]
+    body: [fromBench, playRow, modeRow, tabRow, h('div', { class: 'search-row' }, h('span', { class: 'search-icon' }, icon('search', 18)), input), chips, deckBox, status, results, h('div', { class: 'more-row' }, moreButton)]
   });
   drawMode();
   drawTabs();
@@ -392,6 +427,7 @@ export function openKO(app, side, slot) {
   let current = side || app.focus;
   let prizes = 1; // what is taken for each Pokémon that is chosen from now on (the buttons change all of them)
   let clear = true;
+  let pile = 'discard'; // where their cards go: the discard pile, or the Lost Zone
   const picked = new Map(); // "trainerA:-1" -> { side, slot, prizes }: the Pokémon that were knocked out (of one trainer, or of both)
   const keyOf = (owner, at) => `${owner}:${at}`;
   const pick = (owner, at) => picked.set(keyOf(owner, at), { side: owner, slot: at, prizes });
@@ -450,17 +486,24 @@ export function openKO(app, side, slot) {
       summary,
       h('label', { class: 'switch inline' }, (() => {
         const box = h('input', { type: 'checkbox', checked: clear });
-        box.addEventListener('change', () => { clear = box.checked; });
+        box.addEventListener('change', () => { clear = box.checked; draw(); });
         return box;
-      })(), h('span', { class: 'track' }), h('span', { class: 'switch-label' }, 'Take them off the table')));
+      })(), h('span', { class: 'track' }), h('span', { class: 'switch-label' }, 'Take them off the table')),
+      // (their cards, with what was attached to them, go to a pile: the discard pile unless an effect sends them to the Lost Zone)
+      clear && h('div', { class: 'ko-pile' },
+        h('span', { class: 'ko-pile-label' }, 'Their cards go to'),
+        h('div', { class: 'segmented small', role: 'radiogroup', 'aria-label': 'Where their cards go' }, [...PILES, { key: 'none', label: 'Nowhere' }].map((entry) => h('button', {
+          class: `seg${entry.key === pile ? ' on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(entry.key === pile), dataset: { pile: entry.key },
+          onclick: () => { pile = entry.key; draw(); }
+        }, entry.label)))));
   };
 
   const confirm = async () => {
     if (picked.size === 0) return;
     const chosen = [...picked.values()];
     const result = chosen.length === 1
-      ? await app.act(`action:${chosen[0].side}`, { action: 'knockOut', slot: chosen[0].slot, prizes: chosen[0].prizes, clear })
-      : await app.act('action:match', { action: 'knockOutMany', knockouts: chosen.map(({ side: owner, slot: at, prizes: count }) => ({ side: owner, slot: at, prizes: count })), clear });
+      ? await app.act(`action:${chosen[0].side}`, { action: 'knockOut', slot: chosen[0].slot, prizes: chosen[0].prizes, clear, pile })
+      : await app.act('action:match', { action: 'knockOutMany', knockouts: chosen.map(({ side: owner, slot: at, prizes: count }) => ({ side: owner, slot: at, prizes: count })), clear, pile });
     if (!result.ok) return;
     closeModal();
     // An Active Pokémon is gone: offer the next one right away (for the first trainer who lost theirs)
