@@ -396,7 +396,6 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 /* special conditions: a dim chip when off, the color of the condition when on */
 .conditions { gap: 4px; }
 .condition-icon { display: inline-block; flex: none; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; vertical-align: -3px; background: var(--c) var(--icon) center / cover no-repeat; }
-.condition-chip[data-condition="trapped"] .condition-icon { background-color: #fff; background-size: 78%; }
 /* a condition that is off is just its icon (the name is in the tooltip); the one that is on says its name, in its color */
 .condition-chip:not(.on) .condition-label { display: none; }
 .condition-chip:not(.on) { padding-right: 0; }

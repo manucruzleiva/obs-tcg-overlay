@@ -824,8 +824,6 @@ html, body {
   background: var(--c) var(--icon) center / cover no-repeat;
   filter: drop-shadow(0 2px 4px var(--shadow));
 }
-/* Trapped is a drawing on white: it sits inside the disc */
-.status-chip[data-status="trapped"] .status-icon { background-color: #fff; background-size: 78%; }
 .has-status-sprite .status-chip .status-icon {
   background-image: var(--statusSymbols);
   background-size: 600% 100%;

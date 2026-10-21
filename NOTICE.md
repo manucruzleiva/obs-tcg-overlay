@@ -10,7 +10,7 @@ The project logo (`assets/logo.gif`, `assets/logo.ico`) is artwork chosen by the
 
 The energy type icons in `assets/energy/` are the round Pokémon TCG energy symbols (Grass, Fire, Water, Lightning, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless). They were supplied by the maintainer from another of their projects, with no license of their own, and the symbols are the property of their respective owners (see above). They are used here only to make the overlay recognizable to Pokémon TCG viewers, and **they are not covered by the MIT license**. If you redistribute OTO, check that you are allowed to ship them, or delete the folder: the overlay then falls back to plain colored discs.
 
-The status condition icons in `assets/status/` (Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped) were added by the maintainer. The same applies to them: they are **not covered by the MIT license**, and if you redistribute OTO you should check that you are allowed to ship them, or delete the folder (the overlay then draws a colored disc with a letter instead).
+The status condition icons in `assets/status/` (Asleep, Burned, Confused, Paralyzed, Poisoned, Trapped) are original drawings made for OTO by `scripts/make-status-icons.js`, and are covered by the MIT license like the code.
 
 The pictures in `assets/screenshots/` (the README's screenshots) show the overlay and the control panel with real card pictures in them. Those card pictures are the property of their respective owners (see above) and **are not covered by the MIT license**; they only show what the program looks like in use. Everything else in the screenshots is the program itself.
 
