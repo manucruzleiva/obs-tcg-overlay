@@ -98,4 +98,17 @@ describe('the default design', () => {
     assert.ok(Object.keys(example).includes('styles.css') && Object.keys(example).includes('controls.json'));
     assert.ok(fs.existsSync(path.join(FOLDER, 'images', 'backgroundImage.svg')));
   });
+
+  it('has pictures that are whole SVG documents: each tag that opens is closed (a broken one is not drawn at all)', () => {
+    for (const name of fs.readdirSync(path.join(FOLDER, 'images')).filter((one) => one.endsWith('.svg'))) {
+      const open = [];
+      const text = fs.readFileSync(path.join(FOLDER, 'images', name), 'utf8').replace(/<!--[\s\S]*?-->/g, '').replace(/<\?[\s\S]*?\?>/g, '');
+      for (const [, closing, tag, selfClosing] of text.matchAll(/<(\/?)([A-Za-z][\w:-]*)(?:"[^"]*"|'[^']*'|[^'">])*?(\/?)>/g)) {
+        if (selfClosing) continue;
+        if (!closing) open.push(tag);
+        else assert.equal(open.pop(), tag, `${name}: </${tag}> closes another tag`);
+      }
+      assert.deepEqual(open, [], `${name}: left open`);
+    }
+  });
 });

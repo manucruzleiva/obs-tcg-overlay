@@ -937,10 +937,10 @@ html, body {
 /* overlay.js puts it in the piece of the trainer whose pile it is, after the bench, and marks that trainer .pile-view-on (and the stage
    .pile-view-on-a or .pile-view-on-b) while it is shown: the bench and the feature cards are hidden meanwhile. .pv-head is its name and how
    many cards it has; each .pv-group (.pv-pokemon, .pv-trainer, .pv-energy) is a label and a row of pictures, .pv-card, one for each card with
-   .pv-copies (×2) when there are more copies of it. --pv-cards says how many pictures a row has, so a row overlaps its pictures to fit;
-   --pv-card-w and --pv-card-h set their size. */
+   .pv-copies (×2) when there are more copies of it. Each shows the artwork of its card, .pv-art, cut as the bench's crop says (--cb-*).
+   --pv-cards says how many pictures a row has, so a row overlaps its pictures to fit; --pv-card-w and --pv-card-h set their size. */
 #stage .trainer.pile-view-on .bench, #stage .trainer.pile-view-on .features { display: none; }
-.pile-view { --pv-card-w: 72px; --pv-card-h: 100px; flex: none; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+.pile-view { --pv-card-w: 104px; --pv-card-h: calc(var(--pv-card-w) * 1.393333 * var(--cb-h) / var(--cb-w)); flex: none; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
 .pv-head { display: flex; align-items: baseline; gap: 12px; font: 800 18px/1 var(--font-labels, var(--font-display)); letter-spacing: 0.12em; }
 .pv-count { font: 800 26px/1 var(--font-numbers, var(--font-display)); font-variant-numeric: tabular-nums; }
 .pile-view[data-pile="lostZone"] .pv-head { color: var(--lost-zone); }
@@ -949,8 +949,17 @@ html, body {
 .pv-cards { display: flex; }
 .pv-card { position: relative; flex: none; margin: 0; width: var(--pv-card-w); }
 .pv-card + .pv-card { margin-left: clamp(calc(var(--pv-card-w) * -0.8), calc((100% - var(--pv-card-w) * var(--pv-cards)) / (var(--pv-cards) - 1)), 6px); }
-.pv-img { display: block; width: var(--pv-card-w); height: var(--pv-card-h); object-fit: cover; border-radius: 6px; background: var(--bg-card); box-shadow: 0 6px 16px var(--shadow); }
-.pv-card.is-energy .pv-img { object-fit: contain; padding: 22px 12px; box-sizing: border-box; }
+.pv-art { position: relative; display: block; overflow: hidden; width: var(--pv-card-w); height: var(--pv-card-h); border-radius: 6px; background: var(--bg-card); box-shadow: 0 6px 16px var(--shadow); }
+.pv-img {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+  width: calc(100% / var(--cb-w));
+  height: calc(100% / var(--cb-h));
+  left: calc(-100% * var(--cb-x) / var(--cb-w));
+  top: calc(-100% * var(--cb-y) / var(--cb-h));
+}
+.pv-card.is-energy .pv-img { left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
 .pv-name { position: absolute; inset: 6px; display: flex; align-items: center; justify-content: center; text-align: center; font: 700 11px/1.1 var(--font-labels, var(--font-display)); }
 .pv-copies {
   position: absolute;

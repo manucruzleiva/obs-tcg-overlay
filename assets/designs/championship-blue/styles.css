@@ -409,14 +409,12 @@
 
 /* ============================================================== the discard pile and the Lost Zone
    Not on the table: the counts stay off the frame. While the producer shows one (Shift+O, or the pile's window in the control panel)
-   it covers that trainer's bench like the feature cards: a navy card with the pile's name and count in its bar, then its cards in white
-   frames, sorted into Pokémon, Trainers and Energy, fanned out to fit the row. The Lost Zone has a violet rim. */
+   it covers that trainer's bench like the feature cards: a navy card with the pile's name and count in its bar, then the artwork of its
+   cards in white frames, sorted into Pokémon, Trainers and Energy, four to a row. The Lost Zone has a violet rim. */
 
 .piles { display: none; }
 
 .pile-view, .trainer-b .pile-view {
-  --pv-card-w: 92px;
-  --pv-card-h: 128px;
   position: absolute;
   z-index: 3;
   left: 8px;
@@ -425,8 +423,9 @@
   height: 554px;
   box-sizing: border-box;
   align-items: stretch;
-  justify-content: space-evenly;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 12px;
+  overflow: hidden;
   padding: 44px 16px 10px;
   border-radius: 10px;
   border: 1.5px solid;
@@ -472,15 +471,15 @@
 .pv-label::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(139, 227, 255, 0.55), rgba(139, 227, 255, 0)); }
 .pv-label-count { color: #ffffff; }
 .trainer-b .pv-label { flex-direction: row; }
-.pv-cards { padding: 0 3px; }
-.pv-img { border-radius: 5px; background: #0b2a72; box-shadow: 0 0 0 2.5px #ffffff, -3px 4px 10px rgba(0, 8, 42, 0.75); }
-.pv-card.is-energy .pv-img { padding: 34px 18px; background: linear-gradient(180deg, #0c2f80 0%, #031a5e 100%); }
+.pv-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; padding: 0 3px; }
+.pv-card, .pv-card + .pv-card, .trainer-b .pv-card + .pv-card { width: auto; margin: 0; }
+.pv-art { width: 100%; height: auto; aspect-ratio: 1.6; border-radius: 4px; background: #0b2a72; box-shadow: 0 0 0 2.5px #ffffff, 0 4px 10px rgba(0, 8, 42, 0.75); }
+.pv-card.is-energy .pv-art { background: linear-gradient(180deg, #0c2f80 0%, #031a5e 100%); }
+.pv-card.is-energy .pv-img { padding: 9px; }
 .pv-name { color: #ffffff; }
-.pv-copies { right: -6px; bottom: -6px; padding: 4px 7px; background: var(--chb-navy); border: 1.5px solid var(--chb-cyan); color: #ffffff; font-size: 13px; }
+.pv-copies { right: -5px; bottom: -5px; padding: 4px 7px; background: var(--chb-navy); border: 1.5px solid var(--chb-cyan); color: #ffffff; font-size: 13px; }
 /* Trainer B's rows are not mirrored: the newest card is on the left for both, like the feature cards */
 .trainer-b .pile-view { align-items: stretch; }
-.trainer-b .pv-cards { flex-direction: row; }
-.trainer-b .pv-card + .pv-card { margin-right: 0; margin-left: clamp(calc(var(--pv-card-w) * -0.8), calc((100% - var(--pv-card-w) * var(--pv-cards)) / (var(--pv-cards) - 1)), 6px); }
 
 /* ============================================================== Pokémon: the parts both tiles share */
 

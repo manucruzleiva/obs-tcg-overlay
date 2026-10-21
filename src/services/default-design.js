@@ -18,7 +18,7 @@ const path = require('node:path');
 const { createZip } = require('./zip');
 
 const FOLDER = 'championship-blue';
-const VERSION = 1; // raise it when the bundled design changes, so installs that have an older one get the new one
+const VERSION = 2; // raise it when the bundled design changes, so installs that have an older one get the new one
 const SETTING = 'defaultDesign';
 const SYSTEM = { clientId: 'system', name: 'OTO (automatic)' };
 

@@ -1147,10 +1147,13 @@
           // a basic Energy without a picture of its own shows the icon of its type
           const energyOnly = !card.image && Boolean(ENERGY_ICON[card.energy]);
           figure.classList.toggle('is-energy', energyOnly);
+          // the artwork of the card (the part the bench's crop says), in a window of its own
+          const art = el('span', 'pv-art');
           const img = el('img', 'pv-img');
           img.decoding = 'async';
           setImage(img, card.image || ENERGY_ICON[card.energy] || '', card.name);
-          figure.appendChild(img);
+          art.appendChild(img);
+          figure.appendChild(art);
           if (!card.image && !energyOnly) figure.appendChild(el('span', 'pv-name', card.name));
           if (count > 1) figure.appendChild(el('span', 'pv-copies', `×${count}`));
           row.appendChild(figure);
