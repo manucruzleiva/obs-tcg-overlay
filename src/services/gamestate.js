@@ -10,6 +10,7 @@ const DISPLAY = require('../../public/js/display-options');
 const SOUND = require('../../public/js/sound-options');
 const GAME = require('../../public/js/game-data');
 const DECK = require('../../public/js/deck');
+const DECKLIST = require('../../public/js/decklist');
 const { MAX_ATTACKS, MAX_RETREAT } = require('./attacks');
 
 const MAX_ENERGIES_PER_POKEMON = 20;
@@ -26,6 +27,8 @@ const MAX_BENCH = 8;
 const DEFAULT_BENCH = 5;
 const MAX_FEATURE_ENTRIES = 14; // feature cards and the separators between them
 const MAX_FAVORITES = 50;
+const MAX_PILE = 60; // cards in a discard pile or in the Lost Zone (a deck has 60)
+const PILES = ['discard', 'lostZone'];
 
 // Used by forked copies so a draft preview never writes to the database
 const NOOP_DB = {
@@ -50,6 +53,47 @@ function cleanPrizeCards(list) {
     cards[index] = { cardId: typeof card.cardId === 'string' ? card.cardId : '', name: card.name, image: typeof card.image === 'string' ? card.image : '' };
   });
   return cards;
+}
+
+// A card in a discard pile or in the Lost Zone: { id, cardId, name, image }, and `energy` (its type) for a basic Energy, which may have no
+// picture of its own (the overlay shows the icon of the type then). The id tells two copies of one card apart.
+function cleanPileCard(card) {
+  if (!card || typeof card !== 'object' || typeof card.name !== 'string' || !card.name) return null;
+  const clean = {
+    id: typeof card.id === 'string' && card.id ? card.id.slice(0, 64) : randomUUID(),
+    cardId: typeof card.cardId === 'string' ? card.cardId.slice(0, 64) : '',
+    name: card.name.slice(0, 80),
+    image: typeof card.image === 'string' ? card.image : ''
+  };
+  if (GAME.ENERGY_KEYS.includes(card.energy)) clean.energy = card.energy;
+  return clean;
+}
+const cleanPile = (list) => (Array.isArray(list) ? list.map(cleanPileCard).filter(Boolean).slice(-MAX_PILE) : []);
+
+// A card of a decklist as it is kept: what the list says (count, name, set, number, section) and, when the card library found it, the card
+// (cardId, supertype, subtypes, the pictures). See public/js/decklist.js.
+function cleanDeckCard(card) {
+  if (!card || typeof card !== 'object' || typeof card.name !== 'string' || !card.name) return null;
+  const str = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+  const images = card.images && typeof card.images === 'object' ? card.images : {};
+  return {
+    count: Number.isInteger(card.count) ? Math.max(1, Math.min(DECKLIST.MAX_COUNT, card.count)) : 1,
+    name: card.name.slice(0, 80),
+    set: str(card.set, 8),
+    number: str(card.number, 12),
+    section: DECKLIST.SECTIONS.includes(card.section) ? card.section : '',
+    cardId: str(card.cardId, 64),
+    supertype: str(card.supertype, 20),
+    subtypes: Array.isArray(card.subtypes) ? card.subtypes.filter((one) => typeof one === 'string').slice(0, 6).map((one) => one.slice(0, 30)) : [],
+    images: { small: str(images.small, 2048), large: str(images.large, 2048) }
+  };
+}
+function cleanDecklist(value) {
+  const decklist = value && typeof value === 'object' ? value : {};
+  return {
+    text: typeof decklist.text === 'string' ? decklist.text.slice(0, DECKLIST.MAX_TEXT) : '',
+    cards: Array.isArray(decklist.cards) ? decklist.cards.map(cleanDeckCard).filter(Boolean).slice(0, DECKLIST.MAX_LINES) : []
+  };
 }
 
 // What a Pokémon Tool is when it is kept: the card (its HP is the Pokémon's own: the maximum HP is changed on the Pokémon)
@@ -203,6 +247,11 @@ class GameStateService {
       deck: '',
       deckIcon: '',
       record: { wins: 0, losses: 0, ties: 0 },
+      // the decklist the producer pasted (Pokémon TCG Live's export) and its cards, which the card pickers offer first: see public/js/decklist.js
+      decklist: { text: '', cards: [] },
+      // the cards in the discard pile and in the Lost Zone, the oldest first: { id, cardId, name, image } (see cleanPileCard)
+      discard: [],
+      lostZone: [],
       // penalty: how many prize cards the OTHER trainer counts as already taken (0 to 6); they are marked red on that trainer's side
       // (hidden: the prize cards are face down until the producer shows them, and so are the cards put on them)
       prizes: { count: MAX_PRIZES, hidden: true, penalty: 0, cards: emptyPrizeCards() },
@@ -263,6 +312,9 @@ class GameStateService {
       prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, prizes.penalty));
       // and the cards of the prizes came later still
       prizes.cards = cleanPrizeCards(prizes.cards);
+      // the decklist, the discard pile and the Lost Zone came later still
+      merged[side].decklist = cleanDecklist(merged[side].decklist);
+      for (const pile of PILES) merged[side][pile] = cleanPile(merged[side][pile]);
       // the deck came after the nationality
       for (const key of ['deck', 'deckIcon']) merged[side][key] = typeof merged[side][key] === 'string' ? merged[side][key].trim().slice(0, DECK.MAX_LENGTH) : '';
     }
@@ -325,6 +377,64 @@ class GameStateService {
 
   setDeckIcon(side, icon) {
     this.state[side].deckIcon = icon;
+  }
+
+  // The decklist: the text that was pasted, and the cards read from it (found in the card library or not)
+  setDecklist(side, text, cards) {
+    this.state[side].decklist = cleanDecklist({ text, cards });
+  }
+
+  // ------------------------------------------------- discard pile and Lost Zone
+
+  // Put a card on top of a pile ('discard' or 'lostZone'). Gives back the card as it is kept, or null when the pile is full.
+  addToPile(side, pile, card) {
+    const list = this.state[side][pile];
+    const clean = cleanPileCard({ ...card, id: undefined });
+    if (!clean || list.length >= MAX_PILE) return null;
+    list.push(clean);
+    return clean;
+  }
+
+  // Take a card out of a pile (by its id). Gives it back, or null when it is not there.
+  removeFromPile(side, pile, id) {
+    const list = this.state[side][pile];
+    const at = list.findIndex((card) => card.id === id);
+    return at < 0 ? null : list.splice(at, 1)[0];
+  }
+
+  // A card goes from one pile to the other (from the discard pile to the Lost Zone, say). Null when it is not there or the other is full.
+  movePileCard(side, from, id, to) {
+    const list = this.state[side][from];
+    const at = list.findIndex((card) => card.id === id);
+    if (at < 0 || this.state[side][to].length >= MAX_PILE) return null;
+    const [card] = list.splice(at, 1);
+    this.state[side][to].push(card);
+    return card;
+  }
+
+  clearPile(side, pile) {
+    this.state[side][pile] = [];
+  }
+
+  // The cards of the Pokémon in a slot, as they go to a pile when it is knocked out: the earlier stages, the Pokémon, its tools, its Special
+  // Energy and its basic Energy (with the picture of the decklist's card of that type when there is one)
+  cardsOf(side, slot) {
+    const pokemon = this.pokemonAt(side, slot);
+    if (!pokemon || !(pokemon.cardId || pokemon.name)) return [];
+    const deck = this.state[side].decklist.cards;
+    const energyPicture = (key) => {
+      const card = deck.find((entry) => DECKLIST.basicEnergyOf(entry.name) === key && (entry.images.small || entry.images.large));
+      return card ? card.images.small || card.images.large : '';
+    };
+    const card = ({ cardId, name, image }) => ({ cardId, name, image });
+    const label = (key) => `${GAME.ENERGY_TYPES.find((type) => type.key === key).label} Energy`;
+    return [
+      ...(pokemon.stages || []).map(card),
+      card(pokemon),
+      ...(pokemon.tools || []).map(card),
+      ...(pokemon.specialEnergies || []).map(card),
+      ...(pokemon.energies || []).filter((key) => GAME.ENERGY_KEYS.includes(key)).map((key) => ({ cardId: '', name: label(key), image: energyPicture(key), energy: key }))
+    ].filter((entry) => entry.name);
   }
 
   // The trainer's tournament record, shown next to the name
@@ -656,9 +766,13 @@ class GameStateService {
     place(from, other);
   }
 
-  // A Pokémon is knocked out: it leaves play and the opponent takes prize cards
-  knockOut(side, slot, { prizesTaken = 1, clear = true } = {}) {
-    if (clear) this.clearSlot(side, slot);
+  // A Pokémon is knocked out: it leaves play (its cards go to the discard pile, or to the Lost Zone, or nowhere when `pile` is null) and the
+  // opponent takes prize cards
+  knockOut(side, slot, { prizesTaken = 1, clear = true, pile = 'discard' } = {}) {
+    if (clear) {
+      if (PILES.includes(pile)) for (const card of this.cardsOf(side, slot)) this.addToPile(side, pile, card);
+      this.clearSlot(side, slot);
+    }
     this.adjustPrizes(otherSide(side), -prizesTaken);
   }
 
@@ -706,6 +820,7 @@ class GameStateService {
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true; // new prizes are face down again
+      for (const pile of PILES) this.clearPile(side, pile);
     }
     this.resetGameMarkers();
     this.state.matchScore = { trainerAWins: 0, trainerBWins: 0, bestOf: this.state.matchScore.bestOf };
@@ -761,13 +876,15 @@ class GameStateService {
   }
 
   // The next game of the same match: prize cards and penalties start again (with new cards for the prizes, which nobody has chosen yet) and
-  // the once-per-game markers and abilities come back. The score, the names and what is on the table stay.
+  // the once-per-game markers and abilities come back, and the discard piles and the Lost Zones are empty. The score, the names, the decklists
+  // and what is on the table stay.
   nextGame() {
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true;
+      for (const pile of PILES) this.clearPile(side, pile);
       this.resetAbilities(side, { includeGame: true });
     }
     this.resetGameMarkers();
@@ -934,3 +1051,5 @@ class GameStateService {
 }
 
 module.exports = GameStateService;
+module.exports.PILES = PILES;
+module.exports.MAX_PILE = MAX_PILE;

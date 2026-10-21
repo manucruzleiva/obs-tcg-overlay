@@ -50,7 +50,7 @@ Three ways to see how a design is made, so you can change one instead of startin
 
 ## Colors and pictures
 
-**Kinds of card.** Four colors say what kind of thing something is, in the same way everywhere on the overlay: `--ability` (red), `--tool` (purple), `--stadium` (green) and `--supporter` (orange). An ability token and its diamond, the frame of a Pokémon Tool, the Stadium's name and play counter, and the Supporter counter take them. They are in the **Kinds of card** group in the Look tab.
+**Kinds of card.** Five colors say what kind of thing something is, in the same way everywhere on the overlay: `--ability` (red), `--tool` (purple), `--stadium` (green), `--supporter` (orange) and `--lost-zone` (violet). An ability token and its diamond, the frame of a Pokémon Tool, the Stadium's name and play counter, the Supporter counter and the frame of the Lost Zone take them. They are in the **Kinds of card** group in the Look tab.
 
 The color variables are CSS custom properties, listed in the Look tab (and in [`public/js/theme-options.js`](../public/js/theme-options.js)): `--accent`, `--trainer-a`, `--trainer-b`, `--bg-panel`, `--bg-card`, `--fg-primary`, `--success`, `--warning`, `--danger`, `--radius`, `--transition` and more. Any CSS color works (`#ff2d95`, `rgba(18, 8, 38, 0.86)`); lengths such as `--radius` take `14px`. A color cannot hold a `url()` (nor `image-set()` and the like): pictures go in the slots below.
 

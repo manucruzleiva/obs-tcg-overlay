@@ -29,6 +29,9 @@
   const MAX_ENERGY_SHOWN_ON_BENCH = 6; // the picture of a bench Pokémon is small
   const MAX_RETREAT_SHOWN = 6;
   const FADE_OUT_MS = 350;
+  const PILE_SHOWN = 3; // cards of a discard pile or the Lost Zone drawn fanned out, the newest on top
+  const ENERGY_ICON = {};
+  GAME.ENERGY_TYPES.forEach((type) => { ENERGY_ICON[type.key] = type.icon; });
 
   const SIDES = ['trainerA', 'trainerB'];
   const SIDE_CLASS = { trainerA: 'a', trainerB: 'b' };
@@ -83,6 +86,59 @@
 
   function cssUrl(value) {
     return `url("${String(value).replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
+  }
+
+  // ------------------------------------------------------------------ piles
+
+  // A pile of cards out of play (the discard pile, the Lost Zone): the last cards put in it, fanned out with the newest on top, its name and
+  // how many cards it has
+  function createPile(kind, label, option) {
+    const root = opt(el('div', `pile pile-${kind}`), option);
+    root.hidden = true;
+    const stack = el('div', 'pile-stack');
+    const cards = [];
+    for (let i = 0; i < PILE_SHOWN; i++) {
+      const card = el('div', 'pile-card');
+      const img = el('img', 'pile-img');
+      img.decoding = 'async';
+      card.appendChild(img);
+      cards.push({ root: card, img });
+      stack.appendChild(card);
+    }
+    const info = el('div', 'pile-info');
+    const name = el('span', 'pile-label', label);
+    const count = el('span', 'pile-count');
+    info.appendChild(name);
+    info.appendChild(count);
+    root.appendChild(stack);
+    root.appendChild(info);
+    return { root, cards, count, last: '' };
+  }
+
+  function renderPile(refs, list) {
+    const pile = Array.isArray(list) ? list : [];
+    refs.root.hidden = pile.length === 0;
+    refs.count.textContent = String(pile.length);
+    refs.root.dataset.count = String(pile.length);
+    const top = pile.slice(-PILE_SHOWN);
+    refs.cards.forEach((slot, index) => {
+      // (the newest card is the last slot, drawn on top)
+      const card = top[index - (PILE_SHOWN - top.length)];
+      slot.root.hidden = !card;
+      if (!card) return;
+      // a basic Energy without a picture of its own shows the icon of its type
+      const energyOnly = !card.image && Boolean(ENERGY_ICON[card.energy]);
+      slot.root.classList.toggle('is-energy', energyOnly);
+      setImage(slot.img, card.image || ENERGY_ICON[card.energy] || '', '');
+      slot.img.hidden = !(card.image || energyOnly);
+      slot.root.title = card.name;
+    });
+    // the newest card, for a design that wants to mark a card that just came (data-top changes with it)
+    const newest = pile.length ? pile[pile.length - 1].id || '' : '';
+    if (newest !== refs.last) {
+      refs.last = newest;
+      if (newest) refs.root.dataset.top = newest; else delete refs.root.dataset.top;
+    }
   }
 
   // ------------------------------------------------------------------ moments
@@ -654,7 +710,13 @@
       [energy, stadiumUse, supporter, gx, vstar].forEach((token) => tokens.appendChild(token.root));
 
       const locks = opt(el('div', 'locks'), 'locks');
-      [prizes, tokens, locks].forEach((node) => top.appendChild(node));
+      // the cards out of play: the discard pile and the Lost Zone, each the last cards put in it and how many there are (nothing while empty)
+      const piles = el('div', 'piles');
+      const discard = createPile('discard', 'DISCARD', 'discardPile');
+      const lostZone = createPile('lost-zone', 'LOST ZONE', 'lostZone');
+      piles.appendChild(discard.root);
+      piles.appendChild(lostZone.root);
+      [prizes, tokens, locks, piles].forEach((node) => top.appendChild(node));
 
       const active = opt(el('div', 'active'), 'activePokemon');
       const activeMon = createMon(false);
@@ -670,7 +732,7 @@
 
       [turnTag, top, active, bench].forEach((node) => root.appendChild(node));
       this.stage.appendChild(root);
-      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, activeMon, benchMons };
+      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, piles, discard, lostZone, activeMon, benchMons };
     }
 
     buildCenter() {
@@ -877,6 +939,11 @@
       if (trainer.locks.itemLock) refs.locks.appendChild(el('span', 'lock', 'ITEM LOCK'));
       if (trainer.locks.evoLock) refs.locks.appendChild(el('span', 'lock', 'EVOLUTION LOCK'));
       refs.locks.hidden = !(trainer.locks.itemLock || trainer.locks.evoLock);
+
+      // the discard pile and the Lost Zone
+      renderPile(refs.discard, trainer.discard);
+      renderPile(refs.lostZone, trainer.lostZone);
+      refs.piles.hidden = refs.discard.root.hidden && refs.lostZone.root.hidden;
 
       // Pokémon
       renderMon(refs.activeMon, trainer.active);
