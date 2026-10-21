@@ -50,7 +50,8 @@ describe('GameStateService', () => {
     assert.equal(state.settings.display.benchRow, false, 'the bench is stacked at the side until the producer asks for a row');
     assert.equal(state.settings.display.benchAttacks, false, 'the attacks of the benched Pokémon are not shown until the producer asks for them');
     assert.equal(state.settings.display.spaces, true, 'the frames of the reserved spaces show');
-    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag', 'benchRow', 'benchAttacks', 'toolNames'].includes(key)));
+    assert.equal(state.settings.display.toasts, false, 'no toast banners at the bottom until the producer asks for them: only the big effects');
+    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag', 'benchRow', 'benchAttacks', 'toolNames', 'toasts'].includes(key)));
   });
 
   it('keeps the GX attack and the VSTAR Power as markers that can be used once per game, back when the game ends', () => {
