@@ -193,7 +193,8 @@ export function openPicker(app, purpose) {
       // (it stays open: a card often goes to the discard pile with others)
       const where = (PILES.find((entry) => entry.key === pile) || PILES[0]).label;
       const added = await app.act(`action:${side}`, {
-        action: 'pileAdd', pile, cardId: card.id || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined
+        action: 'pileAdd', pile, cardId: card.id || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined,
+        supertype: card.supertype || undefined
       });
       if (added.ok) {
         status.textContent = `${card.name} is in the ${where}. Choose another card, or close this window.`;
@@ -794,9 +795,9 @@ export function openPrizes(app, side) {
   const clearAll = h('button', { class: 'btn tiny clear-all', type: 'button', onclick: () => { cards.fill(null); draw(); } }, 'Clear all');
 
   function draw() {
-    const left = app.state[key].prizes.count; // the prize cards from the right are the ones taken
+    const taken = app.state[key].prizes.taken || []; // (each prize card is taken or not on its own)
     replace(body,
-      h('div', { class: 'prize-slots' }, cards.map((card, index) => h('div', { class: `prize-slot${card ? ' filled' : ''}${index >= left ? ' taken' : ''}`, dataset: { slot: index } },
+      h('div', { class: 'prize-slots' }, cards.map((card, index) => h('div', { class: `prize-slot${card ? ' filled' : ''}${taken[index] ? ' taken' : ''}`, dataset: { slot: index } },
         h('button', {
           class: 'prize-pick', type: 'button', 'data-autofocus': index === 0 || undefined,
           'aria-label': card ? `Prize card ${index + 1}: ${card.name}. Choose another card` : `Prize card ${index + 1}: choose a card`,
@@ -811,7 +812,7 @@ export function openPrizes(app, side) {
 
   draw(); // before it opens, so the first prize card is there to take the focus
   openModal({
-    title: `Prize cards · ${trainerName(app.state, key)}`, subtitle: 'Choose the card of each prize. Prizes that are taken fade out, from the right.', size: 'md', name: 'prizes', body,
+    title: `Prize cards · ${trainerName(app.state, key)}`, subtitle: 'Choose the card of each prize. Prizes that are taken fade out.', size: 'md', name: 'prizes', body,
     footer: [clearAll, h('button', { class: 'btn', type: 'button', onclick: () => closeModal() }, 'Cancel'), apply]
   });
 }

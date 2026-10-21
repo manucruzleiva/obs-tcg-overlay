@@ -137,7 +137,8 @@ describe('design editor', { skip }, () => {
       assert.equal(await page.$eval('.editor-frame', (node) => `${node.offsetWidth}x${node.offsetHeight}`), '1920x1080');
 
       const shown = await page.$$eval('.editor-box:not([hidden])', (nodes) => nodes.map((node) => node.dataset.key).sort());
-      assert.ok(shown.includes('scoreboard') && shown.includes('trainerA.active') && shown.includes('trainerB.bench') && shown.includes('stadium') && shown.includes('features'), shown.join(' '));
+      assert.ok(shown.includes('scoreboard') && shown.includes('trainerA.active') && shown.includes('trainerA.bench') && shown.includes('trainerB.bench') && shown.includes('stadium'), shown.join(' '));
+      assert.ok(!shown.includes('features'), 'the feature cards cover a bench: they show when the Feature cards switch is on');
       assert.ok(!shown.includes('logo'), 'a design with no logo has no logo to move');
       assert.equal(await page.locator('.editor-box[data-key="logo"]').isHidden(), true);
       // each box is where the overlay really has the piece
@@ -150,13 +151,38 @@ describe('design editor', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
+    it('shows the feature cards when asked, over the bench they go over on air, and hides them again so that bench can be placed', async () => {
+      const shown = () => page.$$eval('.editor-box:not([hidden])', (nodes) => nodes.map((node) => node.dataset.key));
+      const toggle = page.locator('.editor-toolbar .switch', { hasText: 'Feature cards' });
+      assert.equal(await page.getByRole('checkbox', { name: 'Show the feature cards, over the bench they go over' }).isChecked(), false);
+      await toggle.click();
+      await page.waitForFunction(() => [...document.querySelectorAll('.editor-box:not([hidden])')].some((node) => node.dataset.key === 'features'));
+      const keys = await shown();
+      assert.ok(keys.includes('features') && !keys.includes('trainerA.bench') && keys.includes('trainerB.bench'), keys.join(' '));
+      assert.equal(await overlayFrame().$eval('.features', (node) => node.parentElement.classList.contains('trainer-a')), true, 'over Trainer A\'s bench, as on air');
+      assert.equal(await overlayFrame().locator('.features .feature').count(), 2, 'the sample\'s two cards');
+
+      // over the other bench when the live game has them there
+      await page.evaluate(() => window.oto.act('action:card', { action: 'setFeatureSide', side: 'trainerB' }));
+      await page.waitForFunction(() => window.oto.conn.live.featureView.side === 'trainerB');
+      await page.evaluate(() => window.oto.designEditor.canvas.draw());
+      await overlayFrame().waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+
+      await toggle.click();
+      await page.waitForFunction(() => ![...document.querySelectorAll('.editor-box:not([hidden])')].some((node) => node.dataset.key === 'features'));
+      assert.ok((await shown()).includes('trainerB.bench'));
+      await page.evaluate(() => window.oto.act('action:card', { action: 'setFeatureSide', side: 'trainerA' }));
+      assert.deepEqual(page.problems, []);
+    });
+
     it('fits the whole stage in the window, and keeps it fitted when the window changes', async () => {
       const first = await view();
       const area = await page.$eval('.editor-viewport', (node) => ({ w: node.clientWidth, h: node.clientHeight }));
       assert.ok(first.zoom > 0.3 && first.zoom < 1.2 && 1920 * first.zoom <= area.w && 1080 * first.zoom <= area.h, `zoom ${first.zoom} in ${area.w}x${area.h}`);
       assert.ok(Math.abs(first.x - (area.w - 1920 * first.zoom) / 2) < 1, 'centred');
       await page.setViewportSize({ width: 1300, height: 800 });
-      await wait(250);
+      // (the editor fits the stage again once the window has settled, which can take a while on a busy machine)
+      await page.waitForFunction((before) => window.oto.designEditor.canvas.view.zoom < before, first.zoom, { timeout: 5000 }).catch(() => {});
       assert.ok((await zoom()) < first.zoom, 'smaller window, smaller picture');
     });
 
@@ -438,6 +464,8 @@ describe('design editor', { skip }, () => {
 
     it('moves the overlay as you type, and says what is wrong while it is not valid', async () => {
       await type(JSON.stringify({ layout: { scoreboard: { x: 0, y: 120, scale: 1 } } }, null, 2));
+      // (what is typed is read after a pause, which can be longer on a busy machine)
+      await page.waitForFunction(() => Boolean(window.oto.designEditor.model.draft.layout.scoreboard), null, { timeout: 5000 }).catch(() => {});
       assert.equal((await layout()).scoreboard.y, 120);
       await drawn();
       assert.equal(await overlayFrame().locator('.scoreboard.moved').count(), 1);
@@ -1918,7 +1946,7 @@ describe('design editor', { skip }, () => {
       assert.equal(await overlay.evaluate(() => window.oto.momentDuration()), 900);
       assert.equal(await overlay.evaluate(() => document.head.lastElementChild.id), 'oto-design-css', 'after the built-in style sheets');
 
-      // and off air, the built-in look again
+      // and off air, the classic look again
       await api('POST', '/api/theme/active', { name: null });
       await overlay.waitForFunction(() => document.getElementById('oto-design-css').textContent === '');
       assert.deepEqual(overlay.problems, []);

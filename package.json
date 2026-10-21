@@ -12,7 +12,8 @@
     "test:desktop": "node --test \"tests/desktop/*.test.js\"",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --publish never",
-    "update:decks": "node scripts/update-popular-decks.js"
+    "update:decks": "node scripts/update-popular-decks.js",
+    "pack:example": "node scripts/pack-example.js"
   },
   "build": {
     "appId": "com.obs.tcg-overlay",
@@ -32,6 +33,7 @@
       "assets/fonts/**/*",
       "assets/cardbacks/**/*",
       "assets/markers/**/*",
+      "assets/designs/**/*",
       "package.json",
       "README.md",
       "LICENSE",

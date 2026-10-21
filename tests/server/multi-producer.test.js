@@ -124,6 +124,37 @@ describe('two producers', () => {
     assert.equal(b.state.trainerA.active.abilities[0].used, true);
   });
 
+  it('lets two producers take two different prize cards from an out-of-date view, but not the same one, nor the next one with the arrows', async () => {
+    const base = alice.revision;
+    const activity = bob.expect('activity', (a) => /prize card 2/.test(a.label));
+    const a = await alice.act('action:trainerA', { action: 'togglePrize', slot: 1, taken: true }, { baseRevision: base });
+    const b = await bob.act('action:trainerA', { action: 'togglePrize', slot: 3, taken: true }, { baseRevision: base });
+    assert.equal(a.ok && b.ok, true);
+    assert.deepEqual(b.state.trainerA.prizes.taken, [false, true, false, true, false, false]);
+    assert.equal(b.state.trainerA.prizes.count, 4);
+    const entry = await activity;
+    assert.deepEqual([entry.by.name, entry.label], ['Alice', 'Trainer A took prize card 2 (5 left)']);
+
+    // Bob had not seen Alice take the second one: giving it back, or taking the next one with the arrows (which can be the same one), is refused
+    const same = await bob.act('action:trainerA', { action: 'togglePrize', slot: 1, taken: false }, { baseRevision: base });
+    assert.deepEqual([same.ok, same.rejected.reason, same.rejected.by], [false, 'conflict', 'Alice']);
+    const next = await bob.act('action:trainerA', { action: 'prizeMinus' }, { baseRevision: base });
+    assert.deepEqual([next.ok, next.rejected.by], [false, 'Alice']);
+    await inSync();
+    assert.deepEqual(alice.state.trainerA.prizes.taken, [false, true, false, true, false, false], 'nothing else changed');
+  });
+
+  it('undoes and redoes a prize card taken on its own, as it was', async () => {
+    await alice.act('action:trainerA', { action: 'prizeMinus' });
+    await alice.act('action:trainerA', { action: 'togglePrize', slot: 0, taken: true });
+    await inSync();
+    const undone = await bob.act('action:undo', {});
+    assert.deepEqual([undone.state.trainerA.prizes.taken, undone.state.trainerA.prizes.count], [[false, false, false, false, false, true], 5]);
+    await inSync();
+    const redone = await alice.act('action:redo', {});
+    assert.deepEqual([redone.state.trainerA.prizes.taken, redone.state.trainerA.prizes.count], [[true, false, false, false, false, true], 4]);
+  });
+
   it('applies an action that is delivered twice only once', async () => {
     const base = alice.revision;
     const first = await alice.act('action:trainerA', { action: 'prizeMinus' }, { baseRevision: base, seq: 9001 });
@@ -593,6 +624,29 @@ describe('the draft the producers share', () => {
     assert.match(result.skipped[0].reason, /Alice/);
     await updated;
     assert.equal(bob.state.trainerA.prizes.count, 5, 'only Alice\'s prize was taken, not both');
+  });
+
+  it('drafts a prize card taken on its own like any change: another one taken live is no conflict, the same one is', async () => {
+    await startDraft(bob);
+    const { draft } = await bob.draftAct('action:trainerB', { action: 'togglePrize', slot: 2, taken: true });
+    assert.deepEqual([draft.preview.trainerB.prizes.taken, draft.preview.trainerB.prizes.count], [[false, false, true, false, false, false], 5]);
+    assert.equal(draft.changes[0].label, 'Trainer B took prize card 3 (5 left)');
+    assert.equal(alice.state.trainerB.prizes.count, 6, 'it is not live');
+
+    const refreshed = bob.expect('draft:state', (d) => d.preview.trainerB.prizes.taken[4]);
+    await alice.act('action:trainerB', { action: 'togglePrize', slot: 4, taken: true });
+    const both = await refreshed;
+    assert.deepEqual([both.preview.trainerB.prizes.count, both.changes[0].conflict], [4, null]);
+
+    const flagged = bob.expect('draft:state', (d) => d.changes[0] && d.changes[0].conflict);
+    await alice.act('action:trainerB', { action: 'togglePrize', slot: 2, taken: true });
+    assert.equal((await flagged).changes[0].conflict.by, 'Alice');
+
+    const sent = bob.expect('draft:sent');
+    bob.emit('draft:send', { mode: 'force' });
+    assert.equal((await sent).applied, 1);
+    await wait(100);
+    assert.deepEqual(alice.state.trainerB.prizes.taken, [false, false, true, false, true, false], 'taken it is, either way');
   });
 
   it('can send everything anyway', async () => {

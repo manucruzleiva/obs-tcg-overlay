@@ -45,7 +45,11 @@
   const MOMENT_MIN_MS = 200;
   const MOMENT_MAX_MS = 10000;
   // the moments there are (each is the class moment-<kind>; see markMoments for when each one happens)
-  const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point'];
+  const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point', 'lock', 'unlock'];
+  // the locks a trainer can be under: the kind (data-lock), the text of its chip and where the game keeps it
+  // the groups of the cards of a pile shown over the bench (see renderPileView)
+  const PILE_GROUPS = [['pokemon', 'POKÉMON'], ['trainer', 'TRAINER'], ['energy', 'ENERGY']];
+  const LOCKS = [['item', 'ITEM LOCK', 'itemLock'], ['evolution', 'EVOLUTION LOCK', 'evoLock']];
   // the moments that write something on their piece while they play: a number (data-damage and --moment-damage for moment-damage...),
   // or the condition that came (data-status). Each its own, so two at once never take each other's.
   const MOMENT_WRITES = ['damage', 'heal', 'energy', 'status'];
@@ -86,6 +90,15 @@
 
   function cssUrl(value) {
     return `url("${String(value).replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
+  }
+
+  // Which prize cards of a trainer are taken: true or false for each, each taken on its own. A game that says only how many are left (from
+  // before, or a sample) has the last ones taken.
+  function prizesTaken(trainer) {
+    const prizes = (trainer && trainer.prizes) || {};
+    const taken = [];
+    for (let index = 0; index < PRIZE_SLOTS; index++) taken.push(Array.isArray(prizes.taken) ? prizes.taken[index] === true : index >= prizes.count);
+    return taken;
   }
 
   // ------------------------------------------------------------------ piles
@@ -218,7 +231,7 @@
     const energies = opt(el('div', 'energies'), 'attachments');
     const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
-    const attacks = opt(el('div', 'attacks'), 'benchAttacks'); // (the benched Pokémon only)
+    const attacks = opt(el('div', 'attacks'), mini ? 'benchAttacks' : 'activeAttacks'); // (each its own switch)
     const toolCards = opt(el('div', 'tool-cards'), 'toolCards'); // the Pokémon Tools as pictures of their cards
     const tools = opt(el('div', 'tools'), 'toolNames'); // and, when asked for, by name
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
@@ -390,7 +403,7 @@
     container.hidden = list.length === 0;
   }
 
-  // What a benched Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
+  // What a Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
   function renderAttacks(container, attacks) {
     const list = attacks || [];
     container.textContent = '';
@@ -440,7 +453,7 @@
     renderAbilities(mon.abilities, pokemon.abilities);
     renderToolCards(mon.toolCards, pokemon.tools);
     renderTools(mon.tools, pokemon.tools);
-    renderAttacks(mon.attacks, mon.mini ? pokemon.attacks : []);
+    renderAttacks(mon.attacks, pokemon.attacks);
 
     mon.statuses.textContent = '';
     status.forEach((key) => {
@@ -481,6 +494,7 @@
       this.themeGeneration = 0;
       this.toastTimers = {};
       this.effectNodes = [];
+      this.featuresDrawn = ''; // the feature cards as they were last drawn (see renderFeatures)
       // The colors of the design that is on, the addresses of its pictures and its other variables (see applyTheme), in a rule for :root
       // of their own: after the built-in style sheets, and before the design's style sheet, so that a rule of the style sheet for :root
       // or html changes them. (Each is set with setProperty, so a value can never end the rule and start another.)
@@ -615,6 +629,8 @@
       this.trainers = {};
       SIDES.forEach((side) => this.buildTrainer(side));
       this.buildCenter();
+      this.buildFeatures();
+      this.buildPileView();
 
       this.toasts = el('div', 'toasts');
       ['a', 'b', 'c'].forEach((slot) => this.toasts.appendChild(el('div', `toast-slot ${slot}`)));
@@ -710,6 +726,16 @@
       [energy, stadiumUse, supporter, gx, vstar].forEach((token) => tokens.appendChild(token.root));
 
       const locks = opt(el('div', 'locks'), 'locks');
+      // a chip for each lock, shown while it is on (data-lock says which, whatever the text: "item" or "evolution", for a design to draw
+      // each its own way)
+      const lockChips = {};
+      LOCKS.forEach(([kind, text]) => {
+        const chip = el('span', 'lock', text);
+        chip.dataset.lock = kind;
+        chip.hidden = true;
+        lockChips[kind] = chip;
+        locks.appendChild(chip);
+      });
       // the cards out of play: the discard pile and the Lost Zone, each the last cards put in it and how many there are (nothing while empty)
       const piles = el('div', 'piles');
       const discard = createPile('discard', 'DISCARD', 'discardPile');
@@ -726,18 +752,18 @@
       const benchMons = [];
       for (let i = 0; i < MAX_BENCH; i++) {
         const mon = createMon(true);
+        mon.root.dataset.slot = String(i); // its place on the bench, 0 to 7 (as the game counts them), for a design to place each one
         benchMons.push(mon);
         bench.appendChild(mon.root);
       }
 
       [turnTag, top, active, bench].forEach((node) => root.appendChild(node));
       this.stage.appendChild(root);
-      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, piles, discard, lostZone, activeMon, benchMons };
+      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, lockChips, piles, discard, lostZone, activeMon, bench, benchMons };
     }
 
     buildCenter() {
       const center = el('div', 'center');
-      this.featureBox = opt(el('div', 'features'), 'featureCards');
       // the Stadium: the part of its card that the crop says (the picture, unless a design says otherwise) and its name below
       this.stadiumBox = opt(el('figure', 'stadium'), 'stadium');
       this.stadiumArt = el('div', 'stadium-art');
@@ -747,9 +773,22 @@
       this.stadiumName = el('figcaption', 'stadium-name');
       this.stadiumBox.appendChild(this.stadiumArt);
       this.stadiumBox.appendChild(this.stadiumName);
-      center.appendChild(this.featureBox);
       center.appendChild(this.stadiumBox);
       this.stage.appendChild(center);
+    }
+
+    // The feature cards go over the bench of a trainer: they are in that trainer's piece, after the bench (see renderFeatures)
+    buildFeatures() {
+      this.featureBox = opt(el('div', 'features'), 'featureCards');
+      this.featureBox.hidden = true;
+      this.trainers.trainerA.root.appendChild(this.featureBox);
+    }
+
+    // The discard pile or the Lost Zone of a trainer, over their bench while the producer shows it (see renderPileView)
+    buildPileView() {
+      this.pileViewBox = opt(el('div', 'pile-view'), 'pileView');
+      this.pileViewBox.hidden = true;
+      this.trainers.trainerA.root.appendChild(this.pileViewBox);
     }
 
     // ---- scaling
@@ -829,10 +868,13 @@
       this.renderScoreboard(state, display);
       SIDES.forEach((side) => this.renderTrainer(side, state, display));
       this.renderCenter(state);
+      this.renderFeatures(state, display);
+      this.renderPileView(state, display);
 
-      // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed. Banners can
-      // be switched off (Settings, Overlay), and then the game is not shown as paused.
-      const paused = state.paused === true && state.settings.enablePauseToast !== false && display.toasts !== false;
+      // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed, and it shows
+      // whether the toast banners are on or not (they are off to begin with). The pause banner can be switched off (Settings, Overlay), and
+      // then the game is not shown as paused.
+      const paused = state.paused === true && state.settings.enablePauseToast !== false;
       this.stage.classList.toggle('is-paused', paused);
       // the bench is stacked at the side unless it is asked to be a row under the Active Pokémon
       this.syncBenchRow();
@@ -902,18 +944,26 @@
       const hasTurn = Boolean(trainer.isTurn) && display.turnIndicator !== false;
       refs.root.classList.toggle('is-turn', hasTurn);
       refs.turnTag.hidden = !hasTurn;
+      // a trainer who no longer has the turn loses its moment at once: a turn passed back quickly (or a game that came whole) must not leave
+      // the light of a turn that started a moment ago on the trainer who is waiting
+      if (!hasTurn) {
+        endMoment(refs.root, 'moment-turn');
+        endMoment(this.stage, `moment-turn-${SIDE_CLASS[side]}`);
+      }
 
-      // prizes: the ones taken fade out. The OTHER trainer's penalty is that many prize cards this one counts as already taken, so that many
-      // of the ones still there are marked red
+      // prizes: the ones taken fade out, each on its own. The OTHER trainer's penalty is that many prize cards this one counts as already
+      // taken, so that many of the ones still there (the first ones) are marked red
       const opponent = state[side === 'trainerA' ? 'trainerB' : 'trainerA'];
-      const penalty = Math.min(Number(opponent.prizes.penalty) || 0, trainer.prizes.count);
+      const taken = prizesTaken(trainer);
+      const penalty = Math.min(Number(opponent.prizes.penalty) || 0, taken.filter((one) => !one).length);
+      let stillThere = 0; // (the prize cards still there before this one)
       // (the cards chosen for the prizes show on the prize cards, unless the prizes are hidden: then the picture of the card is not given to
       // the prize card at all, so no style sheet can show a card that is face down)
       const faces = trainer.prizes.cards || [];
       const faceDown = Boolean(trainer.prizes.hidden);
       refs.prizeNodes.forEach((node, index) => {
-        node.classList.toggle('taken', index >= trainer.prizes.count);
-        node.classList.toggle('penalty', index < penalty);
+        node.classList.toggle('taken', taken[index]);
+        node.classList.toggle('penalty', !taken[index] && stillThere++ < penalty);
         const face = faces[index] && faces[index].image;
         node.classList.toggle('has-face', Boolean(face));
         if (face && !faceDown) node.style.setProperty('--prize-face', cssUrl(face));
@@ -934,10 +984,16 @@
         if (PER_TURN.indexOf(key) !== -1) refs[key].root.classList.toggle('off-turn', !trainer.isTurn);
       });
 
-      // locks
-      refs.locks.textContent = '';
-      if (trainer.locks.itemLock) refs.locks.appendChild(el('span', 'lock', 'ITEM LOCK'));
-      if (trainer.locks.evoLock) refs.locks.appendChild(el('span', 'lock', 'EVOLUTION LOCK'));
+      // locks (a lock that was just switched off may stay a little longer, for its moment: see markLocks)
+      LOCKS.forEach(([kind, , key]) => {
+        const chip = refs.lockChips[kind];
+        const on = Boolean(trainer.locks[key]);
+        if (on && chip.leaving) {
+          chip.leaving = false;
+          endMoment(chip, 'moment-unlock');
+        }
+        chip.hidden = !on;
+      });
       refs.locks.hidden = !(trainer.locks.itemLock || trainer.locks.evoLock);
 
       // the discard pile and the Lost Zone
@@ -945,11 +1001,17 @@
       renderPile(refs.lostZone, trainer.lostZone);
       refs.piles.hidden = refs.discard.root.hidden && refs.lostZone.root.hidden;
 
-      // Pokémon
+      // Pokémon. The bench says how many places it has (data-size, 2 to 8) and how many have a Pokémon (data-count), so a design can lay
+      // out a bigger bench another way.
       renderMon(refs.activeMon, trainer.active);
+      let benched = 0;
       refs.benchMons.forEach((mon, index) => {
-        renderMon(mon, index < trainer.benchSize ? trainer.bench[index] : null);
+        const pokemon = index < trainer.benchSize ? trainer.bench[index] : null;
+        if (hasPokemon(pokemon)) benched++;
+        renderMon(mon, pokemon);
       });
+      refs.bench.dataset.size = String(trainer.benchSize);
+      refs.bench.dataset.count = String(benched);
     }
 
     renderCenter(state) {
@@ -960,13 +1022,19 @@
         setImage(this.stadiumImg, stadium.image, stadium.name);
         this.stadiumName.textContent = stadium.name || '';
       }
+    }
 
-      // the last three cards that were featured, in the order they were added, with the separators between them ("A + B → C")
-      this.featureBox.textContent = '';
+    // The feature cards: the last three that were featured, in the order they were added, with the signs between them ("A + B → C"), as
+    // pictures (no names). They go over the bench of the trainer the producer chose, while the producer shows them: the box is moved into
+    // that trainer's piece, after the bench, and the trainer gets features-on (the bench is hidden meanwhile) and the stage features-on-a or
+    // features-on-b. Cards joined by a sign are a stack (.feature-stack, with data-cards: how many), one over the other; a card on its own
+    // is a .feature of its own.
+    renderFeatures(state, display) {
       const shown = [];
       let counted = 0;
-      for (let i = state.featureCards.length - 1; i >= 0; i--) {
-        const entry = state.featureCards[i];
+      const entries = state.featureCards || [];
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
         if (!entry.separator) {
           if (counted === 3) break;
           counted++;
@@ -974,22 +1042,125 @@
         shown.unshift(entry);
       }
       while (shown.length && shown[0].separator) shown.shift(); // a sign with nothing before it
-      this.featureBox.classList.toggle('combo', shown.some((entry) => entry.separator));
-      shown.forEach((card) => {
-        if (card.separator) {
-          this.featureBox.appendChild(el('div', 'feature-sep', card.separator));
-          return;
-        }
-        const figure = el('figure', 'feature');
-        const img = el('img', 'feature-img');
-        setImage(img, card.image, card.name);
-        figure.appendChild(img);
-        const caption = el('figcaption', 'feature-caption');
-        caption.appendChild(el('div', 'feature-name', card.name));
-        figure.appendChild(caption);
-        this.featureBox.appendChild(figure);
+
+      const view = state.featureView || {};
+      const side = view.side === 'trainerB' ? 'trainerB' : 'trainerA';
+      const box = this.featureBox;
+      if (box.parentNode !== this.trainers[side].root) this.trainers[side].root.appendChild(box);
+      box.hidden = shown.length === 0 || view.visible === false;
+      // (the bench is covered only while the cards are really there: not while they are hidden, or switched off)
+      const covering = !box.hidden && display.featureCards !== false;
+      SIDES.forEach((one) => {
+        this.trainers[one].root.classList.toggle('features-on', covering && one === side);
+        this.stage.classList.toggle(`features-on-${SIDE_CLASS[one]}`, covering && one === side);
       });
-      this.featureBox.hidden = shown.length === 0;
+
+      // drawn again only when the cards changed, so their pictures do not flash
+      const signature = JSON.stringify(shown.map((entry) => (entry.separator ? ['sign', entry.separator] : [entry.id, entry.image, entry.name])));
+      if (this.featuresDrawn === signature) return;
+      this.featuresDrawn = signature;
+      box.textContent = '';
+      box.classList.toggle('combo', shown.some((entry) => entry.separator));
+      // a card, with the cards joined to it by a sign (and the signs), is a run; the last sign can be waiting for its card
+      const runs = [];
+      shown.forEach((entry, index) => {
+        if (!entry.separator && !(index > 0 && shown[index - 1].separator)) runs.push([]);
+        runs[runs.length - 1].push(entry);
+      });
+      runs.forEach((run) => {
+        const cards = run.filter((entry) => !entry.separator).length;
+        let into = box;
+        if (cards > 1) {
+          into = el('div', 'feature-stack');
+          into.dataset.cards = String(cards);
+          box.appendChild(into);
+        }
+        run.forEach((entry) => {
+          if (entry.separator) {
+            into.appendChild(el('div', 'feature-sep', entry.separator));
+            return;
+          }
+          const figure = el('figure', 'feature');
+          figure.title = entry.name || '';
+          const img = el('img', 'feature-img');
+          img.decoding = 'async';
+          setImage(img, entry.image, entry.name);
+          figure.appendChild(img);
+          into.appendChild(figure);
+        });
+      });
+    }
+
+    // The discard pile or the Lost Zone of a trainer over their bench (it covers the bench and the feature cards while it is shown): its name
+    // and how many cards, then the cards sorted into Pokémon, Trainers and Energy, each group a row of the pictures of its cards, one picture for
+    // each card with how many copies there are (×2), the newest first. A group with no card is not shown.
+    renderPileView(state, display) {
+      const view = state.pileView || {};
+      const side = view.side === 'trainerB' ? 'trainerB' : 'trainerA';
+      const pile = view.pile === 'lostZone' ? 'lostZone' : 'discard';
+      const cards = (state[side] && Array.isArray(state[side][pile]) ? state[side][pile] : []);
+      const box = this.pileViewBox;
+      if (box.parentNode !== this.trainers[side].root) this.trainers[side].root.appendChild(box);
+      box.hidden = view.visible !== true;
+      const covering = !box.hidden && display.pileView !== false;
+      SIDES.forEach((one) => {
+        this.trainers[one].root.classList.toggle('pile-view-on', covering && one === side);
+        this.stage.classList.toggle(`pile-view-on-${SIDE_CLASS[one]}`, covering && one === side);
+      });
+
+      // drawn again only when what it shows changed, so its pictures do not flash
+      const signature = JSON.stringify([pile, cards.map((card) => [card.cardId, card.name, card.image, card.kind, card.energy])]);
+      if (this.pileViewDrawn === signature) return;
+      this.pileViewDrawn = signature;
+      box.textContent = '';
+      box.dataset.pile = pile;
+      box.dataset.count = String(cards.length);
+      const head = el('div', 'pv-head');
+      head.appendChild(el('span', 'pv-title', pile === 'lostZone' ? 'LOST ZONE' : 'DISCARD PILE'));
+      head.appendChild(el('span', 'pv-count', String(cards.length)));
+      box.appendChild(head);
+      PILE_GROUPS.forEach(([kind, label]) => {
+        // one entry for each card, with its copies, the newest first (a card of no known kind goes with the Trainers)
+        const entries = [];
+        for (let i = cards.length - 1; i >= 0; i--) {
+          const card = cards[i];
+          const own = card.kind === 'pokemon' || card.kind === 'energy' ? card.kind : card.energy ? 'energy' : 'trainer';
+          if (own !== kind) continue;
+          const key = card.cardId || `${card.name}|${card.image}`;
+          const found = entries.find((entry) => entry.key === key);
+          if (found) found.count++;
+          else entries.push({ key, card, count: 1 });
+        }
+        if (!entries.length) return;
+        const group = el('div', `pv-group pv-${kind}`);
+        group.dataset.count = String(entries.reduce((sum, entry) => sum + entry.count, 0));
+        const name = el('div', 'pv-label');
+        name.appendChild(el('span', 'pv-label-text', label));
+        name.appendChild(el('span', 'pv-label-count', group.dataset.count));
+        group.appendChild(name);
+        const row = el('div', 'pv-cards');
+        row.dataset.cards = String(entries.length);
+        row.style.setProperty('--pv-cards', String(entries.length));
+        entries.forEach(({ card, count }) => {
+          const figure = el('figure', 'pv-card');
+          figure.title = card.name;
+          // a basic Energy without a picture of its own shows the icon of its type
+          const energyOnly = !card.image && Boolean(ENERGY_ICON[card.energy]);
+          figure.classList.toggle('is-energy', energyOnly);
+          // the artwork of the card (the part the bench's crop says), in a window of its own
+          const art = el('span', 'pv-art');
+          const img = el('img', 'pv-img');
+          img.decoding = 'async';
+          setImage(img, card.image || ENERGY_ICON[card.energy] || '', card.name);
+          art.appendChild(img);
+          figure.appendChild(art);
+          if (!card.image && !energyOnly) figure.appendChild(el('span', 'pv-name', card.name));
+          if (count > 1) figure.appendChild(el('span', 'pv-copies', `×${count}`));
+          row.appendChild(figure);
+        });
+        group.appendChild(row);
+        box.appendChild(group);
+      });
     }
 
     // ---- announcements
@@ -1100,8 +1271,12 @@
         this.markPokemon(list, side, before, now, left(state[opponent]) < left(previous[opponent]));
 
         // the prize cards that were just taken, the turn that starts, a tracker or a marker that was used, a game won
-        for (let index = left(now); index < left(before); index++) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
+        const takenBefore = prizesTaken(before);
+        prizesTaken(now).forEach((taken, index) => {
+          if (taken && !takenBefore[index]) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
+        });
         if (now.isTurn && !before.isTurn) this.queueShown(list, refs.root, 'turn', side, {}, refs.turnTag);
+        this.markLocks(list, side, before, now);
         TOKENS.forEach(([key, resource]) => {
           const was = before.resources && before.resources[resource];
           const is = now.resources && now.resources[resource];
@@ -1247,6 +1422,33 @@
       });
     }
 
+    // The locks that were just switched on (moment-lock on the chip) or off (moment-unlock). When the design's style sheet animates the
+    // switching off (it has a rule for moment-unlock), the chip stays until the moment is over, and goes then.
+    markLocks(list, side, before, now) {
+      const refs = this.trainers[side];
+      const was = before.locks || {};
+      const is = now.locks || {};
+      LOCKS.forEach(([kind, , key]) => {
+        const chip = refs.lockChips[kind];
+        if (is[key] && !was[key]) this.queueShown(list, chip, 'lock', side);
+        if (!is[key] && was[key] && !this.switchedOff(chip)) {
+          const extra = {};
+          if (this.designCss.textContent.indexOf('moment-unlock') !== -1) {
+            chip.hidden = false; // (renderTrainer has just hidden it)
+            refs.locks.hidden = false;
+            chip.leaving = true;
+            extra.end = () => {
+              if (!chip.leaving) return;
+              chip.leaving = false;
+              chip.hidden = true;
+              refs.locks.hidden = LOCKS.every(([other]) => refs.lockChips[other].hidden);
+            };
+          }
+          this.queueMoment(list, chip, 'unlock', side, extra);
+        }
+      });
+    }
+
     // A Pokémon that was knocked out. When the design's style sheet animates it (it has a rule for moment-ko), its tile stays as it was,
     // with what it showed, until the moment is over, and goes then (a Pokémon that comes into the slot meanwhile takes it at once: see
     // renderMon). Without such a rule the tile goes at once, as it always has.
@@ -1282,7 +1484,7 @@
     // before its class goes (so the tile of a knocked out Pokémon is hidden before its animation lets go of it, and does not flash back).
     playMoments(list) {
       if (!list.length) return;
-      const ms = this.momentDuration();
+      const durations = {};
       list.forEach((moment) => {
         const playing = moment.node.moments && moment.node.moments[moment.name];
         // (what the one that starts again was to do at its end still has to be done)
@@ -1300,6 +1502,9 @@
         }
         if (moment.status) node.setAttribute('data-status', moment.status);
         node.classList.add(moment.name);
+        // (the stage's mark of a moment, moment-lock-a, lasts as long as the moment itself)
+        const base = kind.replace(/-[ab]$/, '');
+        const ms = durations[base] || (durations[base] = this.momentDuration(base));
         const playing = { end: moment.end, timer: 0 };
         playing.timer = setTimeout(() => {
           if (playing.end) playing.end();
@@ -1309,9 +1514,11 @@
       });
     }
 
-    // How long a moment lasts, in milliseconds: what the design's style sheet says in --oto-moment-ms (in a rule for :root), else 1.5 seconds
-    momentDuration() {
-      const value = getComputedStyle(document.documentElement).getPropertyValue('--oto-moment-ms').trim();
+    // How long a moment of a kind lasts, in milliseconds: what the design's style sheet says for that kind in --oto-moment-<kind>-ms
+    // (--oto-moment-lock-ms...), else for every moment in --oto-moment-ms (in a rule for :root), else 1.5 seconds
+    momentDuration(kind) {
+      const style = getComputedStyle(document.documentElement);
+      const value = (kind && style.getPropertyValue(`--oto-moment-${kind}-ms`).trim()) || style.getPropertyValue('--oto-moment-ms').trim();
       const number = parseFloat(value);
       if (!Number.isFinite(number)) return MOMENT_MS;
       const ms = /[0-9.]s$/i.test(value) ? number * 1000 : number; // (seconds are understood too: "1.2s")
@@ -1320,7 +1527,8 @@
 
     // Play one moment as if it had happened (the design editor's "Try a moment", and the tests). `moment` is its kind ('damage', 'ko'...:
     // see MOMENT_KINDS), `side` 'a' or 'b', `target` the piece it plays on ('active', 'bench0' to 'bench7', 'prize0' to 'prize5', 'trainer',
-    // 'token-energy', 'token-stadium', 'token-supporter', 'token-gx', 'token-vstar', 'stadium' or 'wins') and `amount` the number it is
+    // 'token-energy', 'token-stadium', 'token-supporter', 'token-gx', 'token-vstar', 'lock-item', 'lock-evolution', 'stadium' or 'wins')
+    // and `amount` the number it is
     // about (the damage, the energy attached), if any. A knock out plays on the tile as it is and does not hide it. It plays even while the
     // design animations are switched off: it is asked for. False when there is no such moment or piece.
     playMoment(moment, side, target, amount) {
@@ -1334,6 +1542,17 @@
         // the condition the tile shows last, or the first there is
         const chips = node.querySelectorAll('.status-chip');
         extra.status = chips.length ? chips[chips.length - 1].dataset.status : GAME.STATUS_CONDITIONS[0].key;
+      }
+      // (a lock that is off is shown while its moment plays, so it can be tried)
+      if (node.classList.contains('lock') && node.hidden) {
+        const locks = this.trainers[trainer].locks;
+        const wasHidden = locks.hidden;
+        node.hidden = false;
+        locks.hidden = false;
+        extra.end = () => {
+          node.hidden = true;
+          locks.hidden = wasHidden;
+        };
       }
       const list = [];
       this.queueMoment(list, node, moment, trainer, extra);
@@ -1349,6 +1568,7 @@
       if (target === 'active') return refs.activeMon.root;
       if (bench) return refs.benchMons[Number(bench[1])].root;
       if (prize) return refs.prizeNodes[Number(prize[1])];
+      if (target === 'lock-item' || target === 'lock-evolution') return refs.lockChips[target.slice('lock-'.length)];
       const pieces = {
         trainer: refs.root,
         'token-energy': refs.energy.root,

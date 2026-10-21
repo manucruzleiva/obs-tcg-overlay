@@ -130,6 +130,47 @@ describe('overlay', { skip }, () => {
       assert.equal((await read('a', 'lost-zone')).shown, true);
     });
 
+    it('can be shown over the bench, with the pictures of their cards sorted into Pokémon, Trainers and Energy', async () => {
+      const view = () => page.evaluate(() => {
+        const box = document.querySelector('.pile-view');
+        return {
+          shown: !box.hidden && box.getBoundingClientRect().width > 0,
+          over: box.parentElement.classList.contains('trainer-a') ? 'a' : 'b',
+          head: box.querySelector('.pv-head') ? box.querySelector('.pv-head').innerText.replace(/\s+/g, ' ').trim() : '',
+          groups: Array.from(box.querySelectorAll('.pv-group')).map((group) => `${group.querySelector('.pv-label-text').textContent} ${group.dataset.count}: ${Array.from(group.querySelectorAll('.pv-card')).map((card) => card.title + (card.querySelector('.pv-copies') ? ` ${card.querySelector('.pv-copies').textContent}` : '')).join(', ')}`),
+          on: ['a', 'b'].filter((side) => document.querySelector(`.trainer-${side}`).classList.contains('pile-view-on')),
+          benches: ['a', 'b'].map((side) => getComputedStyle(document.querySelector(`.trainer-${side} .bench`)).display)
+        };
+      });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG, supertype: 'Trainer' });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Comfey', image: IMG, supertype: 'Pokémon', count: 2 });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Fire Energy', energy: 'fire' });
+      assert.equal((await view()).shown, false, 'hidden until the producer shows it');
+
+      await send('action:card', { action: 'togglePileView', enabled: true, side: 'trainerA', pile: 'discard' });
+      await page.waitForFunction(() => !document.querySelector('.pile-view').hidden && document.querySelectorAll('.pv-group').length === 3);
+      assert.deepEqual(await view(), {
+        shown: true, over: 'a', head: 'DISCARD PILE 4',
+        groups: ['POKÉMON 2: Comfey ×2', 'TRAINER 1: Arven', 'ENERGY 1: Fire Energy'],
+        on: ['a'], benches: ['none', 'flex']
+      });
+      assert.equal(await page.$eval('.pv-energy .pv-card', (card) => card.classList.contains('is-energy')), true, 'a basic Energy shows the icon of its type');
+
+      await send('action:trainerB', { action: 'pileAdd', pile: 'lostZone', name: 'Comfey', image: IMG, supertype: 'Pokémon' });
+      await send('action:card', { action: 'togglePileView', enabled: true, side: 'trainerB', pile: 'lostZone' });
+      await page.waitForFunction(() => document.querySelector('.pile-view').parentElement.classList.contains('trainer-b') && document.querySelector('.pile-view').dataset.pile === 'lostZone');
+      assert.deepEqual(await view(), { shown: true, over: 'b', head: 'LOST ZONE 1', groups: ['POKÉMON 1: Comfey'], on: ['b'], benches: ['flex', 'none'] });
+
+      await send('action:settings', { action: 'update', display: { pileView: false } });
+      await page.waitForFunction(() => !document.querySelector('.trainer-b').classList.contains('pile-view-on'));
+      assert.equal((await view()).shown, false, 'and it can be switched off in the overlay settings');
+      await send('action:settings', { action: 'update', display: { pileView: true } });
+      await send('action:card', { action: 'togglePileView', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.pile-view').hidden);
+      assert.deepEqual((await view()).benches, ['flex', 'flex']);
+      assert.deepEqual(page.problems, []);
+    });
+
     it('are emptied for the next game', async () => {
       await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG });
       await page.waitForFunction(() => !document.querySelector('.trainer-a .pile-discard').hidden);
@@ -204,6 +245,13 @@ describe('overlay', { skip }, () => {
 
       await send('action:trainerB', { action: 'prizeSet', count: 6 });
       await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 4);
+    });
+
+    it('marks the first prize cards still there, around one that was taken on its own', async () => {
+      await send('action:trainerB', { action: 'togglePrize', slot: 0, taken: true });
+      await send('action:trainerA', { action: 'prizePenaltySet', count: 2 });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-b .prize.penalty').length === 2);
+      assert.deepEqual(await reds(), [false, true, true, false, false, false]);
     });
 
     it('pulses unless the penalty animation is switched off', async () => {
@@ -311,10 +359,26 @@ describe('overlay', { skip }, () => {
         return { right: box.left >= art.right, under: box.top >= name.bottom, inside: box.bottom <= mon.getBoundingClientRect().bottom + 1 };
       });
       assert.deepEqual(places, { right: true, under: true, inside: true });
-      assert.equal(await page.locator('.trainer-a .active .attacks:visible').count(), 0, 'the Active Pokémon is as it always was');
+      assert.equal(await page.locator('.trainer-a .active .attacks:visible').count(), 0, 'the Active Pokémon has a switch of its own');
 
       await send('action:settings', { action: 'update', display: { benchAttacks: false } });
       await page.waitForFunction(() => ![...document.querySelectorAll('.bench .attacks')].some((node) => node.offsetParent !== null));
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can show the attacks of the Active Pokémon, on a switch of their own (off at first)', async () => {
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-act', name: 'Gholdengo ex', image: IMG, hp: 260, abilities: ['Coin Bonus'], attacks: [{ name: 'Make It Rain', damage: '50x' }] });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .mon:not([hidden])'));
+      const shown = () => page.locator('.trainer-a .active .attacks:visible').count();
+      assert.equal((await live()).settings.display.activeAttacks, false);
+      assert.equal(await shown(), 0, 'nothing is shown at first');
+      await send('action:settings', { action: 'update', display: { benchAttacks: true } });
+      assert.equal(await shown(), 0, 'the switch of the bench is not the one of the Active Pokémon');
+      await send('action:settings', { action: 'update', display: { benchAttacks: false, activeAttacks: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .attacks').offsetParent !== null);
+      assert.deepEqual(await page.$$eval('.trainer-a .active .attack-line', (lines) => lines.map((line) => line.textContent)), ['Make It Rain50×']);
+      await send('action:settings', { action: 'update', display: { activeAttacks: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .attacks').offsetParent === null);
       assert.deepEqual(page.problems, []);
     });
 
@@ -333,6 +397,59 @@ describe('overlay', { skip }, () => {
       await send('action:settings', { action: 'update', display: { benchRow: false } });
       await page.waitForFunction(() => !document.querySelector('#stage.bench-row'));
       assert.deepEqual([...new Set((await looks('a')).map((mon) => Math.round(mon.box.left)))], [36]);
+    });
+
+    it('says how many places it has and how many hold a Pokémon, and each Pokémon its place, so a design can lay out a bigger bench', async () => {
+      const hooks = (side) => page.$eval(`.trainer-${side} .bench`, (node) => ({
+        size: node.dataset.size, count: node.dataset.count, slots: [...node.querySelectorAll('.mon.mini')].map((mon) => mon.dataset.slot).join(' ')
+      }));
+      const counted = (side, size, count) => page.waitForFunction(([which, wanted]) => {
+        const bench = document.querySelector(`.trainer-${which} .bench`);
+        return `${bench.dataset.size}/${bench.dataset.count}` === wanted;
+      }, [side, `${size}/${count}`]);
+      assert.deepEqual(await hooks('a'), { size: '5', count: '0', slots: '0 1 2 3 4 5 6 7' }, 'the places are counted as the game counts them, from 0');
+      await fill('trainerA', 6, 8);
+      await counted('a', 8, 6);
+      assert.equal(await page.$eval('.trainer-a .bench .mon.mini[data-slot="5"] .mon-name', (node) => node.textContent), 'Gengar', 'the sixth place is 5');
+      assert.deepEqual(await hooks('b'), { size: '5', count: '0', slots: '0 1 2 3 4 5 6 7' }, 'each trainer has its own');
+
+      // a Pokémon that leaves the bench, and a bench that is made smaller (the Pokémon of the places that go are gone with them)
+      await send('action:trainerA', { action: 'clearSlot', slot: 1 });
+      await counted('a', 8, 5);
+      await send('action:trainerA', { action: 'benchSizeReset' });
+      await counted('a', 5, 4);
+      assert.deepEqual(page.problems, []);
+    });
+  });
+
+  describe('the locks', () => {
+    const locks = (side) => page.$$eval(`.trainer-${side} .lock:not([hidden])`, (nodes) => nodes.map((node) => `${node.dataset.lock}:${node.textContent}`));
+
+    it('say which lock each is, whatever its text, so a design can draw each its own way', async () => {
+      assert.equal(await page.locator('.trainer-a .locks').isHidden(), true);
+      await send('action:trainerA', { action: 'toggleItemLock' });
+      await send('action:trainerA', { action: 'toggleEvoLock' });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock:not([hidden])').length === 2);
+      assert.deepEqual(await locks('a'), ['item:ITEM LOCK', 'evolution:EVOLUTION LOCK']);
+      assert.deepEqual(await locks('b'), []);
+      await send('action:trainerA', { action: 'toggleItemLock' });
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock:not([hidden])').length === 1);
+      assert.deepEqual(await locks('a'), ['evolution:EVOLUTION LOCK']);
+      await send('action:trainerA', { action: 'toggleEvoLock' });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .locks').hidden);
+    });
+
+    it('play a moment when one is switched on or off, and one switched off stays for its moment when the design animates it', async () => {
+      await page.evaluate(() => { window.oto.designCss.textContent = '.lock.moment-unlock { outline: 1px solid red; } :root { --oto-moment-unlock-ms: 600; }'; });
+      await send('action:trainerA', { action: 'toggleItemLock', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .lock[data-lock="item"]').classList.contains('moment-lock'));
+      await send('action:trainerA', { action: 'toggleItemLock', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .lock[data-lock="item"]').classList.contains('moment-unlock'));
+      assert.deepEqual(await locks('a'), ['item:ITEM LOCK'], 'it stays while its moment plays');
+      assert.equal(await page.locator('.trainer-a .locks').isHidden(), false);
+      await page.waitForFunction(() => document.querySelector('.trainer-a .locks').hidden);
+      assert.deepEqual(await locks('a'), []);
+      await page.evaluate(() => { window.oto.designCss.textContent = ''; });
     });
   });
 
@@ -589,6 +706,22 @@ describe('overlay', { skip }, () => {
       assert.notEqual(layers[2], 'rgba(0, 0, 0, 0)');
     });
 
+    it('fades the very prize card that is taken, with its card on it, and the arrows still take the last one still there', async () => {
+      const taken = (side = 'a') => page.$$eval(`.trainer-${side} .prize`, (nodes) => nodes.map((node) => node.classList.contains('taken')));
+      const takenAre = (list) => page.waitForFunction((wanted) => Array.from(document.querySelectorAll('.trainer-a .prize')).map((node) => node.classList.contains('taken')).join() === wanted.join(), list);
+      await send('action:trainerA', { action: 'prizeCardsSet', cards: ['one', 'two', 'three', 'four', 'five', 'six'].map(card) });
+      await waitFaces('a', 6);
+      await send('action:trainerA', { action: 'togglePrize', slot: 1, taken: true });
+      await takenAre([false, true, false, false, false, false]);
+      assert.match(await front('a', 1), /\/art\/two\.svg/, 'the second card, still on its prize card');
+      await send('action:trainerA', { action: 'prizeMinus' });
+      await takenAre([false, true, false, false, false, true]);
+      await send('action:trainerA', { action: 'togglePrize', slot: 1, taken: false });
+      await takenAre([false, false, false, false, false, true]);
+      assert.deepEqual(await taken('b'), [false, false, false, false, false, false], 'the other trainer is not touched');
+      assert.deepEqual(await faces('a'), [true, true, true, true, true, true]);
+    });
+
     it('goes with the picture of the design on the back of the prize cards: the card is over it', async () => {
       await send('action:trainerA', { action: 'prizeCardsSet', cards: [card('one')] });
       await page.evaluate(() => window.oto.applyTheme({ name: 'x', colors: {}, images: {}, sounds: [], prizeStyle: 'japanese' }));
@@ -652,25 +785,87 @@ describe('overlay', { skip }, () => {
   });
 
   describe('the feature cards', () => {
-    const add = (name) => send('action:card', { action: 'addFeatureCard', cardId: name, name, image: '/art/area-zero.svg' });
+    const add = (name) => send('action:card', { action: 'addFeatureCard', cardId: name, name, image: `/art/${name.toLowerCase().replace(/ /g, '-')}.svg` });
     const sign = (symbol) => send('action:card', { action: 'addFeatureSeparator', symbol });
-    const shown = () => page.$$eval('.features > *', (nodes) => nodes.map((node) => (node.classList.contains('feature-sep') ? node.textContent : node.querySelector('.feature-name').textContent)));
+    // the cards (by the name of their picture) and the signs, in order
+    const shown = () => page.$$eval('.features .feature, .features .feature-sep', (nodes) => nodes.map((node) => (node.classList.contains('feature-sep') ? node.textContent : node.querySelector('.feature-img').alt)));
+    // and how they are grouped: a stack of so many cards, or a card on its own
+    const groups = () => page.$$eval('.features > *', (nodes) => nodes.map((node) => (node.classList.contains('feature-stack')
+      ? `stack of ${node.dataset.cards}: ${[...node.children].map((child) => (child.classList.contains('feature-sep') ? child.textContent : child.querySelector('img').alt)).join(' ')}`
+      : node.classList.contains('feature-sep') ? node.textContent : node.querySelector('img').alt)));
     const cardWidth = () => page.$eval('.features .feature', (node) => node.getBoundingClientRect().width);
+    const rect = (selector) => page.$eval(selector, (node) => { const box = node.getBoundingClientRect(); return { left: box.left, top: box.top, right: box.right, bottom: box.bottom }; });
+    const looks = () => page.evaluate(() => ({
+      over: document.querySelector('.features').parentElement.className,
+      on: ['a', 'b'].filter((side) => document.querySelector(`.trainer-${side}`).classList.contains('features-on')),
+      stage: ['a', 'b'].filter((side) => document.getElementById('stage').classList.contains(`features-on-${side}`)),
+      benches: ['a', 'b'].map((side) => getComputedStyle(document.querySelector(`.trainer-${side} .bench`)).display),
+      hidden: document.querySelector('.features').hidden
+    }));
+    const benchOf = async (side) => {
+      for (let slot = 0; slot < 2; slot++) await send(`action:${side}`, { action: 'setBench', slot, cardId: `${side}-${slot}`, name: `Mon ${slot}`, image: IMG, hp: 60 });
+    };
 
-    it('are hidden until there is one, and show the last three in the order they were added', async () => {
+    it('are hidden until there is one, and show the last three in the order they were added, as their pictures without their names', async () => {
       assert.equal(await page.locator('.features').isHidden(), true);
       await add('Boss Orders');
       await page.waitForSelector('.features:not([hidden])');
       assert.deepEqual(await shown(), ['Boss Orders']);
       for (const name of ['Ultra Ball', 'Iono', 'Switch']) await add(name);
-      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3 && document.querySelector('.features .feature-name').textContent === 'Ultra Ball');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3 && document.querySelector('.features .feature-img').alt === 'Ultra Ball');
       assert.deepEqual(await shown(), ['Ultra Ball', 'Iono', 'Switch'], 'the oldest one makes room');
+      assert.equal(await page.$eval('.features .feature-img', (node) => node.getAttribute('src')), '/art/ultra-ball.svg');
+      assert.equal(await page.locator('.features figcaption, .features .feature-name, .features .feature-caption').count(), 0, 'no names on the cards');
+      assert.equal(await page.$eval('.features', (node) => node.innerText.trim()), '');
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
       assert.ok(Math.abs((await cardWidth()) - 176) < 1);
       assert.deepEqual(page.problems, []);
     });
 
-    it('have the signs between them that explain a combo, and the cards are a little smaller to make room', async () => {
+    it('cover the bench of Trainer A to begin with, and that of Trainer B when the producer says so', async () => {
+      await benchOf('trainerA');
+      await benchOf('trainerB');
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a features-on', on: ['a'], stage: ['a'], benches: ['none', 'flex'], hidden: false });
+      // where the bench was: under the Active Pokémon, in the trainer's column, inside the screen
+      const cards = await rect('.features');
+      assert.ok(cards.top >= (await rect('.trainer-a .active')).bottom, 'under the Active Pokémon');
+      assert.ok(cards.left >= 36 && cards.right <= 36 + 620 && cards.bottom <= 1080, `in the column of Trainer A: ${JSON.stringify(cards)}`);
+
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+      assert.deepEqual(await looks(), { over: 'trainer trainer-b features-on', on: ['b'], stage: ['b'], benches: ['flex', 'none'], hidden: false });
+      const there = await rect('.features');
+      assert.ok(Math.abs(there.right - (1920 - 36)) < 1, 'at the right edge of the screen, like the bench of Trainer B');
+      assert.ok(there.top >= (await rect('.trainer-b .active')).bottom);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can be hidden, and the bench is back; nothing covers it while there is no card, or while the cards are switched off', async () => {
+      await benchOf('trainerA');
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      await send('action:card', { action: 'toggleFeatures', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.features').hidden);
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: true });
+      await send('action:card', { action: 'toggleFeatures', enabled: true });
+      await page.waitForFunction(() => !document.querySelector('.features').hidden);
+      assert.deepEqual((await looks()).on, ['a']);
+
+      await send('action:settings', { action: 'update', display: { featureCards: false } });
+      await page.waitForFunction(() => document.querySelector('.features').classList.contains('opt-off'));
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: false }, 'switched off: the bench shows');
+      await send('action:settings', { action: 'update', display: { featureCards: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a').classList.contains('features-on'));
+
+      await send('action:card', { action: 'clearFeatureCards' });
+      await page.waitForFunction(() => document.querySelector('.features').hidden);
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: true });
+      assert.equal((await live()).featureView.visible, true, 'shown still: the next card shows at once');
+    });
+
+    it('stack the cards joined by a sign, one over the other, with the sign between them, and each can be seen', async () => {
       await add('Boss Orders');
       await sign('+');
       await add('Ultra Ball');
@@ -678,14 +873,32 @@ describe('overlay', { skip }, () => {
       await add('Iono');
       await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3);
       assert.deepEqual(await shown(), ['Boss Orders', '+', 'Ultra Ball', '→', 'Iono']);
+      assert.deepEqual(await groups(), ['stack of 3: Boss Orders + Ultra Ball → Iono']);
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), true);
-      assert.ok(Math.abs((await cardWidth()) - 150) < 1, 'smaller');
-      const together = await page.$eval('.features', (node) => node.getBoundingClientRect().width);
-      assert.ok(together < 700, `the combo fits in the middle of the screen (${together}px)`);
-      // the signs are in the middle of the cards, not on top or below
-      const middle = await page.$eval('.feature-sep', (node) => { const sign = node.getBoundingClientRect(); const card = document.querySelector('.feature-img').getBoundingClientRect(); return sign.top >= card.top && sign.bottom <= card.bottom; });
-      assert.equal(middle, true);
+      const cards = await page.$$eval('.feature-stack .feature', (nodes) => nodes.map((node) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; }));
+      for (let i = 1; i < cards.length; i++) {
+        assert.ok(cards[i].left < cards[i - 1].right, `card ${i + 1} is over the card before it`);
+        assert.ok(cards[i].left - cards[i - 1].left > 60, `and the card before it can still be seen: ${cards[i].left - cards[i - 1].left}px of it`);
+      }
+      const signs = await page.$$eval('.feature-stack .feature-sep', (nodes) => nodes.map((node) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, z: getComputedStyle(node).zIndex }; }));
+      signs.forEach((one, i) => {
+        assert.ok(one.left < cards[i + 1].left && one.right > cards[i + 1].left, `sign ${i + 1} is on the edge where the next card starts`);
+        assert.ok(one.top >= cards[i].top && one.bottom <= cards[i].bottom, 'in the middle of the cards, not above or below them');
+        assert.equal(one.z, '1', 'over the cards');
+      });
+      assert.ok((await rect('.features')).right <= 36 + 620, 'the stack fits in the column');
       assert.deepEqual(page.problems, []);
+    });
+
+    it('keep a card on its own apart from a stack', async () => {
+      await add('Arven');
+      await add('Rare Candy');
+      await sign('+');
+      await add('Charizard');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3);
+      assert.deepEqual(await groups(), ['Arven', 'stack of 2: Rare Candy + Charizard']);
+      const [alone, stacked] = [await rect('.features > .feature'), await rect('.features > .feature-stack')];
+      assert.ok(alone.right <= stacked.left, 'side by side, not over each other');
     });
 
     it('never start with a sign, and keep one that waits for the next card', async () => {
@@ -695,18 +908,33 @@ describe('overlay', { skip }, () => {
       }
       await add('Four');
       await sign('or');
-      await page.waitForFunction(() => document.querySelector('.features .feature-name').textContent === 'Two');
+      await page.waitForFunction(() => document.querySelector('.features .feature-img').alt === 'Two');
       assert.deepEqual(await shown(), ['Two', '=', 'Three', '=', 'Four', 'or'], 'the sign before the oldest card shown is left out, the last one stays');
+      assert.deepEqual(await groups(), ['stack of 3: Two = Three = Four or']);
     });
 
     it('stay hidden when there are only signs, and a card with no sign is as it always was', async () => {
       await sign('+');
       await page.waitForFunction(() => document.querySelector('.features').hidden === true);
       assert.deepEqual(await shown(), []);
+      assert.deepEqual((await looks()).on, [], 'nothing covers the bench');
       await add('Boss Orders');
       await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 1);
-      assert.deepEqual(await shown(), ['Boss Orders'], 'a sign before the first card is not shown');
+      assert.deepEqual(await groups(), ['Boss Orders'], 'a sign before the first card is not shown');
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
+    });
+
+    it('are not drawn again when something else changes, so their pictures do not flash', async () => {
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      await page.$eval('.features .feature-img', (node) => { node.dataset.mark = 'first'; });
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+      assert.equal(await page.$eval('.features .feature-img', (node) => node.dataset.mark), 'first', 'the same picture, moved with its box');
+      await add('Iono');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 2);
+      assert.deepEqual(await shown(), ['Boss Orders', 'Iono']);
     });
   });
 
@@ -766,8 +994,18 @@ describe('overlay', { skip }, () => {
         assert.deepEqual([...new Set(row.map((mon) => mon.top))].length, 1, `${side}: the whole bench in one row`);
         assert.ok(row.every((mon) => mon.left >= 0 && mon.right <= 1080));
       }
-      const features = await box('.features');
-      assert.ok(features.right <= (await box('.stadium')).left, 'the feature cards at one side of the middle and the Stadium at the other');
+      // the feature cards take the place of a bench, and stay out of the middle
+      await send('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Iono', image: IMG });
+      await send('action:card', { action: 'addFeatureSeparator', symbol: '+' });
+      await send('action:card', { action: 'addFeatureCard', cardId: 'f-2', name: 'Arven', image: IMG });
+      await page.waitForSelector('.trainer-a.features-on');
+      const middle = await box('.center');
+      let cards = await box('.features');
+      assert.ok(cards.left >= 0 && cards.right <= 1080 && cards.top >= (await box('.trainer-a .active')).bottom && cards.bottom <= middle.top, `over Trainer A's bench, above the middle: ${JSON.stringify(cards)}`);
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForSelector('.trainer-b.features-on');
+      cards = await box('.features');
+      assert.ok(cards.left >= 0 && cards.right <= 1080 && cards.top >= middle.bottom && cards.bottom <= 1920, `over Trainer B's bench, below the middle: ${JSON.stringify(cards)}`);
       assert.deepEqual(page.problems, []);
     });
 
@@ -787,6 +1025,7 @@ describe('overlay', { skip }, () => {
     });
 
     it('keeps the toast banners inside the screen', async () => {
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       await page.setViewportSize({ width: 1080, height: 1920 });
       await portrait();
       await send('action:toast', { action: 'topDeck', target: 'trainerA' });
@@ -1123,6 +1362,7 @@ describe('overlay', { skip }, () => {
 
     it('shows a PAUSED banner in the middle, and grays out everything else until the game is resumed', async () => {
       assert.equal(await page.locator('.pause-banner').isHidden(), true);
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       await send('action:match', { action: 'togglePause', enabled: true });
       await page.waitForSelector('.pause-banner:not([hidden])');
       assert.match(await page.locator('.pause-banner').textContent(), /GAME PAUSED/);
@@ -1143,7 +1383,7 @@ describe('overlay', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
-    it('is not shown when the game pause banner, or the banners, are switched off', async () => {
+    it('is not shown when the game pause banner is switched off, and is shown whether the toast banners are on or not', async () => {
       await send('action:settings', { action: 'update', enablePauseToast: false });
       await send('action:match', { action: 'togglePause', enabled: true });
       await wait(300);
@@ -1152,9 +1392,13 @@ describe('overlay', { skip }, () => {
 
       await send('action:settings', { action: 'update', enablePauseToast: true });
       await page.waitForSelector('.pause-banner:not([hidden])');
+      await send('action:settings', { action: 'update', display: { toasts: true } });
+      await wait(300);
+      assert.equal(await paused(), true);
       await send('action:settings', { action: 'update', display: { toasts: false } });
-      await page.waitForSelector('.pause-banner', { state: 'hidden' });
-      assert.equal(await paused(), false);
+      await wait(300);
+      assert.equal(await page.locator('.pause-banner').isVisible(), true, 'the toast banners are off to begin with: the pause banner is not one of them');
+      assert.equal(await paused(), true);
     });
   });
 
@@ -1577,6 +1821,7 @@ describe('overlay', { skip }, () => {
   describe('announcements', () => {
     it('shows a banner for two seconds unless told otherwise, then takes it away', async () => {
       assert.equal((await live()).settings.toastSeconds, 2);
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       const asked = Date.now();
       await send('action:toast', { action: 'attack', attackName: 'Thunderbolt', damage: 120 });
       await page.waitForSelector('.toast');
@@ -1588,6 +1833,7 @@ describe('overlay', { skip }, () => {
 
     it('keeps it up for as long as the producer chooses', async () => {
       await send('action:settings', { action: 'update', toastSeconds: 4 });
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       const asked = Date.now();
       await send('action:toast', { action: 'topDeck', target: 'trainerB' });
       await page.waitForSelector('.toast');
@@ -1597,8 +1843,8 @@ describe('overlay', { skip }, () => {
       assert.ok(Date.now() - asked >= 3700);
     });
 
-    it('shows nothing when banners are switched off', async () => {
-      await send('action:settings', { action: 'update', display: { toasts: false } });
+    it('shows nothing when banners are switched off, as they are to begin with', async () => {
+      assert.equal((await live()).settings.display.toasts, false);
       await send('action:toast', { action: 'passTurn' });
       await wait(700);
       assert.equal(await page.locator('.toast').count(), 0);
@@ -2455,6 +2701,19 @@ describe('overlay', { skip }, () => {
       assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Eevee');
     });
 
+    it('take the turn moment off a trainer at once when the turn passes back quickly, so the light of the turn is only on the one who has it', async () => {
+      await send('action:match', { action: 'toggleTurn' });
+      await played('.trainer-a', 'moment-turn');
+      await send('action:match', { action: 'toggleTurn' });
+      await played('.trainer-b', 'moment-turn');
+      // (the moment lasts longer than this: it was taken off, it did not run out)
+      const now = await page.evaluate(() => ['a', 'b'].map((side) => {
+        const trainer = document.querySelector(`.trainer-${side}`);
+        return [trainer.classList.contains('is-turn'), trainer.classList.contains('moment-turn'), document.getElementById('stage').classList.contains(`moment-turn-${side}`)];
+      }));
+      assert.deepEqual(now, [[false, false, false], [true, true, true]]);
+    });
+
     it('tell two copies of the same card apart: they change places, nobody is hit or healed', async () => {
       const copy = (slot) => send('action:trainerA', { action: 'setBench', slot, cardId: 'a-1', name: 'Pikachu', image: IMG, hp: 100 });
       await send('action:trainerA', { action: 'activeDamage', amount: 50 });
@@ -2533,6 +2792,17 @@ describe('overlay', { skip }, () => {
       await page.waitForFunction(() => window.played.filter((entry) => entry.node.matches('.trainer-b .prize')).length === 3);
       assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => window.played.some((entry) => entry.node === node))), [false, false, false, true, true, true]);
       assert.deepEqual(await there('#stage'), ['moment-taken-a', 'moment-taken-b']);
+
+      // a prize card taken on its own is the one marked, and giving it back marks nothing
+      await forget();
+      await send('action:trainerB', { action: 'togglePrize', slot: 1, taken: true });
+      await played('.trainer-b .prize:nth-child(2)', 'moment-taken');
+      assert.deepEqual(await page.$$eval('.trainer-b .prize', (nodes) => nodes.map((node) => window.played.some((entry) => entry.node === node))), [false, true, false, false, false, false]);
+      await forget();
+      await send('action:trainerB', { action: 'togglePrize', slot: 1, taken: false });
+      await page.waitForFunction(() => !document.querySelector('.trainer-b .prize:nth-child(2)').classList.contains('taken'));
+      await wait(100);
+      assert.deepEqual(await there('.prize'), []);
 
       await send('action:match', { action: 'toggleTurn' });
       await played('.trainer-a', 'moment-turn');

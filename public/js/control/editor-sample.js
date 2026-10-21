@@ -107,8 +107,9 @@ const mon = (slot, name, hue, hp, max, extra = {}) => ({
   slot, cardId: `sample-${slot}-${name}`, name, image: cardArt(name, hue), hp: { current: hp, max }, energies: [], specialEnergies: [], attacks: [], retreat: 0, tools: [], status: [], abilities: [], ...extra
 });
 
-// The live game's own shape (so nothing is missing) filled with a made-up match
-export function sampleState(base) {
+// The live game's own shape (so nothing is missing) filled with a made-up match. `features`: the feature cards are shown, over the bench they go
+// over on air (they cover it, so they are shown only when asked)
+export function sampleState(base, { features = false } = {}) {
   const state = structuredClone(base);
   const DISPLAY = window.OTO_DISPLAY;
 
@@ -157,6 +158,7 @@ export function sampleState(base) {
     { id: 'fs', separator: '+' },
     { id: 'f2', cardId: 'sample-f2', name: 'Ultra Ball', image: cardArt('Ultra Ball', 190, 'Item') }
   ];
+  state.featureView = { visible: features, side: base.featureView && base.featureView.side === 'trainerB' ? 'trainerB' : 'trainerA' };
   state.matchScore = { trainerAWins: 1, trainerBWins: 0, bestOf: 3 };
   state.matchInfo = { round: 'Top 8' };
   return state;

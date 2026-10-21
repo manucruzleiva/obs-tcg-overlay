@@ -265,7 +265,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .prizes.compact .block-title .set-prizes { margin-left: auto; }
 .prizes.compact .prize-number { min-width: 30px; font-size: 30px; }
 .prizes.compact .pips { gap: 4px; margin-left: 4px; }
-.prizes.compact .pip { width: 18px; height: 25px; }
+/* (each pip is a button that takes that prize card or gives it back: big enough to click, the shape of a card) */
+.prizes.compact .pip { width: 23px; height: 32px; }
 .prize-extra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; }
 .prize-extra .switch { gap: 8px; font-size: 12.5px; }
 .prize-extra .penalty-row { margin-top: 0; gap: 6px; }
@@ -282,6 +283,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .pip-face { display: block; width: 100%; height: 100%; object-fit: cover; }
 .pip.has-card, .pip.has-card.penalty { background: var(--bg-tertiary); border-color: rgba(255, 255, 255, 0.4); }
 .pip.has-card:not(.on) { opacity: 0.4; filter: grayscale(1); }
+/* a taken prize card without a card is an empty place */
+.pip.taken:not(.has-card) { border-style: dashed; }
 .pip.has-card.penalty { border-color: var(--danger); }
 .pip.has-card.penalty::after { content: ""; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--danger); opacity: 0.55; }
 .toggle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 12px; }
@@ -393,7 +396,6 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 /* special conditions: a dim chip when off, the color of the condition when on */
 .conditions { gap: 4px; }
 .condition-icon { display: inline-block; flex: none; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; vertical-align: -3px; background: var(--c) var(--icon) center / cover no-repeat; }
-.condition-chip[data-condition="trapped"] .condition-icon { background-color: #fff; background-size: 78%; }
 /* a condition that is off is just its icon (the name is in the tooltip); the one that is on says its name, in its color */
 .condition-chip:not(.on) .condition-label { display: none; }
 .condition-chip:not(.on) { padding-right: 0; }
@@ -471,6 +473,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .match-meta select { width: auto; }
 .match-block input[type="text"] { width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--fg-primary); outline: none; }
 .match-block input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.25); }
+/* Next game, New match and Reset score: centred in the card, on one line or on two */
+.match-block .button-row { justify-content: center; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
 .turn-pass .turn-now { margin-top: 10px; text-align: center; color: var(--fg-secondary); }
@@ -511,6 +515,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .feature-signs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .feature-signs .hint { margin-right: 4px; }
 .sign-btn { min-width: 34px; font-weight: 800; }
+/* shown or hidden, and over whose bench: lit while they are shown, and the trainer's button in the trainer's color */
+.feature-view { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.feature-show.on { background: rgba(124, 140, 255, 0.22); border-color: var(--accent); color: var(--fg-primary); }
+.feature-over { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; }
+.feature-over .hint { margin-right: 2px; font-size: 12px; color: var(--fg-muted); white-space: nowrap; }
+.side-btn { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.side-btn.on.side-a { background: var(--trainer-a); color: #07101c; border-color: transparent; }
+.side-btn.on.side-b { background: var(--trainer-b); color: #1a0710; border-color: transparent; }
+.feature-list.off-air { opacity: 0.55; }
 .feature-item.feature-sign { justify-content: space-between; padding: 2px 10px 2px 14px; background: rgba(251, 191, 36, 0.12); }
 .feature-sign .sign { font: 800 22px/1 var(--font-display); color: var(--accent); }
 .stadium-info { flex: 1; min-width: 0; }

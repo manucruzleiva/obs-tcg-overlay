@@ -134,6 +134,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   const model = new EditorModel(design);
   const assetUrl = (ref) => `/api/themes/${encodeURIComponent(model.name)}/assets/${ref}?v=${model.version}`;
   let matchMode = 'sample'; // or "live"
+  let showFeatures = false; // the made-up match shows its feature cards (they cover a bench) only when asked
 
   const liveState = () => {
     const state = structuredClone(app.conn.live || app.state);
@@ -143,7 +144,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   // the match drawn on the canvas: a made-up one, or the live one (none until the page has the game)
   const sample = () => {
     if (!(app.conn.live || app.state)) return null;
-    return matchMode === 'live' ? liveState() : sampleState(app.conn.live || app.state);
+    return matchMode === 'live' ? liveState() : sampleState(app.conn.live || app.state, { features: showFeatures });
   };
 
   // ---- the parts
@@ -265,6 +266,8 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
   snap.addEventListener('change', () => { canvas.snap = snap.checked; });
   const banner = h('input', { type: 'checkbox', 'aria-label': 'Show an announcement banner' });
   banner.addEventListener('change', () => canvas.showBanner(banner.checked));
+  const features = h('input', { type: 'checkbox', 'aria-label': 'Show the feature cards, over the bench they go over' });
+  features.addEventListener('change', () => { showFeatures = features.checked; canvas.draw(); });
   // the screen of the design: a wide one or a tall one for a phone
   const screen = h('select', { class: 'screen-select', 'aria-label': 'The screen of the design', title: 'Wide: 1920 x 1080. Mobile: 1080 x 1920, for a phone held upright', onchange: () => model.setOrientation(screen.value, { source: 'fields' }) },
     THEME.ORIENTATIONS.map((entry) => h('option', { value: entry.key, title: entry.help }, entry.label)));
@@ -294,7 +297,7 @@ export async function openDesignEditor(app, name, { onClose } = {}) {
       iconButton('Zoom out (-)', 'minus', () => canvas.zoomBy(1 / 1.2)), toolbar.zoom, iconButton('Zoom in (+)', 'plus', () => canvas.zoomBy(1.2)),
       h('button', { class: 'btn tiny', type: 'button', title: 'Show the whole overlay (0)', onclick: () => canvas.fit() }, 'Fit'),
       h('button', { class: 'btn tiny', type: 'button', title: 'One pixel is one pixel (1)', onclick: () => canvas.actualSize() }, '100%')),
-    h('div', { class: 'toolbar-group' }, switchOf(snap, 'Snap to lines'), switchOf(banner, 'Banner')),
+    h('div', { class: 'toolbar-group' }, switchOf(snap, 'Snap to lines'), switchOf(banner, 'Banner'), switchOf(features, 'Feature cards')),
     h('div', { class: 'toolbar-group' }, switchOf(gridShow, 'Grid'), gridSize, h('span', { class: 'toolbar-unit' }, 'px'), switchOf(gridSnap, 'Snap to grid')),
     h('div', { class: 'toolbar-group' }, screen, match),
     h('span', { class: 'toolbar-hint' }, 'Scroll or pinch to zoom · Space + drag to pan'));

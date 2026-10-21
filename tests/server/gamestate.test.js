@@ -50,7 +50,8 @@ describe('GameStateService', () => {
     assert.equal(state.settings.display.benchRow, false, 'the bench is stacked at the side until the producer asks for a row');
     assert.equal(state.settings.display.benchAttacks, false, 'the attacks of the benched Pokémon are not shown until the producer asks for them');
     assert.equal(state.settings.display.spaces, true, 'the frames of the reserved spaces show');
-    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag', 'benchRow', 'benchAttacks', 'toolNames'].includes(key)));
+    assert.equal(state.settings.display.toasts, false, 'no toast banners at the bottom until the producer asks for them: only the big effects');
+    assert.ok(Object.entries(state.settings.display).every(([key, shown]) => shown === true || ['gxMarker', 'vstarMarker', 'nationalityFlag', 'benchRow', 'activeAttacks', 'benchAttacks', 'toolNames', 'toasts'].includes(key)));
   });
 
   it('keeps the GX attack and the VSTAR Power as markers that can be used once per game, back when the game ends', () => {
@@ -717,6 +718,38 @@ describe('GameStateService', () => {
     assert.ok(loaded.state.featureCards.every((card) => !('note' in card)));
   });
 
+  it('shows the feature cards over Trainer A\'s bench to begin with, and can hide them or put them over the other bench', () => {
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
+    assert.equal(gs.setFeaturesVisible(false), false);
+    assert.equal(gs.setFeaturesVisible(), true, 'without a value it is toggled');
+    assert.equal(gs.setFeaturesVisible(), false);
+    gs.setFeatureSide('trainerB');
+    assert.equal(gs.state.featureView.side, 'trainerB');
+    gs.setFeatureSide('trainerC');
+    gs.setFeatureSide(undefined);
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' }, 'a side that is not a trainer changes nothing');
+    gs.addFeatureCard({ cardId: 'a', name: 'Boss Orders', image: IMG });
+    gs.clearFeatureCards();
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' }, 'the cards come and go, and where they show stays');
+    gs.fullReset();
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
+  });
+
+  it('loads where the feature cards show, and shows them over Trainer A\'s bench for a game saved before they went over a bench', () => {
+    const saved = makeGame().state;
+    saved.featureView = { visible: false, side: 'trainerB' };
+    assert.deepEqual(makeGame({ saved }).state.featureView, { visible: false, side: 'trainerB' });
+    delete saved.featureView;
+    assert.deepEqual(makeGame({ saved }).state.featureView, { visible: true, side: 'trainerA' });
+    for (const view of [null, 'over there', 7, [], { visible: 'no', side: 'middle', extra: 1 }]) {
+      saved.featureView = view;
+      assert.deepEqual(makeGame({ saved }).state.featureView, { visible: true, side: 'trainerA' }, JSON.stringify(view));
+    }
+    // and from an imported configuration
+    gs.importState({ featureView: { visible: false, side: 'trainerB', extra: 1 } });
+    assert.deepEqual(gs.state.featureView, { visible: false, side: 'trainerB' });
+  });
+
   it('snapshots and restores while the revision keeps counting up', () => {
     const snapshot = gs.snapshot();
     gs.state.trainerA.name = 'Changed';
@@ -892,6 +925,191 @@ describe('the cards on the prizes', () => {
   });
 });
 
+describe('each prize card taken on its own', () => {
+  let gs;
+  beforeEach(() => {
+    gs = makeGame();
+  });
+  const takenOf = (side = 'trainerA') => gs.state[side].prizes.taken;
+  const prizes = (side = 'trainerA') => [takenOf(side).map((taken) => (taken ? 'x' : '.')).join(''), gs.state[side].prizes.count];
+  const toggle = (side, params) => actions.resolve(`action:${side}`, { action: 'togglePrize', ...params });
+
+  it('starts with none taken, and keeps how many are left next to which ones are taken', () => {
+    assert.deepEqual(prizes('trainerA'), ['......', 6]);
+    assert.deepEqual(prizes('trainerB'), ['......', 6]);
+  });
+
+  it('takes one prize card, or gives it back, and leaves the others as they are', () => {
+    gs.setPrizeTaken('trainerA', 1, true);
+    assert.deepEqual(prizes(), ['.x....', 5], 'the second one, not the last one');
+    gs.setPrizeTaken('trainerA', 4, true);
+    assert.deepEqual(prizes(), ['.x..x.', 4]);
+    gs.setPrizeTaken('trainerA', 4, true);
+    assert.deepEqual(prizes(), ['.x..x.', 4], 'taking one that is taken changes nothing');
+    gs.setPrizeTaken('trainerA', 1);
+    assert.deepEqual(prizes(), ['....x.', 5], 'with no value it toggles');
+    gs.setPrizeTaken('trainerA', 4, false);
+    assert.deepEqual(prizes(), ['......', 6]);
+    assert.deepEqual(prizes('trainerB'), ['......', 6], 'the other trainer is not touched');
+  });
+
+  it('takes the last prize card still there, and gives back the one taken last, around a prize card taken on its own', () => {
+    gs.setPrizeTaken('trainerA', 1, true);
+    gs.adjustPrizes('trainerA', -1);
+    assert.deepEqual(prizes(), ['.x...x', 4], 'the last one still there');
+    gs.adjustPrizes('trainerA', 1);
+    assert.deepEqual(prizes(), ['.x....', 5], 'a prize card taken by mistake comes back, and the one taken on its own stays');
+    gs.adjustPrizes('trainerA', -3);
+    assert.deepEqual(prizes(), ['.x.xxx', 2]);
+    gs.adjustPrizes('trainerA', 1);
+    assert.deepEqual(prizes(), ['.x..xx', 3], 'the taken one right after the last one still there');
+    gs.adjustPrizes('trainerA', 2);
+    assert.deepEqual(prizes(), ['.x....', 5]);
+    gs.adjustPrizes('trainerA', 1);
+    assert.deepEqual(prizes(), ['......', 6], 'when the row ends with one still there, the last taken one before it');
+    gs.adjustPrizes('trainerA', -10);
+    assert.deepEqual(prizes(), ['xxxxxx', 0], 'never fewer than none');
+    gs.adjustPrizes('trainerA', 10);
+    assert.deepEqual(prizes(), ['......', 6], 'never more than six');
+  });
+
+  it('sets how many are left by taking or giving back the same ones, and a knock out takes them from the end', () => {
+    gs.setPrizeTaken('trainerA', 0, true);
+    gs.setPrizes('trainerA', 3);
+    assert.deepEqual(prizes(), ['x...xx', 3]);
+    gs.setPrizes('trainerA', 4);
+    assert.deepEqual(prizes(), ['x....x', 4]);
+    gs.setPrizes('trainerA', 9);
+    assert.deepEqual(prizes(), ['......', 6]);
+    gs.setPrizes('trainerA', -1);
+    assert.deepEqual(prizes(), ['xxxxxx', 0]);
+
+    put(gs, 'trainerA', -1);
+    gs.setPrizeTaken('trainerB', 2, true);
+    gs.knockOut('trainerA', -1, { prizesTaken: 2 });
+    assert.deepEqual(prizes('trainerB'), ['..x.xx', 3]);
+  });
+
+  it('has won when every prize card it needs is taken, in whatever order', () => {
+    for (const slot of [3, 0, 5, 1, 4]) gs.setPrizeTaken('trainerA', slot, true);
+    assert.equal(gs.isWinning('trainerA'), false);
+    gs.setPrizePenalty('trainerB', 1);
+    assert.equal(gs.isWinning('trainerA'), true, 'one left, and a penalty of one');
+    gs.setPrizePenalty('trainerB', 0);
+    gs.setPrizeTaken('trainerA', 2, true);
+    assert.equal(gs.isWinning('trainerA'), true);
+  });
+
+  it('has none taken for the next game and for a new match', () => {
+    gs.setPrizeTaken('trainerA', 1, true);
+    gs.setPrizeTaken('trainerB', 5, true);
+    gs.nextGame();
+    assert.deepEqual([prizes('trainerA'), prizes('trainerB')], [['......', 6], ['......', 6]]);
+    gs.setPrizeTaken('trainerA', 2, true);
+    gs.startGame();
+    assert.deepEqual(prizes('trainerA'), ['......', 6]);
+  });
+
+  it('comes back from a saved game, and a game saved with only how many are left has the last ones taken', () => {
+    gs.setPrizeTaken('trainerA', 1, true);
+    gs.setPrizeTaken('trainerB', 0, true);
+    const saved = JSON.parse(JSON.stringify(gs.state));
+    const loaded = makeGame({ saved });
+    assert.deepEqual([loaded.state.trainerA.prizes.taken, loaded.state.trainerA.prizes.count], [[false, true, false, false, false, false], 5]);
+    assert.deepEqual(loaded.state.trainerB.prizes.taken, [true, false, false, false, false, false]);
+
+    // a game saved before: only the count
+    delete saved.trainerA.prizes.taken;
+    saved.trainerA.prizes.count = 4;
+    const old = makeGame({ saved });
+    assert.deepEqual([old.state.trainerA.prizes.taken, old.state.trainerA.prizes.count], [[false, false, false, false, true, true], 4]);
+
+    // what is not true is not taken, and how many are left follows
+    saved.trainerA.prizes.taken = [true, 'yes', 1, null, true, true, true, true];
+    delete saved.trainerA.prizes.count;
+    const odd = makeGame({ saved });
+    assert.deepEqual([odd.state.trainerA.prizes.taken, odd.state.trainerA.prizes.count], [[true, false, false, false, true, true], 3]);
+    saved.trainerA.prizes.taken = 'all';
+    assert.deepEqual(makeGame({ saved }).state.trainerA.prizes.taken, [false, false, false, false, false, false], 'a list of what is taken, or none');
+
+    // a file written by hand that says another number than its list: the number is what is left, taken or given back as the arrows do
+    saved.trainerA.prizes.taken = [false, true, false, false, false, false];
+    saved.trainerA.prizes.count = 3;
+    const edited = makeGame({ saved });
+    assert.deepEqual([edited.state.trainerA.prizes.taken, edited.state.trainerA.prizes.count], [[false, true, false, false, true, true], 3]);
+    saved.trainerA.prizes.count = 6;
+    assert.deepEqual(makeGame({ saved }).state.trainerA.prizes.taken, [false, false, false, false, false, false]);
+    saved.trainerA.prizes.count = 'six';
+    assert.deepEqual(makeGame({ saved }).state.trainerA.prizes.taken, [false, true, false, false, false, false], 'a number that is not one changes nothing');
+
+    // an imported configuration is read the same way
+    gs.importState({ trainerA: { prizes: { count: 2 } } });
+    assert.deepEqual(prizes(), ['..xxxx', 2]);
+  });
+
+  describe('the action that takes one', () => {
+    it('takes the prize card it says, or gives it back, for the trainer that sends it, and says which and how many are left', () => {
+      gs.state.trainerA.name = 'Ash';
+      const spec = toggle('trainerA', { slot: 1, taken: true });
+      spec.run(gs);
+      assert.deepEqual(prizes(), ['.x....', 5]);
+      assert.equal(spec.label(gs), 'Ash took prize card 2 (5 left)');
+      gs.setPrizeCards('trainerA', [null, { cardId: 'sv1-7', name: 'Pikachu', image: '' }]);
+      const back = toggle('trainerA', { slot: 1, taken: false });
+      back.run(gs);
+      assert.equal(back.label(gs), 'Ash gave back prize card 2: Pikachu (6 left)');
+      assert.deepEqual(prizes('trainerB'), ['......', 6]);
+    });
+
+    it('agrees with itself: what it says it wants is what it gets, however often, and without a value it toggles', () => {
+      toggle('trainerB', { slot: 3, taken: true }).run(gs);
+      toggle('trainerB', { slot: 3, taken: true }).run(gs);
+      assert.deepEqual(prizes('trainerB'), ['...x..', 5]);
+      toggle('trainerB', { slot: 3 }).run(gs);
+      assert.deepEqual(prizes('trainerB'), ['......', 6]);
+    });
+
+    it('makes the prize sound when a prize card is taken, and none when it is given back', () => {
+      const take = toggle('trainerA', { slot: 0, taken: true });
+      take.run(gs);
+      assert.deepEqual(take.cues(), ['prize']);
+      const back = toggle('trainerA', { slot: 0, taken: false });
+      back.run(gs);
+      assert.deepEqual(back.cues(), []);
+    });
+
+    it('touches that prize card only: two of them at once are no conflict, the same one or the next one taken with the arrows is', () => {
+      const overlaps = (a, b) => a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+      const [one] = toggle('trainerA', { slot: 1, taken: true }).targets();
+      const [two] = toggle('trainerA', { slot: 4, taken: true }).targets();
+      assert.deepEqual([one, two], ['trainerA.prizes.1', 'trainerA.prizes.4']);
+      assert.equal(overlaps(one, two), false);
+      assert.equal(overlaps(one, toggle('trainerA', { slot: 1, taken: false }).targets()[0]), true);
+      assert.equal(overlaps(one, actions.resolve('action:trainerA', { action: 'prizeMinus' }).targets()[0]), true);
+      assert.equal(overlaps(one, actions.resolve('action:trainerA', { action: 'prizeCardsSet', cards: [] }).targets()[0]), false, 'choosing the cards is not taking them');
+      assert.equal(overlaps(one, toggle('trainerB', { slot: 1, taken: true }).targets()[0]), false);
+    });
+
+    it('refuses a prize card that is not there and a value that is not true or false, and changes nothing', () => {
+      const before = JSON.stringify(gs.state);
+      for (const params of [{}, { slot: -1 }, { slot: 6 }, { slot: 1.5 }, { slot: 'first' }, { slot: 0, taken: 'yes' }, { slot: 0, taken: 1 }, { slot: 0, taken: null }]) {
+        assert.throws(() => toggle('trainerA', params).run(gs), actions.ActionError, JSON.stringify(params));
+      }
+      assert.equal(JSON.stringify(gs.state), before);
+    });
+
+    it('wins the game by itself when it takes the last prize card needed', () => {
+      for (const slot of [0, 1, 2, 3, 5]) gs.setPrizeTaken('trainerA', slot, true);
+      const spec = toggle('trainerA', { slot: 4, taken: true });
+      spec.run(gs);
+      const automatic = spec.automatic(gs);
+      assert.ok(automatic, 'the game is won');
+      assert.equal(gs.state.matchScore.trainerAWins, 1);
+      assert.match(automatic.label, /took the last prize card/);
+    });
+  });
+});
+
 describe('actions', () => {
   let gs;
   beforeEach(() => {
@@ -1026,6 +1244,23 @@ describe('actions', () => {
     }
     assert.throws(() => actions.resolve('action:trainerB', { action: 'toggleStatus', condition: 'asleep' }).run(gs), /no Active Pokémon/);
     assert.deepEqual(gs.state.trainerB.active.status, []);
+  });
+
+  it('shows and hides the feature cards, puts them over either bench, and says so', () => {
+    gs.state.trainerB.name = 'Gary';
+    assert.deepEqual(actions.resolve('action:card', { action: 'toggleFeatures' }).targets(), ['featureView']);
+    assert.equal(actions.resolve('action:card', { action: 'toggleFeatures', enabled: false }).targets(), null, 'last writer wins');
+    assert.equal(actions.resolve('action:card', { action: 'setFeatureSide', side: 'trainerB' }).targets(), null);
+    assert.equal(run('action:card', { action: 'toggleFeatures' }).label, 'Feature cards hidden');
+    assert.equal(run('action:card', { action: 'toggleFeatures', enabled: false }).label, 'Feature cards hidden', 'two producers agree');
+    assert.equal(gs.state.featureView.visible, false);
+    assert.equal(run('action:card', { action: 'setFeatureSide', side: 'trainerB' }).label, 'Feature cards over Gary\'s bench');
+    assert.equal(run('action:card', { action: 'toggleFeatures', enabled: true }).label, 'Feature cards shown over Gary\'s bench');
+    assert.equal(run('action:card', { action: 'setFeatureSide', side: 'trainerA' }).label, 'Feature cards over Trainer A\'s bench');
+    for (const payload of [{}, { side: 'both' }, { side: 7 }]) {
+      assert.throws(() => actions.resolve('action:card', { action: 'setFeatureSide', ...payload }).run(gs), actions.ActionError, JSON.stringify(payload));
+    }
+    assert.deepEqual(gs.state.featureView, { visible: true, side: 'trainerA' });
   });
 
   it('applies a draft to a fork without touching the live game', () => {

@@ -42,12 +42,14 @@ Set the trainers' names and nationalities, pick their decks and Pokémon, and ke
 | `X` | Ability tokens: mark an ability used (abilities are not announced, only attacks) |
 | `L` | The **decklist** of the trainer: paste it and its cards are offered first |
 | `O` | The **discard pile and the Lost Zone** of the trainer |
+| `Shift` + `O` | Show the trainer's **discard pile over their bench** on the overlay, or hide it |
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack |
 | `T` | Announce a Top Deck |
 | `W` | **Winner** banner for the player whose turn it is (only the banner: the game and the score do not change) |
 | `G` | **Game start** banner |
 | `P` | **Pause** the game, or resume it |
+| `F` | Show the **feature cards**, or hide them. `Shift` + `F` puts them over the other trainer's bench |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
 | `Shift` + `Enter` | Turn **draft mode** on or off |
@@ -96,8 +98,8 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 
 ## Prizes, victory and pause
 
-- **Prize cards** are taken with `↓` for the player whose turn it is (`↑` gives one back). `Shift` is for the other player. The prize cards start **face down** at the beginning of each game; switch **Hide prizes** off to turn them face up.
-- **Set prizes** opens the six prize cards of a player in a small dialog: click a card to choose it with the search, and the little button on its corner takes it off again. The overlay then shows those cards where the prize cards are, and the small pips in the control panel show them too.
+- **Prize cards** are six buttons in each player's box, one for each prize card: **click the very one the player took** and only that one is taken (the others stay as they are); click it again to give it back. The keys take them in order: `↓` takes the last prize card still there for the player whose turn it is, `↑` gives back the one taken last, and `Shift` is for the other player. Two producers can take two different prize cards at the same time. The prize cards start **face down** at the beginning of each game; switch **Hide prizes** off to turn them face up.
+- **Set prizes** opens the six prize cards of a player in a small dialog: click a card to choose it with the search, and the little button on its corner takes it off again. The overlay then shows those cards where the prize cards are, and the prize card buttons in the control panel show them too.
 - **Penalties** are set on the player who got one: that many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
 - **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. It is a step of its own that **OTO does by itself**: the **Activity** list shows it in green, with an *automatic* label and the name *OTO (automatic)* instead of a producer's (for example *Ash won the game by itself (took the last prize card): score 1–0*), right above the prize card or the knock out that caused it. **Undo** (`Ctrl+Z`) takes back only that game win (the prize card stays taken, so the producer can correct a mistake), and a second undo takes the prize card back; **Redo** does them again in the same order. A draft that is sent is the same: the changes are one step and the game won, if there is one, is the next. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the discard piles and Lost Zones are emptied; the score, the names and the decklists stay). **New match** starts over with the score at 0.
 - **Winner** (`W`, in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change. **Game start** (`G`) shows the start banner.
@@ -113,6 +115,7 @@ Each trainer has a **discard pile** and a **Lost Zone**. The overlay shows each 
 - The **Discard** and **Lost Zone** buttons under the turn tracker (or `O`) open both piles, in two tabs, with the newest card first. **→ Lost Zone** (or **→ Discard**) moves a card to the other pile, and the little cross takes it out (a card that went back to the hand or the deck).
 - With a decklist, the cards of the deck are under the pile: **one click puts a card in**. **Search a card** finds any card, and stays open so you can put several in a row (two cards discarded with Ultra Ball, four Pokémon sent to the Lost Zone).
 - A knocked out Pokémon goes to the discard pile by itself, with what was attached to it (see *Knock outs*, above). A basic Energy shows as the icon of its type unless the decklist has a picture of it.
+- **Show over the bench** (in the pile's tab, or `Shift` + `O` for the discard pile) puts that pile on the overlay in the place of the trainer's bench, like the feature cards: the pictures of its cards, sorted into Pokémon, Trainers and Energy, with how many copies of each. **Hide from the overlay** (or `Shift` + `O` again) brings the bench back. Settings, Overlay has a switch for it.
 - **Next game** and **New match** empty both piles. Two producers can work on the same pile at once: each card is told apart, so neither takes the other's.
 
 ---
@@ -120,7 +123,7 @@ Each trainer has a **discard pile** and a **Lost Zone**. The overlay shows each 
 ## Stadium and feature cards
 
 - **Stadium** (`S`): putting one in play uses the Stadium play of the player who played it (the one whose turn it is unless you choose the other). Turn the switch in the picker off for a correction, or for a Stadium an effect put there. The control panel shows just the art of the card; Settings, General, can show the whole card instead (a choice of that browser only).
-- **Feature cards** let you show something to the audience during commentary. The overlay shows the last three, in the order they are in, and **Between cards** adds a sign (`+`, `→`, `=` or `or`) to explain a combo: *Boss's Orders + Ultra Ball → …*. **Drag a card or a sign to put it where you want it** in the row. A sign is removed like a card.
+- **Feature cards** let you show something to the audience during commentary. The overlay shows the last three, in the order they are in, as their pictures (without their names), **over the bench of the trainer you choose**: the bench is hidden while they are shown. **Hide** (`F`) takes them off the overlay and brings the bench back, **Show** puts them back; **Over the bench of** chooses the trainer (`Shift` + `F` switches). They start shown, over Trainer A's bench. **Between cards** adds a sign (`+`, `→`, `=` or `or`) to explain a combo: *Boss's Orders + Ultra Ball → …*; the cards joined by a sign are stacked, one over the other, with the sign between them. **Drag a card or a sign to put it where you want it** in the row. A sign is removed like a card.
 
 ---
 
@@ -172,9 +175,11 @@ Right-click the tray icon, **Control panel password**, **Set a password…** (or
 
 ## What the audience sees
 
+**The look.** OTO starts with **Championship Blue** on the overlay: two blue columns that frame a top-down table camera, with animations for the moments of the game ([what is where](examples/championship-blue/README.md)). It comes with the app, and on a new install its control settings come with it (the attacks of the Active and benched Pokémon, the turn highlight and the design animations on, the toast banners off). Settings, **Look**, has the **Classic look** (OTO's look without a design) and your own designs; whatever you put on the overlay stays there. To change Championship Blue, make a copy of it under another name first: a new version of OTO can bring a new version of it, in the place of the one called Championship Blue.
+
 ### Show and hide
 
-Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, Pokémon Tools (as the pictures of their cards, which is how they show; their names as text are a switch that is off), retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. **Design animations (damage, knock outs, prizes...)**, under *Announcements*, is for a design whose style sheet animates what happens in the match. It is on to begin with; switched off, those animations do not play and the rest of the design stays as it is. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the benched Pokémon** are off until you switch them on.
+Settings, **Overlay**, has a switch for every piece: the scoreboard, match score, round label, names, nationality, record, deck and its picture, prize cards, counters, lock badges, the Active Pokémon and bench, Pokémon names, HP bars, attached energy, Pokémon Tools (as the pictures of their cards, which is how they show; their names as text are a switch that is off), retreat cost, ability tokens, status conditions, the Stadium, feature cards, banners and full-screen animations. Hide the GX or VSTAR marker here and it disappears from the control panel too. **Design animations (damage, knock outs, prizes...)**, under *Announcements*, is for a design whose style sheet animates what happens in the match. It is on to begin with; switched off, those animations do not play and the rest of the design stays as it is. Two presets help: **Show everything** and **Minimal** (score, names, the Active Pokémon and HP). The bench is stacked down the edge of the screen by default; a switch puts it in a row. **Attacks of the Active Pokémon** and **Attacks of the benched Pokémon** are off until you switch them on. The **toast banners** (the small notifications at the bottom of the overlay) are off too: on stream only the full-screen effects show, and the PAUSED banner, which is not one of them, still shows while the game is paused.
 
 The same tab has a table of announcements (start of game, victory, Top Deck, attack, pass turn, knock out, pause): each can show a **banner**, a **full-screen effect**, or both, and you set how long they stay (1 to 30 seconds). The **All** column and the **All moments** row switch whole rows and columns at once. A new announcement replaces the one still showing; the pause banner stays until you resume.
 

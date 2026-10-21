@@ -106,7 +106,7 @@ describe('the assets folder', () => {
 
   it('is packaged into the app and used for the app icon, but the README pictures are not', () => {
     const files = pkg.build.files;
-    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy/**/*', 'assets/status/**/*', 'assets/fonts/**/*', 'assets/cardbacks/**/*', 'assets/markers/**/*']) assert.ok(files.includes(entry), entry);
+    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy/**/*', 'assets/status/**/*', 'assets/fonts/**/*', 'assets/cardbacks/**/*', 'assets/markers/**/*', 'assets/designs/**/*']) assert.ok(files.includes(entry), entry);
     assert.ok(!files.some((entry) => entry.includes('screenshots')), 'screenshots stay out of the installer');
     assert.ok(!files.includes('logo.ico') && !files.includes('logo.gif'), 'no entry for the old place');
     assert.equal(pkg.build.win.icon, 'assets/logo.ico');

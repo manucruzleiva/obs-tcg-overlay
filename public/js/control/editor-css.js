@@ -27,6 +27,8 @@ const MOMENTS = [
   { key: 'taken', label: 'Prize card taken', target: 'prize0' },
   { key: 'turn', label: 'Turn starts', target: 'trainer' },
   { key: 'used', label: 'Supporter played', target: 'token-supporter' },
+  { key: 'lock', label: 'Item Lock on', target: 'lock-item' },
+  { key: 'unlock', label: 'Item Lock off', target: 'lock-item' },
   { key: 'stadium', moment: 'enter', label: 'A Stadium comes into play', target: 'stadium' },
   { key: 'point', label: 'Game won', target: 'wins' }
 ];
@@ -111,7 +113,7 @@ export class CssPanel {
     return h('details', { class: 'css-help' },
       h('summary', {}, 'How to use it'),
       h('ul', {},
-        h('li', {}, 'Every rule is for the overlay\'s stage: ', code('.scoreboard'), ' is read as ', code('#stage .scoreboard'), ', so it wins over the built-in look without ', code('!important'), ' (which is not allowed, nor is a transition of ', code('display'), ' with ', code('allow-discrete'), ': either could show what the producer switched off).'),
+        h('li', {}, 'Every rule is for the overlay\'s stage: ', code('.scoreboard'), ' is read as ', code('#stage .scoreboard'), ', so it wins over the classic look without ', code('!important'), ' (which is not allowed, nor is a transition of ', code('display'), ' with ', code('allow-discrete'), ': either could show what the producer switched off).'),
         h('li', {}, 'A rule for ', code(':root'), ' alone can only set custom properties, such as ', code('--accent: #ff00aa'), ' or how long a moment lasts: ', code('--oto-moment-ms: 1200'), ' (1500 unless it says).'),
         h('li', {}, 'The design\'s pictures and fonts: ', code('var(--logoImage)'), ', ', code('var(--css-name)'), ', ', code('url(images/css-name.png)'), ', ', code('url(fonts/font.woff2)'), '. Nothing else can be loaded: no web addresses, no ', code('@import'), '.'),
         h('li', {}, 'For a short while after something happens, the overlay puts a class on the piece it happened to. On a Pokémon\'s tile (', code('.mon'), '): ',

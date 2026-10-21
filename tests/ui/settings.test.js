@@ -246,13 +246,13 @@ describe('settings', { skip }, () => {
     });
   });
 
-  describe('a copy of the built-in look', () => {
+  describe('a copy of the classic look', () => {
     it('makes a design with every color and the usual fonts written out, to learn from, and opens it in the editor', async () => {
       await openSettings('Look');
-      await page.locator('.theme-list').getByRole('button', { name: 'Copy of the built-in look' }).click();
-      const ask = page.locator('.modal[aria-label="Copy of the built-in look"]');
+      await page.locator('.theme-list').getByRole('button', { name: 'Copy of the classic look' }).click();
+      const ask = page.locator('.modal[aria-label="Copy of the classic look"]');
       await ask.waitFor();
-      assert.match(await ask.locator('.modal-body').textContent(), /Every color of the built-in look is written into the new design/);
+      assert.match(await ask.locator('.modal-body').textContent(), /Every color of the classic look is written into the new design/);
       await ask.locator('input').fill('Learning');
       await ask.getByRole('button', { name: 'Create', exact: true }).click();
       const editor = page.locator('.modal[aria-label="Design: Learning"]');
@@ -264,7 +264,7 @@ describe('settings', { skip }, () => {
       assert.equal(design.colors['--radius'], '14px');
       assert.match(design.fontFamilies.display, /^"Bahnschrift"/);
       assert.match(design.fontFamilies.text, /^"Segoe UI Variable Text"/);
-      assert.equal(design.description, 'A copy of the built-in look');
+      assert.equal(design.description, 'A copy of the classic look');
 
       // the editor shows it as code, so it can be read and changed
       await editor.locator('.editor-side .tab', { hasText: 'Code' }).click();
@@ -360,7 +360,7 @@ describe('settings', { skip }, () => {
       await page.locator('.color-row').first().locator('input[type=text]').fill('#00ffcc');
       await overlay.waitForFunction(() => document.getElementById('oto-design-vars').sheet.cssRules[0].style.getPropertyValue('--accent') === '#00ffcc');
 
-      await page.locator('.theme-item', { hasText: 'Built-in look' }).click();
+      await page.locator('.theme-item', { hasText: 'Classic look' }).click();
       await overlay.waitForFunction(() => !document.documentElement.classList.contains('has-logo'));
       await overlay.waitForFunction(() => !window.oto.sfx.buffers.has('damage'));
       assert.deepEqual(overlay.problems, []);

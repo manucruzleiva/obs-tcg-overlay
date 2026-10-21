@@ -55,8 +55,32 @@ function cleanPrizeCards(list) {
   return cards;
 }
 
-// A card in a discard pile or in the Lost Zone: { id, cardId, name, image }, and `energy` (its type) for a basic Energy, which may have no
-// picture of its own (the overlay shows the icon of the type then). The id tells two copies of one card apart.
+// Which prize cards are taken: true or false for each prize card, each on its own (the overlay fades the taken ones). How many are left
+// (prizes.count) follows from it, and is kept next to it for everything that reads it.
+const noneTaken = () => Array.from({ length: MAX_PRIZES }, () => false);
+const cleanTaken = (list) => Array.from({ length: MAX_PRIZES }, (_, index) => list[index] === true);
+const prizesLeft = (taken) => taken.filter((one) => !one).length;
+
+// Take prize cards (a negative delta) or give them back (a positive one), one at a time. The one taken is the last one still there; the one
+// given back is the taken one right after the last one still there (so a prize card taken by mistake comes back), or, when the row ends
+// with one still there, the last one taken before it. A prize card taken on its own (see setPrizeTaken) stays as it is otherwise.
+function stepPrizes(prizes, delta) {
+  for (let step = 0; step < Math.abs(delta); step++) {
+    const last = prizes.taken.lastIndexOf(false); // the last prize card still there (-1: none is)
+    const at = delta < 0 ? last : last < MAX_PRIZES - 1 ? last + 1 : prizes.taken.lastIndexOf(true);
+    if (at === -1) break;
+    prizes.taken[at] = delta < 0;
+  }
+  prizes.count = prizesLeft(prizes.taken);
+}
+
+// What kind of card a card in a pile is, for the overlay to sort them: 'pokemon', 'trainer' or 'energy' ('' when it is not known)
+const PILE_KINDS = ['pokemon', 'trainer', 'energy'];
+const SUPERTYPE_KIND = { 'Pokémon': 'pokemon', Pokemon: 'pokemon', Trainer: 'trainer', Energy: 'energy' };
+const pileKindOf = (card) => (PILE_KINDS.includes(card.kind) ? card.kind : SUPERTYPE_KIND[card.supertype] || (GAME.ENERGY_KEYS.includes(card.energy) ? 'energy' : ''));
+
+// A card in a discard pile or in the Lost Zone: { id, cardId, name, image, kind }, and `energy` (its type) for a basic Energy, which may have
+// no picture of its own (the overlay shows the icon of the type then). The id tells two copies of one card apart.
 function cleanPileCard(card) {
   if (!card || typeof card !== 'object' || typeof card.name !== 'string' || !card.name) return null;
   const clean = {
@@ -66,6 +90,8 @@ function cleanPileCard(card) {
     image: typeof card.image === 'string' ? card.image : ''
   };
   if (GAME.ENERGY_KEYS.includes(card.energy)) clean.energy = card.energy;
+  const kind = pileKindOf(card);
+  if (kind) clean.kind = kind;
   return clean;
 }
 const cleanPile = (list) => (Array.isArray(list) ? list.map(cleanPileCard).filter(Boolean).slice(-MAX_PILE) : []);
@@ -229,6 +255,10 @@ class GameStateService {
       trainerB: this.getDefaultTrainer('Trainer B'),
       stadium: { cardId: '', name: '', image: '', inPlay: false },
       featureCards: [],
+      // The feature cards are shown over the bench of a trainer, which they cover while they are shown (see setFeaturesVisible)
+      featureView: { visible: true, side: 'trainerA' },
+      // the discard pile or the Lost Zone of a trainer shown over their bench, as the feature cards are (it covers them too while it is shown)
+      pileView: { visible: false, side: 'trainerA', pile: 'discard' },
       favoriteCardIds: [],
       matchScore: { trainerAWins: 0, trainerBWins: 0, bestOf: 3 },
       // Shown on the scoreboard, for example "Round 3" or "Top 8"
@@ -254,7 +284,8 @@ class GameStateService {
       lostZone: [],
       // penalty: how many prize cards the OTHER trainer counts as already taken (0 to 6); they are marked red on that trainer's side
       // (hidden: the prize cards are face down until the producer shows them, and so are the cards put on them)
-      prizes: { count: MAX_PRIZES, hidden: true, penalty: 0, cards: emptyPrizeCards() },
+      // (taken: which prize cards are taken, each on its own; count: how many are left, which follows from it)
+      prizes: { count: MAX_PRIZES, taken: noneTaken(), hidden: true, penalty: 0, cards: emptyPrizeCards() },
       resources: {
         energyPerTurn: { available: 1, used: 0 },
         stadiumPerTurn: { available: 1, used: 0 },
@@ -286,6 +317,12 @@ class GameStateService {
     merged.featureCards = (Array.isArray(merged.featureCards) ? merged.featureCards : [])
       .filter((entry) => entry && typeof entry === 'object' && (entry.separator === undefined ? typeof entry.name === 'string' : GAME.FEATURE_SEPARATORS.some((one) => one.symbol === entry.separator)))
       .slice(-MAX_FEATURE_ENTRIES);
+    // (they were shown in the middle before they went over a bench: shown, and over Trainer A's until the producer says otherwise)
+    const view = merged.featureView && typeof merged.featureView === 'object' ? merged.featureView : {};
+    merged.featureView = { visible: view.visible !== false, side: view.side === 'trainerB' ? 'trainerB' : 'trainerA' };
+    // (the view of a pile came later still)
+    const pileView = merged.pileView && typeof merged.pileView === 'object' ? merged.pileView : {};
+    merged.pileView = { visible: pileView.visible === true, side: pileView.side === 'trainerB' ? 'trainerB' : 'trainerA', pile: PILES.includes(pileView.pile) ? pileView.pile : 'discard' };
     // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
     if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
     if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
@@ -310,8 +347,14 @@ class GameStateService {
       if (typeof prizes.penalty === 'boolean') prizes.penalty = prizes.penalty ? 1 : 0;
       else if (!Number.isInteger(prizes.penalty)) prizes.penalty = 0;
       prizes.penalty = Math.max(0, Math.min(MAX_PRIZES, prizes.penalty));
-      // and the cards of the prizes came later still
+      // and the cards of the prizes came later still, and each prize card taken on its own after them (count follows from it)
       prizes.cards = cleanPrizeCards(prizes.cards);
+      // (a game saved before says only how many are left: the taken ones were the last ones. A file written by hand can say a number that
+      // the list does not: the number is what is left, taking or giving back the way the arrows do)
+      const savedPrizes = (saved[side] && saved[side].prizes) || {};
+      prizes.taken = Array.isArray(savedPrizes.taken) ? cleanTaken(savedPrizes.taken) : noneTaken();
+      prizes.count = prizesLeft(prizes.taken);
+      if (Number.isInteger(savedPrizes.count)) stepPrizes(prizes, Math.max(0, Math.min(MAX_PRIZES, savedPrizes.count)) - prizes.count);
       // the decklist, the discard pile and the Lost Zone came later still
       merged[side].decklist = cleanDecklist(merged[side].decklist);
       for (const pile of PILES) merged[side][pile] = cleanPile(merged[side][pile]);
@@ -387,9 +430,15 @@ class GameStateService {
   // ------------------------------------------------- discard pile and Lost Zone
 
   // Put a card on top of a pile ('discard' or 'lostZone'). Gives back the card as it is kept, or null when the pile is full.
+  // A card that does not say what kind it is takes the kind of the card of the same name in the trainer's decklist.
   addToPile(side, pile, card) {
     const list = this.state[side][pile];
-    const clean = cleanPileCard({ ...card, id: undefined });
+    let kind = pileKindOf(card);
+    if (!kind) {
+      const known = this.state[side].decklist.cards.find((entry) => (card.cardId && entry.cardId === card.cardId) || DECKLIST.nameKey(entry.name) === DECKLIST.nameKey(card.name));
+      if (known) kind = SUPERTYPE_KIND[known.supertype] || SUPERTYPE_KIND[known.section] || '';
+    }
+    const clean = cleanPileCard({ ...card, kind, id: undefined });
     if (!clean || list.length >= MAX_PILE) return null;
     list.push(clean);
     return clean;
@@ -426,14 +475,14 @@ class GameStateService {
       const card = deck.find((entry) => DECKLIST.basicEnergyOf(entry.name) === key && (entry.images.small || entry.images.large));
       return card ? card.images.small || card.images.large : '';
     };
-    const card = ({ cardId, name, image }) => ({ cardId, name, image });
+    const card = (kind) => ({ cardId, name, image }) => ({ cardId, name, image, kind });
     const label = (key) => `${GAME.ENERGY_TYPES.find((type) => type.key === key).label} Energy`;
     return [
-      ...(pokemon.stages || []).map(card),
-      card(pokemon),
-      ...(pokemon.tools || []).map(card),
-      ...(pokemon.specialEnergies || []).map(card),
-      ...(pokemon.energies || []).filter((key) => GAME.ENERGY_KEYS.includes(key)).map((key) => ({ cardId: '', name: label(key), image: energyPicture(key), energy: key }))
+      ...(pokemon.stages || []).map(card('pokemon')),
+      card('pokemon')(pokemon),
+      ...(pokemon.tools || []).map(card('trainer')),
+      ...(pokemon.specialEnergies || []).map(card('energy')),
+      ...(pokemon.energies || []).filter((key) => GAME.ENERGY_KEYS.includes(key)).map((key) => ({ cardId: '', name: label(key), image: energyPicture(key), energy: key, kind: 'energy' }))
     ].filter((entry) => entry.name);
   }
 
@@ -451,17 +500,25 @@ class GameStateService {
     this.state[otherSide(side)].isTurn = !isTurn;
   }
 
+  // Take prize cards (a negative delta) or give them back (a positive one): see stepPrizes
   adjustPrizes(side, delta) {
-    const prizes = this.state[side].prizes;
-    prizes.count = Math.max(0, Math.min(MAX_PRIZES, prizes.count + delta));
+    stepPrizes(this.state[side].prizes, delta);
   }
 
+  // So many prize cards left (0 to 6), taking or giving back the ones adjustPrizes would
   setPrizes(side, count) {
-    this.state[side].prizes.count = Math.max(0, Math.min(MAX_PRIZES, count));
+    this.adjustPrizes(side, Math.max(0, Math.min(MAX_PRIZES, count)) - this.state[side].prizes.count);
+  }
+
+  // One prize card (0 to 5) taken, or given back; omit taken to toggle. The others stay as they are.
+  setPrizeTaken(side, slot, taken) {
+    const prizes = this.state[side].prizes;
+    prizes.taken[slot] = taken === undefined ? !prizes.taken[slot] : taken;
+    prizes.count = prizesLeft(prizes.taken);
   }
 
   // Choose the cards that are the prizes: a list of up to six, one for each prize card, where null (or nothing) leaves a prize card without
-  // a card. They show on the overlay on their prize cards, so which ones are taken is still the count.
+  // a card. They show on the overlay on their prize cards, and stay there whichever are taken.
   setPrizeCards(side, cards) {
     this.state[side].prizes.cards = cleanPrizeCards(cards);
   }
@@ -817,6 +874,7 @@ class GameStateService {
     this.matchStartTime = Date.now();
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.taken = noneTaken();
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true; // new prizes are face down again
@@ -881,6 +939,7 @@ class GameStateService {
   nextGame() {
     for (const side of ['trainerA', 'trainerB']) {
       this.state[side].prizes.count = MAX_PRIZES;
+      this.state[side].prizes.taken = noneTaken();
       this.state[side].prizes.penalty = 0;
       this.state[side].prizes.cards = emptyPrizeCards();
       this.state[side].prizes.hidden = true;
@@ -969,6 +1028,29 @@ class GameStateService {
 
   clearFeatureCards() {
     this.state.featureCards = [];
+  }
+
+  // Show the feature cards (over the bench of the trainer setFeatureSide says, which they cover while they are shown) or hide them; omit
+  // `visible` to toggle. Returns whether they are shown now. (With no card to show nothing is shown either way.)
+  setFeaturesVisible(visible) {
+    const view = this.state.featureView;
+    view.visible = visible === undefined ? !view.visible : Boolean(visible);
+    return view.visible;
+  }
+
+  // Which trainer's bench the feature cards go over: 'trainerA' or 'trainerB'
+  setFeatureSide(side) {
+    if (side === 'trainerA' || side === 'trainerB') this.state.featureView.side = side;
+  }
+
+  // Show a trainer's discard pile or Lost Zone over their bench, or hide it; omit `visible` to toggle, and `side` or `pile` to keep the one
+  // shown. Returns whether it is shown now.
+  setPileView({ visible, side, pile } = {}) {
+    const view = this.state.pileView;
+    if (side === 'trainerA' || side === 'trainerB') view.side = side;
+    if (PILES.includes(pile)) view.pile = pile;
+    view.visible = visible === undefined ? !view.visible : Boolean(visible);
+    return view.visible;
   }
 
   // ---------------------------------------------------------------- settings

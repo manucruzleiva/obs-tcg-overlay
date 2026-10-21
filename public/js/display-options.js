@@ -59,6 +59,7 @@
         { key: 'toolNames', label: 'Pokémon Tools by name (text), as well as or instead of their cards', off: true, style: true },
         { key: 'retreatCost', label: 'Retreat cost' },
         { key: 'abilityTokens', label: 'Ability tokens (ready / used)' },
+        { key: 'activeAttacks', label: 'Attacks of the Active Pokémon (name and damage)', off: true },
         { key: 'benchAttacks', label: 'Attacks of the benched Pokémon (name and damage)', off: true },
         { key: 'statusConditions', label: 'Status conditions' }
       ]
@@ -69,14 +70,15 @@
       options: [
         { key: 'spaces', label: 'Frames of the reserved spaces (camera feeds and the like)' },
         { key: 'stadium', label: 'Stadium card' },
-        { key: 'featureCards', label: 'Feature cards' }
+        { key: 'featureCards', label: 'Feature cards' },
+        { key: 'pileView', label: 'Discard pile or Lost Zone over the bench, sorted into Pokémon, Trainers and Energy (while the producer shows it)' }
       ]
     },
     {
       id: 'effects',
       label: 'Announcements',
       options: [
-        { key: 'toasts', label: 'Toast banners' },
+        { key: 'toasts', label: 'Toast banners (small notifications at the bottom)', off: true },
         { key: 'animations', label: 'Full-screen animations' },
         // the "moments" a design's style sheet can animate: the overlay marks what just happened (see markMoments in public/js/overlay.js)
         { key: 'moments', label: 'Design animations (damage, knock outs, prizes...)' }

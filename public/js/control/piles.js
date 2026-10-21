@@ -27,7 +27,7 @@ export function pictureOf(card) {
 }
 
 // A card of the decklist as the card picker takes it (a search result)
-export const asSearchResult = (card) => ({ id: card.cardId, name: card.name, images: card.images, setName: card.set, number: card.number, fromDeck: true });
+export const asSearchResult = (card) => ({ id: card.cardId, name: card.name, supertype: card.supertype, images: card.images, setName: card.set, number: card.number, fromDeck: true });
 
 // The cards of a trainer's decklist that a picker can use (`supertype` and `subtype` as the picker searches), as a row of buttons above the search,
 // narrowed to what is typed (`query`). Null when the trainer has no decklist or none of its cards fit.
@@ -119,13 +119,16 @@ export function openPiles(app, side, which = 'discard') {
   const act = (action, params) => app.act(`action:${key}`, { action, ...params });
   // a basic Energy put in a pile keeps its type, so the overlay can show its icon when it has no picture
   const add = (card) => act('pileAdd', {
-    pile, cardId: card.cardId || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined
+    pile, cardId: card.cardId || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined,
+    supertype: card.supertype || undefined
   });
 
   const draw = () => {
     const trainer = app.state[key];
     const other = PILES.find((entry) => entry.key !== pile);
     const cards = trainer[pile] || [];
+    const view = app.state.pileView || {};
+    const onAir = Boolean(view.visible && view.side === key && view.pile === pile);
     replace(body,
       h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Pile' }, PILES.map((entry) => h('button', {
         class: `seg${entry.key === pile ? ' on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(entry.key === pile), dataset: { pile: entry.key },
@@ -133,6 +136,11 @@ export function openPiles(app, side, which = 'discard') {
       }, `${entry.label} (${(trainer[entry.key] || []).length})`))),
       h('div', { class: 'section-label' }, `${pileOf(pile).label} · ${cards.length} card${cards.length === 1 ? '' : 's'}`, h('span', { class: 'hint' }, 'the newest first'),
         h('span', { class: 'bench-controls' },
+          h('button', {
+            class: `btn tiny pile-view-toggle${onAir ? ' on' : ''}`, type: 'button', 'aria-pressed': String(onAir),
+            title: 'The overlay shows this pile over the bench of this trainer, its cards sorted into Pokémon, Trainers and Energy (Shift+O for the discard pile)',
+            onclick: () => app.togglePileView(key, pile)
+          }, onAir ? 'Hide from the overlay' : 'Show over the bench'),
           h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openPicker({ kind: 'pile', side: key, pile }) }, icon('search', 14), ' Search a card'),
           h('button', { class: 'btn tiny danger-text', type: 'button', disabled: cards.length === 0 || undefined, onclick: async () => {
             if (await confirmDialog({ title: `Empty the ${pileOf(pile).label}?`, message: `The ${cards.length} card${cards.length === 1 ? '' : 's'} in it will be taken out.`, confirmLabel: 'Empty', danger: true })) act('pileClear', { pile });

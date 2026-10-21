@@ -259,6 +259,43 @@ describe('the discard pile and the Lost Zone', () => {
     assert.deepEqual(actions.resolve('action:trainerA', { action: 'pileClear', pile: 'discard' }).targets(), ['trainerA.discard']);
   });
 
+  it('know what kind each card is, for the view over the bench: from the card, else from the decklist', () => {
+    const gs = makeGame();
+    run(gs, 'action:trainerA', { action: 'setDecklist', text: LIST });
+    const add = (name, extra) => run(gs, 'action:trainerA', { action: 'pileAdd', pile: 'discard', name, ...extra });
+    add('Comfey', { supertype: 'Pokémon' });
+    add('Arven');
+    add('Mew ex');
+    add('Fire Energy', { energy: 'fire' });
+    add('Mystery Card');
+    assert.deepEqual(gs.state.trainerA.discard.map((one) => one.kind), ['pokemon', 'trainer', 'pokemon', 'energy', undefined]);
+
+    gs.setPokemon('trainerB', -1, card('Dreepy'));
+    gs.attachTool('trainerB', -1, card('Bravery Charm'));
+    gs.attachSpecialEnergy('trainerB', -1, card('Luminous Energy'));
+    gs.attachEnergy('trainerB', -1, 'fire');
+    run(gs, 'action:trainerB', { action: 'knockOut', slot: -1 });
+    assert.deepEqual(gs.state.trainerB.discard.map((one) => one.kind), ['pokemon', 'trainer', 'energy', 'energy']);
+  });
+
+  it('are shown over a bench while the producer says so, one pile of one trainer at a time', () => {
+    const gs = makeGame();
+    gs.state.trainerB.name = 'Gary';
+    assert.deepEqual(gs.state.pileView, { visible: false, side: 'trainerA', pile: 'discard' });
+    const shown = run(gs, 'action:card', { action: 'togglePileView', enabled: true, side: 'trainerB', pile: 'lostZone' });
+    assert.deepEqual(gs.state.pileView, { visible: true, side: 'trainerB', pile: 'lostZone' });
+    assert.equal(shown.label(gs), "Gary's Lost Zone shown over the bench");
+    run(gs, 'action:card', { action: 'togglePileView' });
+    assert.equal(gs.state.pileView.visible, false, 'a toggle without enabled flips it');
+    for (const payload of [{ side: 'trainerC' }, { pile: 'hand' }]) {
+      assert.throws(() => run(gs, 'action:card', { action: 'togglePileView', ...payload }), actions.ActionError, JSON.stringify(payload));
+    }
+    assert.deepEqual(actions.resolve('action:card', { action: 'togglePileView' }).targets(), ['pileView']);
+    assert.equal(actions.resolve('action:card', { action: 'togglePileView', enabled: false }).targets(), null, 'last writer wins');
+    const saved = makeGame({ saved: { ...gs.state, pileView: undefined } });
+    assert.deepEqual(saved.state.pileView, { visible: false, side: 'trainerA', pile: 'discard' }, 'a game saved before it gets the default');
+  });
+
   it('take the cards of a knocked out Pokémon: its earlier stages, itself, its tools and its Energy', () => {
     const gs = makeGame();
     run(gs, 'action:trainerA', { action: 'setDecklist', text: LIST });

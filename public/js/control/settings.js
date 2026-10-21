@@ -489,13 +489,13 @@ function themesTab(app) {
 
   const draw = () => {
     const list = h('div', { class: 'theme-list' },
-      h('button', { class: `theme-item${active === null ? ' live' : ''}`, type: 'button', onclick: async () => { await json('POST', '/api/theme/active', { name: null }); app.toast('The overlay is using the built-in look', 'success'); refresh(selected); } },
-        h('strong', {}, 'Built-in look'), active === null && h('span', { class: 'live-tag' }, 'On the overlay')),
+      h('button', { class: `theme-item${active === null ? ' live' : ''}`, type: 'button', onclick: async () => { await json('POST', '/api/theme/active', { name: null }); app.toast('The overlay is using the classic look', 'success'); refresh(selected); } },
+        h('strong', {}, 'Classic look'), active === null && h('span', { class: 'live-tag' }, 'On the overlay')),
       names.map((name) => h('button', { class: `theme-item${name === selected ? ' on' : ''}${name === active ? ' live' : ''}`, type: 'button', onclick: () => refresh(name) },
         h('strong', {}, name), name === active && h('span', { class: 'live-tag' }, 'On the overlay'))),
       h('div', { class: 'button-row' },
         h('button', { class: 'btn', type: 'button', onclick: () => newTheme() }, icon('plus', 16), 'New'),
-        h('button', { class: 'btn', type: 'button', title: 'A design with every color of the built-in look written out, to learn from and change', onclick: () => newTheme({ fromBuiltIn: true }) }, icon('layout', 16), 'Copy of the built-in look'),
+        h('button', { class: 'btn', type: 'button', title: 'A design with every color of the classic look written out, to learn from and change', onclick: () => newTheme({ fromBuiltIn: true }) }, icon('layout', 16), 'Copy of the classic look'),
         h('button', { class: 'btn', type: 'button', onclick: importPackage }, icon('upload', 16), 'Install a .oto')));
 
     const editor = theme
@@ -517,7 +517,7 @@ function themesTab(app) {
         h('fieldset', { class: 'option-group' }, h('legend', {}, 'Sounds'),
           note('These play while this design is on the overlay, once sound effects are switched on in Settings > Sounds. A sound you set yourself on the Sounds tab plays instead of the design\'s for that moment.'),
           SOUND.GROUPS.map((group) => h('div', { class: 'design-sounds' }, h('div', { class: 'section-label' }, group.label), group.cues.map(soundRow)))))
-      : h('div', { class: 'empty-theme' }, h('h3', {}, 'Make it yours'), note('Create a design to change the colors, add a logo, backgrounds, avatars, a font and sounds, then share it with others as a single .oto file. Until you put a design on the overlay, the built-in look is used.'),
+      : h('div', { class: 'empty-theme' }, h('h3', {}, 'Make it yours'), note('Create a design to change the colors, add a logo, backgrounds, avatars, a font and sounds, then share it with others as a single .oto file. Until you put a design on the overlay, the classic look is used.'),
         h('div', { class: 'button-row' }, h('button', { class: 'btn primary', type: 'button', onclick: newTheme }, 'Create a design'), h('button', { class: 'btn', type: 'button', onclick: importPackage }, 'Install a .oto file')));
 
     replace(root, list, editor);
@@ -530,13 +530,13 @@ function themesTab(app) {
     if (editor && tab) editor.showTab(tab);
   };
 
-  // A new design: an empty one, or (`fromBuiltIn`) a copy of the built-in look, with every color and the fonts written out so they can be changed
+  // A new design: an empty one, or (`fromBuiltIn`) a copy of the classic look, with every color and the fonts written out so they can be changed
   const newTheme = async ({ fromBuiltIn = false } = {}) => {
     // The list of designs may still be on its way, or have changed: ask again, so a name that is taken is never reused
     try { names = (await json('GET', '/api/themes')).names; } catch (error) { /* the check below uses the list it has */ }
     const name = await promptDialog({
-      title: fromBuiltIn ? 'Copy of the built-in look' : 'Create a design', label: 'Name of the design', placeholder: fromBuiltIn ? 'My copy' : 'Store League', confirmLabel: 'Create', maxLength: 40,
-      message: fromBuiltIn ? 'Every color of the built-in look is written into the new design, so you can see how it is made and change what you like.' : 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
+      title: fromBuiltIn ? 'Copy of the classic look' : 'Create a design', label: 'Name of the design', placeholder: fromBuiltIn ? 'My copy' : 'Store League', confirmLabel: 'Create', maxLength: 40,
+      message: fromBuiltIn ? 'Every color of the classic look is written into the new design, so you can see how it is made and change what you like.' : 'Then move the pieces of the overlay, crop the cards and choose colors in the editor.',
       check: (value) => {
         if (value && !/[a-z0-9]/i.test(value)) return 'A name needs at least one letter or digit';
         return names.some((existing) => existing.toLowerCase() === value.toLowerCase()) ? 'You already have a design with that name' : '';
@@ -548,7 +548,7 @@ function themesTab(app) {
         ? {
           colors: Object.fromEntries(THEME.COLORS.map((color) => [color.key, defaultOf(color.key)]).filter(([, value]) => value)),
           fontFamilies: { display: defaultOf('--font-display'), text: defaultOf('--font-body') },
-          description: 'A copy of the built-in look'
+          description: 'A copy of the classic look'
         }
         : { colors: {} };
       const saved = await json('PUT', `/api/themes/${encodeURIComponent(name)}`, body);

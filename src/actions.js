@@ -218,7 +218,9 @@ const TRAINER = {
       const energy = p.energy === undefined || p.energy === '' ? undefined : text(p.energy, 'energy', 20);
       if (energy !== undefined && !GAME.ENERGY_KEYS.includes(energy)) throw new ActionError('unknown energy type');
       const count = p.count === undefined ? 1 : integer(p.count, 'count', 1, 20);
-      const card = { cardId: text(p.cardId ?? '', 'cardId', 64), name, image: imageUrl(p.image, 'image'), energy };
+      // (what kind of card it is: the kind it says, else what its supertype says, else what the trainer's decklist says)
+      const supertype = p.supertype === undefined ? '' : text(p.supertype, 'supertype', 20);
+      const card = { cardId: text(p.cardId ?? '', 'cardId', 64), name, image: imageUrl(p.image, 'image'), energy, supertype };
       let added = 0;
       for (let i = 0; i < count; i++) if (gs.addToPile(side, pile, card)) added++;
       if (added === 0) throw new ActionError(`The ${PILE_LABEL[pile]} is full`);
@@ -295,6 +297,24 @@ const TRAINER = {
     targets: () => null,
     run: (gs, side) => gs.setPrizes(side, 6),
     label: (gs, side) => `${who(gs, side)} prizes reset`
+  },
+  // One prize card taken, or given back (`slot` 0 to 5, from the left), the others as they are: the very card the player took. `taken`
+  // says what it is to be (without it, it toggles). It touches that prize card only: two producers marking two prize cards at once is no
+  // conflict, but a prize card taken with prizeMinus at the same time is (it may be the same one).
+  togglePrize: {
+    sfx: (side, p, ctx) => (ctx.taken ? 'prize' : null),
+    targets: (side, p) => [`${side}.prizes.${p.slot}`],
+    run: (gs, side, p, out, ctx) => {
+      const slot = integer(p.slot, 'slot', 0, PRIZE_CARDS - 1);
+      gs.setPrizeTaken(side, slot, p.taken === undefined ? undefined : bool(p.taken, 'taken'));
+      ctx.slot = slot;
+      ctx.taken = gs.state[side].prizes.taken[slot];
+    },
+    label: (gs, side, p, ctx) => {
+      const { cards, count } = gs.state[side].prizes;
+      const which = `prize card ${ctx.slot + 1}${cards[ctx.slot] ? `: ${cards[ctx.slot].name}` : ''}`;
+      return `${who(gs, side)} ${ctx.taken ? 'took' : 'gave back'} ${which} (${count} left)`;
+    }
   },
   togglePrizeHidden: flagAction('prize cards hidden', (gs, side, value) => gs.setPrizesHidden(side, value)),
   // Choose the cards that are the prizes: up to six, one for each prize card (null leaves one without a card). They show on the overlay on
@@ -979,6 +999,36 @@ const CARD = {
     targets: () => ['featureCards'],
     run: (gs) => gs.clearFeatureCards(),
     label: () => 'Feature cards cleared'
+  },
+  // Show the feature cards over a trainer's bench (they cover it while they are shown), or hide them. `enabled` says which is wanted, so two
+  // producers pressing it at once agree; without it they are toggled.
+  toggleFeatures: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : ['featureView']),
+    run: (gs, side, p) => gs.setFeaturesVisible(typeof p.enabled === 'boolean' ? p.enabled : undefined),
+    label: (gs) => (gs.state.featureView.visible ? `Feature cards shown over ${who(gs, gs.state.featureView.side)}'s bench` : 'Feature cards hidden')
+  },
+  // Which trainer's bench the feature cards go over
+  setFeatureSide: {
+    targets: () => null,
+    run: (gs, side, p) => {
+      if (!isSide(p.side)) throw new ActionError('side must be trainerA or trainerB');
+      gs.setFeatureSide(p.side);
+    },
+    label: (gs) => `Feature cards over ${who(gs, gs.state.featureView.side)}'s bench`
+  },
+  // Show a trainer's discard pile or Lost Zone over their bench (the cards sorted into Pokémon, Trainers and Energy), or hide it. `enabled`
+  // says which is wanted, so two producers pressing it at once agree; without it it is toggled. `side` and `pile` say whose and which.
+  togglePileView: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : ['pileView']),
+    run: (gs, side, p) => {
+      if (p.side !== undefined && !isSide(p.side)) throw new ActionError('side must be trainerA or trainerB');
+      if (p.pile !== undefined && !PILES.includes(p.pile)) throw new ActionError('pile must be discard or lostZone');
+      gs.setPileView({ visible: typeof p.enabled === 'boolean' ? p.enabled : undefined, side: p.side, pile: p.pile });
+    },
+    label: (gs) => {
+      const view = gs.state.pileView;
+      return view.visible ? `${who(gs, view.side)}'s ${PILE_LABEL[view.pile]} shown over the bench` : 'Discard pile view hidden';
+    }
   }
 };
 
