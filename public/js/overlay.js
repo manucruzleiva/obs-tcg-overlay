@@ -786,9 +786,10 @@
       this.renderCenter(state);
       this.renderFeatures(state, display);
 
-      // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed. Banners can
-      // be switched off (Settings, Overlay), and then the game is not shown as paused.
-      const paused = state.paused === true && state.settings.enablePauseToast !== false && display.toasts !== false;
+      // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed, and it shows
+      // whether the toast banners are on or not (they are off to begin with). The pause banner can be switched off (Settings, Overlay), and
+      // then the game is not shown as paused.
+      const paused = state.paused === true && state.settings.enablePauseToast !== false;
       this.stage.classList.toggle('is-paused', paused);
       // the bench is stacked at the side unless it is asked to be a row under the Active Pokémon
       this.syncBenchRow();
@@ -858,6 +859,12 @@
       const hasTurn = Boolean(trainer.isTurn) && display.turnIndicator !== false;
       refs.root.classList.toggle('is-turn', hasTurn);
       refs.turnTag.hidden = !hasTurn;
+      // a trainer who no longer has the turn loses its moment at once: a turn passed back quickly (or a game that came whole) must not leave
+      // the light of a turn that started a moment ago on the trainer who is waiting
+      if (!hasTurn) {
+        endMoment(refs.root, 'moment-turn');
+        endMoment(this.stage, `moment-turn-${SIDE_CLASS[side]}`);
+      }
 
       // prizes: the ones taken fade out, each on its own. The OTHER trainer's penalty is that many prize cards this one counts as already
       // taken, so that many of the ones still there (the first ones) are marked red

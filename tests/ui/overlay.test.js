@@ -892,6 +892,7 @@ describe('overlay', { skip }, () => {
     });
 
     it('keeps the toast banners inside the screen', async () => {
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       await page.setViewportSize({ width: 1080, height: 1920 });
       await portrait();
       await send('action:toast', { action: 'topDeck', target: 'trainerA' });
@@ -1228,6 +1229,7 @@ describe('overlay', { skip }, () => {
 
     it('shows a PAUSED banner in the middle, and grays out everything else until the game is resumed', async () => {
       assert.equal(await page.locator('.pause-banner').isHidden(), true);
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       await send('action:match', { action: 'togglePause', enabled: true });
       await page.waitForSelector('.pause-banner:not([hidden])');
       assert.match(await page.locator('.pause-banner').textContent(), /GAME PAUSED/);
@@ -1248,7 +1250,7 @@ describe('overlay', { skip }, () => {
       assert.deepEqual(page.problems, []);
     });
 
-    it('is not shown when the game pause banner, or the banners, are switched off', async () => {
+    it('is not shown when the game pause banner is switched off, and is shown whether the toast banners are on or not', async () => {
       await send('action:settings', { action: 'update', enablePauseToast: false });
       await send('action:match', { action: 'togglePause', enabled: true });
       await wait(300);
@@ -1257,9 +1259,13 @@ describe('overlay', { skip }, () => {
 
       await send('action:settings', { action: 'update', enablePauseToast: true });
       await page.waitForSelector('.pause-banner:not([hidden])');
+      await send('action:settings', { action: 'update', display: { toasts: true } });
+      await wait(300);
+      assert.equal(await paused(), true);
       await send('action:settings', { action: 'update', display: { toasts: false } });
-      await page.waitForSelector('.pause-banner', { state: 'hidden' });
-      assert.equal(await paused(), false);
+      await wait(300);
+      assert.equal(await page.locator('.pause-banner').isVisible(), true, 'the toast banners are off to begin with: the pause banner is not one of them');
+      assert.equal(await paused(), true);
     });
   });
 
@@ -1682,6 +1688,7 @@ describe('overlay', { skip }, () => {
   describe('announcements', () => {
     it('shows a banner for two seconds unless told otherwise, then takes it away', async () => {
       assert.equal((await live()).settings.toastSeconds, 2);
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       const asked = Date.now();
       await send('action:toast', { action: 'attack', attackName: 'Thunderbolt', damage: 120 });
       await page.waitForSelector('.toast');
@@ -1693,6 +1700,7 @@ describe('overlay', { skip }, () => {
 
     it('keeps it up for as long as the producer chooses', async () => {
       await send('action:settings', { action: 'update', toastSeconds: 4 });
+      await send('action:settings', { action: 'update', display: { toasts: true } }); // (the toast banners are off to begin with)
       const asked = Date.now();
       await send('action:toast', { action: 'topDeck', target: 'trainerB' });
       await page.waitForSelector('.toast');
@@ -1702,8 +1710,8 @@ describe('overlay', { skip }, () => {
       assert.ok(Date.now() - asked >= 3700);
     });
 
-    it('shows nothing when banners are switched off', async () => {
-      await send('action:settings', { action: 'update', display: { toasts: false } });
+    it('shows nothing when banners are switched off, as they are to begin with', async () => {
+      assert.equal((await live()).settings.display.toasts, false);
       await send('action:toast', { action: 'passTurn' });
       await wait(700);
       assert.equal(await page.locator('.toast').count(), 0);
@@ -2558,6 +2566,19 @@ describe('overlay', { skip }, () => {
       await played('.trainer-a .bench .mon:nth-child(1)', 'moment-switch');
       assert.deepEqual(await there('#stage'), ['moment-switch-a'], 'nobody came into play');
       assert.equal(await page.locator('.trainer-a .active .mon .mon-name').textContent(), 'Eevee');
+    });
+
+    it('take the turn moment off a trainer at once when the turn passes back quickly, so the light of the turn is only on the one who has it', async () => {
+      await send('action:match', { action: 'toggleTurn' });
+      await played('.trainer-a', 'moment-turn');
+      await send('action:match', { action: 'toggleTurn' });
+      await played('.trainer-b', 'moment-turn');
+      // (the moment lasts longer than this: it was taken off, it did not run out)
+      const now = await page.evaluate(() => ['a', 'b'].map((side) => {
+        const trainer = document.querySelector(`.trainer-${side}`);
+        return [trainer.classList.contains('is-turn'), trainer.classList.contains('moment-turn'), document.getElementById('stage').classList.contains(`moment-turn-${side}`)];
+      }));
+      assert.deepEqual(now, [[false, false, false], [true, true, true]]);
     });
 
     it('tell two copies of the same card apart: they change places, nobody is hit or healed', async () => {
