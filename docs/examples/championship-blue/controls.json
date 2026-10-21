@@ -4,7 +4,8 @@
     "display": {
       "benchAttacks": true,
       "turnIndicator": true,
-      "moments": true
+      "moments": true,
+      "toasts": false
     }
   }
 }

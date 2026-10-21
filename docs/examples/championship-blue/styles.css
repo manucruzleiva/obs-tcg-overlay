@@ -1,6 +1,7 @@
 /* Championship Blue: the style sheet.
    The pieces sit where this sheet puts them (the design has no layout entries; the editor can still move them). Each column is
-   440 px wide at 10 px from the screen edge; its cards are 424 px wide. Every number here comes from gen.py.
+   440 px wide at 10 px from the screen edge; its cards are 424 px wide. The numbers fit the frames of the background picture
+   (images/backgroundImage.svg): move a frame there when you move a piece here.
    The design's own variables are --chb-*: --cb-x, --cb-y, --cb-w and --cb-h are the overlay's (the crop of the bench pictures). */
 
 :root {
@@ -66,8 +67,8 @@
 .t-top::after {
   content: "";
   position: absolute;
-  top: 228px;
-  height: 830px;
+  top: 304px;
+  height: 754px;
   width: 8px;
   border-radius: 4px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 5%, #e6faff 50%, #ffffff 95%, rgba(255, 255, 255, 0) 100%);
@@ -275,7 +276,8 @@
 }
 .sb-round[hidden] + .sb-bo, .sb-round.opt-off + .sb-bo { padding-left: 0; border-left: 0; }
 
-/* ============================================================== the prize strip: on the inner edge at the top, a ball for each prize card */
+/* ============================================================== the prize strip: on the inner edge at the top, a ball for each prize card
+   (under it, in the same bump of the frame, the tray of the locks: see below) */
 
 .prizes {
   position: absolute;
@@ -306,16 +308,8 @@
 .prize.penalty { box-shadow: 0 0 8px var(--danger); }
 /* a card put on a prize and shown face up: the middle of its picture in the ball */
 .prizes:not(.is-hidden) .prize.has-face::after { background-size: 50px auto; background-position: 50% 26%; }
-/* PENALTY hangs under the strip, as narrow as it */
-.prize-flag {
-  bottom: -18px;
-  padding: 0 4px;
-  border-radius: 5px;
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0.02em;
-  box-shadow: 0 2px 4px rgba(0, 8, 42, 0.6);
-}
+/* no PENALTY flag: the orange balls say it */
+.prize-flag { display: none; }
 
 /* ============================================================== the footer: what the trainer used this turn, between two white rules */
 
@@ -360,28 +354,71 @@
 .marker-icon { height: 24px; }
 .token.marker.no-icon { padding: 0 8px; border-radius: 999px; background: rgba(140, 200, 255, 0.14); }
 
-/* ============================================================== the locks: chips on the Active card's picture, top left */
+/* ============================================================== the locks: the player's, in a tray under the prize strip
+   The tray has a place for each lock, faint while it is off (.prizes::after, so it goes with the prize strip). A lock that is on is an
+   orange ball with its picture in its place, like a prize ball, with its name in a pill that comes out over the table beside it. */
 
+.prizes::after {
+  content: "";
+  position: absolute;
+  left: -1.5px;
+  top: calc(100% + 4px);
+  width: 36px;
+  height: 72px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1.5px solid #3f80da;
+  background:
+    var(--css-lock-item, none) 50% 8px / 22px 22px no-repeat,
+    var(--css-lock-evolution, none) 50% 38px / 22px 22px no-repeat,
+    linear-gradient(180deg, #0c2f80 0%, #031a5e 100%);
+  background-blend-mode: luminosity, luminosity, normal;
+  box-shadow: inset 0 1px 0 rgba(200, 232, 255, 0.4), inset 0 0 10px rgba(90, 160, 255, 0.25), 0 2px 4px rgba(0, 8, 42, 0.5);
+  opacity: 0.55;
+}
 .locks {
   position: absolute;
-  left: 27px;
-  top: 161px;
-  width: 316px;
   z-index: 3;
-  gap: 5px;
+  top: 216px;
+  width: 36px;
+  height: 56px;
+  display: block;
 }
+.trainer-a .locks { left: 445px; }
+.trainer-b .locks { left: -41px; }
 .lock {
-  padding: 0 9px;
-  height: 22px;
-  border-radius: 11px;
+  position: absolute;
+  top: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 11px 0 34px;
+  border-radius: 13px;
+  white-space: nowrap;
   background: linear-gradient(180deg, #ff9f5a 0%, #f2652a 100%);
   border: 1.5px solid #ffffff;
   color: #ffffff;
-  font: 800 12px/19px var(--font-labels, var(--font-display));
+  font: 800 11px/1 var(--font-labels, var(--font-display));
   letter-spacing: 0.1em;
   text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7);
-  box-shadow: 0 2px 6px rgba(0, 8, 42, 0.7);
+  box-shadow: 0 0 10px rgba(255, 120, 50, 0.75), 0 2px 6px rgba(0, 8, 42, 0.7);
 }
+.lock[data-lock="evolution"] { top: 30px; }
+.lock::before {
+  content: "";
+  position: absolute;
+  top: 0.5px;
+  left: 5.5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--css-lock-item, none) center / 20px 20px no-repeat;
+}
+.lock[data-lock="evolution"]::before { background-image: var(--css-lock-evolution, none); }
+.trainer-a .lock { left: 0; }
+/* (Trainer B's come out to the left: the ball on the right end of the pill) */
+.trainer-b .lock { right: 0; padding: 0 34px 0 11px; }
+.trainer-b .lock::before { left: auto; right: 5.5px; }
 
 /* ============================================================== Pokémon: the parts both tiles share */
 
@@ -444,13 +481,13 @@
   text-shadow: 0 0 2px #001a5c, 0 1px 3px rgba(0, 10, 50, 0.95);
 }
 
-/* rows: abilities, Pokémon Tools and attacks are navy bars with rounded ends. The boxes that hold them step aside (display: contents), so
+/* rows: abilities, Pokémon Tools by name and attacks are navy bars with rounded ends. The boxes that hold them step aside (display: contents), so
    every row is a row of the card's details: they share the room, get lower when it is short, and one that does not fit is cut off whole
    at the bottom of the card. */
 .abilities, .tool-cards, .tools, .attacks { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-.active .abilities, .active .tool-cards, .active .tools { display: contents; }
+.active .abilities, .active .tools { display: contents; }
 .mon.mini .abilities, .mon.mini .attacks, .mon.mini .tools { display: contents; }
-.ability, .attack-line, .tool, .active .tool-card {
+.ability, .attack-line, .tool {
   display: flex;
   align-items: center;
   width: auto;
@@ -497,52 +534,6 @@
   font: 700 14px/1 var(--font-labels, var(--font-display));
 }
 .attack-line-damage { font-weight: 800; color: #ffffff; }
-/* a Pokémon Tool as a row: a purple "Tool" pill, its name, and a little of its picture at the end */
-.active .tool-card {
-  position: relative;
-  gap: 9px;
-  padding: 0;
-  border-radius: 999px;
-  box-shadow: none;
-}
-.active .tool-card::before {
-  content: "Tool";
-  order: 0;
-  flex: none;
-  height: auto;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: var(--chb-tool);
-  color: #ffffff;
-  font: 700 13px/1 var(--font-labels, var(--font-display));
-}
-.active .tool-card::after {
-  content: attr(title);
-  order: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #d7c6ff;
-  font: 700 17px/1 var(--font-labels, var(--font-display));
-}
-.active .tool-card.plain::after { content: none; }
-.active .tool-card-name { order: 1; color: #d7c6ff; font: 700 17px/1 var(--font-labels, var(--font-display)); }
-.active .tool-card-img {
-  order: 2;
-  position: static;
-  flex: none;
-  width: 40px;
-  height: 14px;
-  align-self: center;
-  margin: 0 6px 0 auto;
-  object-fit: cover;
-  object-position: 50% 24%;
-  border-radius: 999px;
-  border: 1.5px solid #ffffff;
-}
 .tool { gap: 8px; padding: 0 10px 0 0; border-left: 0; font: 700 14px/1 var(--font-labels, var(--font-display)); }
 .tool::before { content: "Tool"; flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 9px; border-radius: 999px; background: var(--chb-tool); font-size: 0.8em; }
 .tool-name { color: #d7c6ff; overflow: hidden; text-overflow: ellipsis; }
@@ -607,19 +598,34 @@
   background: var(--chb-row-ghost);
 }
 /* rows are 27px high, lower when two or three must fit (down to 15px); a fourth is cut off */
-.active .ability, .active .tool-card, .active .tool { flex: 0 1 27px; height: auto; min-height: 15px; font-size: 17px; }
+.active .ability, .active .tool { flex: 0 1 27px; height: auto; min-height: 15px; font-size: 17px; }
 .active .ability::before, .active .tool::before { font-size: 13px; padding: 0 11px; }
 .active .ability-state { font-size: 11px; padding: 2px 7px; }
 .active .band { padding: 8px; }
 .active .energy { width: 24px; height: 24px; }
 .active .status-icon { width: 30px; height: 30px; }
 .active .attacks { display: none; }
-/* the Tools as rows already say their names: the names a producer asks for as well are not said twice */
-.active .tool-cards:not([hidden]):not(.opt-off) ~ .tools { display: none; }
+/* a Pokémon Tool on the Active Pokémon: a little picture on its picture, top left, as on the bench (a Tool with no picture is a purple
+   pill with its name). The names a producer asks for as well are rows. */
+.active .tool-cards, .trainer-b .active .tool-cards {
+  position: absolute;
+  left: 20px;
+  top: 54.5px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
+  z-index: 2;
+}
+.active .tool-card { --tool-width: 64px; border-radius: 4px; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--chb-tool), 0 3px 8px rgba(0, 8, 42, 0.8); }
+.active .tool-card.plain { height: 22px; padding: 0 10px; border-left: 0; border-radius: 11px; background: var(--chb-tool); color: #ffffff; font: 700 13px/22px var(--font-labels, var(--font-display)); box-shadow: 0 2px 6px rgba(0, 8, 42, 0.8); }
 
-/* ============================================================== the bench: a card for each slot, in a place of its own, over five EMPTY plates */
+/* ============================================================== the bench: a card for each slot, in a place of its own, over EMPTY plates
+   Five places, 106 px high every 112 px. A bigger bench (6 to 8 places) keeps them all inside the column: shorter cards, closer together
+   (--chb-tile high, every --chb-pitch), with the name, the picture, the HP and as many rows as fit. */
 
 .bench, .trainer-b .bench {
+  --chb-tile: 106px;
+  --chb-pitch: 112px;
   position: absolute;
   left: 8px;
   top: 464px;
@@ -629,7 +635,10 @@
   display: block;
   isolation: isolate;
 }
-/* the plates: one drawn, four copies of it by its shadow; and the word EMPTY on each */
+.bench[data-size="6"] { --chb-tile: 87px; --chb-pitch: 93px; }
+.bench[data-size="7"] { --chb-tile: 74px; --chb-pitch: 80px; }
+.bench[data-size="8"] { --chb-tile: 64px; --chb-pitch: 70px; }
+/* the plates: one drawn, the others copies of it by its shadow; and the word EMPTY on each */
 .bench::before {
   content: "";
   position: absolute;
@@ -637,27 +646,33 @@
   left: 0;
   top: 0;
   width: 424px;
-  height: 106px;
+  height: var(--chb-tile);
   border-radius: 10px;
   border: 1.5px solid var(--chb-plate-edge);
   background: #024e83;
   box-shadow: 0 112px 0 -1.5px #024e83, 0 112px 0 0 var(--chb-plate-edge), 0 224px 0 -1.5px #024e83, 0 224px 0 0 var(--chb-plate-edge), 0 336px 0 -1.5px #024e83, 0 336px 0 0 var(--chb-plate-edge), 0 448px 0 -1.5px #024e83, 0 448px 0 0 var(--chb-plate-edge);
 }
+.bench[data-size="6"]::before { box-shadow: 0 93px 0 -1.5px #024e83, 0 93px 0 0 var(--chb-plate-edge), 0 186px 0 -1.5px #024e83, 0 186px 0 0 var(--chb-plate-edge), 0 279px 0 -1.5px #024e83, 0 279px 0 0 var(--chb-plate-edge), 0 372px 0 -1.5px #024e83, 0 372px 0 0 var(--chb-plate-edge), 0 465px 0 -1.5px #024e83, 0 465px 0 0 var(--chb-plate-edge); }
+.bench[data-size="7"]::before { box-shadow: 0 80px 0 -1.5px #024e83, 0 80px 0 0 var(--chb-plate-edge), 0 160px 0 -1.5px #024e83, 0 160px 0 0 var(--chb-plate-edge), 0 240px 0 -1.5px #024e83, 0 240px 0 0 var(--chb-plate-edge), 0 320px 0 -1.5px #024e83, 0 320px 0 0 var(--chb-plate-edge), 0 400px 0 -1.5px #024e83, 0 400px 0 0 var(--chb-plate-edge), 0 480px 0 -1.5px #024e83, 0 480px 0 0 var(--chb-plate-edge); }
+.bench[data-size="8"]::before { box-shadow: 0 70px 0 -1.5px #024e83, 0 70px 0 0 var(--chb-plate-edge), 0 140px 0 -1.5px #024e83, 0 140px 0 0 var(--chb-plate-edge), 0 210px 0 -1.5px #024e83, 0 210px 0 0 var(--chb-plate-edge), 0 280px 0 -1.5px #024e83, 0 280px 0 0 var(--chb-plate-edge), 0 350px 0 -1.5px #024e83, 0 350px 0 0 var(--chb-plate-edge), 0 420px 0 -1.5px #024e83, 0 420px 0 0 var(--chb-plate-edge), 0 490px 0 -1.5px #024e83, 0 490px 0 0 var(--chb-plate-edge); }
 .bench::after {
   content: "EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY";
   white-space: pre;
   position: absolute;
   z-index: -1;
   left: 0;
-  top: -3px;
+  top: calc((var(--chb-tile) - var(--chb-pitch)) / 2);
   width: 424px;
   text-align: center;
-  font: 800 27px/112px var(--font-display);
+  font: 800 27px/var(--chb-pitch) var(--font-display);
   letter-spacing: 0.06em;
   color: #66b6ea;
   text-shadow: 0 1px 0 rgba(0, 30, 70, 0.4);
   pointer-events: none;
 }
+.bench[data-size="6"]::after { content: "EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY"; font-size: 22px; }
+.bench[data-size="7"]::after { content: "EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY"; font-size: 20px; }
+.bench[data-size="8"]::after { content: "EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY\A EMPTY"; font-size: 18px; }
 /* each slot keeps its place (an empty one shows its plate), so a knock out or a promotion never moves the rest of the bench */
 .bench .mon.mini, .trainer-b .bench .mon.mini {
   position: absolute;
@@ -666,7 +681,7 @@
   isolation: isolate;
   flex: none;
   width: 424px;
-  height: 106px;
+  height: var(--chb-tile);
   flex-direction: row;
   align-items: flex-start;
   gap: 0;
@@ -677,29 +692,30 @@
   background: var(--chb-scan), var(--chb-card);
   box-shadow: var(--chb-inner), var(--chb-drop);
 }
-.bench .mon.mini:nth-child(2) { top: 112px; }
-.bench .mon.mini:nth-child(3) { top: 224px; }
-.bench .mon.mini:nth-child(4) { top: 336px; }
-.bench .mon.mini:nth-child(5) { top: 448px; }
-/* slots 6 to 8 (a bigger bench): compact cards in a second column, out past the light bar, with the name, a band of the picture and the HP */
-.bench .mon.mini:nth-child(6) { left: 452px; }
-.bench .mon.mini:nth-child(7) { left: 452px; top: 112px; }
-.bench .mon.mini:nth-child(8) { left: 452px; top: 224px; }
-.trainer-b .bench .mon.mini:nth-child(n+6) { left: -240px; }
-.bench .mon.mini:nth-child(n+6) { width: 212px; box-shadow: var(--chb-inner), 0 4px 10px rgba(0, 8, 42, 0.75); }
-.bench .mon.mini:nth-child(n+6) .art { width: 196px; height: 48px; margin-top: 22px; }
-.bench .mon.mini:nth-child(n+6) .art-img {
-  width: calc(196px / var(--cb-w));
-  height: calc(196px * 1.393333 / var(--cb-w));
-  left: calc(-196px * var(--cb-x) / var(--cb-w));
-  top: calc(24.0px - 196px * 1.393333 * (var(--cb-y) + var(--cb-h) / 2) / var(--cb-w));
+.bench .mon.mini:nth-child(2) { top: calc(1 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(3) { top: calc(2 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(4) { top: calc(3 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(5) { top: calc(4 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(6) { top: calc(5 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(7) { top: calc(6 * var(--chb-pitch)); }
+.bench .mon.mini:nth-child(8) { top: calc(7 * var(--chb-pitch)); }
+/* the compact cards of a bigger bench: a band of the picture 120 px wide, the name and the rows beside it, the HP bar at the bottom */
+.bench[data-size="6"] .mon.mini, .bench[data-size="7"] .mon.mini, .bench[data-size="8"] .mon.mini { padding: 5px; }
+.bench[data-size="6"] .mon.mini .art, .bench[data-size="7"] .mon.mini .art, .bench[data-size="8"] .mon.mini .art { width: 120px; height: calc(var(--chb-tile) - 13px); }
+.bench[data-size="6"] .mon.mini .art-img, .bench[data-size="7"] .mon.mini .art-img, .bench[data-size="8"] .mon.mini .art-img {
+  width: calc(120px / var(--cb-w));
+  height: calc(120px * 1.393333 / var(--cb-w));
+  left: calc(-120px * var(--cb-x) / var(--cb-w));
+  top: calc((var(--chb-tile) - 13px) / 2 - 120px * 1.393333 * (var(--cb-y) + var(--cb-h) / 2) / var(--cb-w));
 }
-.bench .mon.mini:nth-child(n+6) .details { position: static; width: 0; margin: 0; overflow: visible; }
-.bench .mon.mini:nth-child(n+6) .details::before { content: none; }
-.bench .mon.mini:nth-child(n+6) .mon-name { position: absolute; left: 6.5px; top: 4.5px; width: 196px; }
-.bench .mon.mini:nth-child(n+6) .details .hp { left: 6.5px; width: 196px; }
-.bench .mon.mini:nth-child(n+6) .abilities, .bench .mon.mini:nth-child(n+6) .attacks, .bench .mon.mini:nth-child(n+6) .tools { display: none; }
-.bench .mon.mini:nth-child(n+6) .tool-cards { top: 32.5px; }
+.bench[data-size="6"] .mon.mini .details, .bench[data-size="7"] .mon.mini .details, .bench[data-size="8"] .mon.mini .details { margin: -1px 0 0 10px; width: 281px; height: calc(var(--chb-tile) - 34px); }
+.bench[data-size="6"] .mon.mini .details::before, .bench[data-size="7"] .mon.mini .details::before, .bench[data-size="8"] .mon.mini .details::before { content: none; }
+.bench[data-size="6"] .mon.mini .mon-name, .bench[data-size="7"] .mon.mini .mon-name, .bench[data-size="8"] .mon.mini .mon-name { height: 18px; font-size: 13px; line-height: 16px; }
+.bench[data-size="6"] .mon.mini .details .hp, .bench[data-size="7"] .mon.mini .details .hp, .bench[data-size="8"] .mon.mini .details .hp { left: 135px; width: 281px; top: calc(var(--chb-tile) - 24px); height: 16px; padding: 1.5px; }
+.bench[data-size="6"] .mon.mini .details .hp-text, .bench[data-size="7"] .mon.mini .details .hp-text, .bench[data-size="8"] .mon.mini .details .hp-text { font-size: 11.5px; }
+.bench[data-size="6"] .mon.mini .tool-cards, .bench[data-size="7"] .mon.mini .tool-cards, .bench[data-size="8"] .mon.mini .tool-cards { left: 8px; top: 8px; }
+.bench[data-size="6"] .mon.mini .tool-card, .bench[data-size="7"] .mon.mini .tool-card, .bench[data-size="8"] .mon.mini .tool-card { --tool-width: 32px; }
+.bench[data-size="8"] .mon.mini .abilities, .bench[data-size="8"] .mon.mini .attacks, .bench[data-size="8"] .mon.mini .tools { display: none; }
 
 .mon.mini .art { flex: none; width: 144px; height: calc(144px * 1.393333 * var(--cb-h) / var(--cb-w)); border-radius: 1px; }
 .mon.mini .details, .trainer-b .mon.mini .details {
@@ -767,7 +783,6 @@
 #stage.bench-row .mon.mini .mon-name { font-size: 14px; }
 #stage.bench-row .mon.mini .ability { padding: 0 8px 0 0; font-size: 13px; }
 #stage.bench-row .mon.mini .ability::before { width: auto; height: auto; }
-#stage.bench-row .bench .mon.mini:nth-child(n+6) { width: 212px; }
 
 /* ============================================================== the Stadium: an angled navy tab hanging from the top edge */
 
@@ -798,7 +813,7 @@
   background: var(--chb-scan), linear-gradient(180deg, #011254 0%, #02176a 45%, #0f2f86 100%);
   clip-path: polygon(0 0, 100% 0, calc(100% - 25px) 100%, 25px 100%);
 }
-/* its picture: a faint navy-tinted band inside the tab's inner edge */
+/* its picture: a band of the card inside the tab's inner edge, clear, with only a soft shade behind the name */
 .stadium-art {
   position: absolute;
   z-index: -1;
@@ -809,8 +824,7 @@
   margin: 0;
   border-radius: 0;
   box-shadow: none;
-  opacity: 0.3;
-  filter: saturate(0.5) brightness(0.7);
+  opacity: 0.92;
   clip-path: polygon(0 0, 100% 0, calc(100% - 24.96px) 100%, 24.96px 100%);
 }
 .stadium-name {
@@ -826,7 +840,7 @@
   padding: 0 10px;
   border: 0;
   border-radius: 0;
-  background: none;
+  background: radial-gradient(closest-side, rgba(1, 18, 84, 0.55) 0%, rgba(1, 18, 84, 0.3) 60%, rgba(1, 18, 84, 0) 100%);
   font: 800 21px/1 var(--font-names, var(--font-display));
   letter-spacing: 0.03em;
   text-transform: none;
@@ -834,14 +848,56 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgba(0, 8, 42, 0.95), 0 0 10px rgba(0, 8, 42, 0.8);
+  text-shadow: 1.5px 0 0 var(--chb-navy), -1.5px 0 0 var(--chb-navy), 0 1.5px 0 var(--chb-navy), 0 -1.5px 0 var(--chb-navy), 0 2px 4px rgba(0, 8, 42, 0.95), 0 0 10px rgba(0, 8, 42, 0.8);
 }
 
-/* ============================================================== feature cards */
+/* ============================================================== feature cards: a card of the column, in the place of the bench
+   While the producer shows them they cover the bench of the trainer they chose (the overlay hides that bench): a navy card with a
+   FEATURED name bar, the cards in the middle of it in white frames, and a stack of cards joined by a sign one over the other. */
 
-.feature-img { border-radius: 8px; box-shadow: 0 0 0 3px #ffffff, 0 12px 30px rgba(0, 8, 42, 0.6); }
-.feature-caption { border-radius: 6px; border: 1px solid var(--chb-bar-edge); background: var(--chb-bar); box-shadow: 0 2px 6px rgba(0, 8, 42, 0.6); }
-.feature-name { text-transform: none; text-shadow: 0 1px 2px rgba(11, 39, 102, 0.9); }
+.features, .trainer-b .features {
+  position: absolute;
+  left: 8px;
+  top: 464px;
+  width: 424px;
+  height: 554px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 20px;
+  padding: 44px 10px 8px;
+  border-radius: 10px;
+  border: 1.5px solid;
+  border-color: var(--chb-edge);
+  background: var(--chb-scan), var(--chb-card);
+  box-shadow: var(--chb-inner), var(--chb-drop);
+}
+.features::before {
+  content: "FEATURED";
+  position: absolute;
+  left: 7.5px;
+  right: 7.5px;
+  top: 7.5px;
+  height: 30px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border: 1px solid var(--chb-bar-edge);
+  background: var(--chb-bar);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1px 2px rgba(0, 8, 42, 0.6);
+  color: #ffffff;
+  font: 800 17px/28px var(--font-labels, var(--font-display));
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-shadow: 0 1px 1px rgba(11, 39, 102, 0.9), 0 0 4px rgba(11, 39, 102, 0.55);
+}
+.feature { width: 170px; }
+.feature-img { width: 170px; height: 237px; border-radius: 6px; box-shadow: 0 0 0 3px #ffffff, 0 10px 24px rgba(0, 8, 42, 0.7); }
+.feature-sep { color: var(--chb-cyan); text-shadow: 0 0 10px rgba(139, 227, 255, 0.7), 0 2px 4px rgba(0, 8, 42, 0.9); }
+/* a stack: the sign on a navy ball with a cyan rim, between the cards */
+.feature-stack > .feature-sep { background: var(--chb-navy); border: 2px solid var(--chb-cyan); box-shadow: 0 0 12px rgba(139, 227, 255, 0.6), 0 4px 10px rgba(0, 8, 42, 0.8); color: #ffffff; }
 
 /* ============================================================== announcements: the built-in effects and banners, in the house style */
 
@@ -957,7 +1013,12 @@
   text-shadow: 2px 0 0 var(--chb-num), -2px 0 0 var(--chb-num), 0 2px 0 var(--chb-num), 0 -2px 0 var(--chb-num), 1.5px 1.5px 0 var(--chb-num),
     -1.5px 1.5px 0 var(--chb-num), 1.5px -1.5px 0 var(--chb-num), -1.5px -1.5px 0 var(--chb-num), 0 4px 10px rgba(0, 8, 42, 0.8);
 }
-.bench .mon.mini:nth-child(n+6).moment-damage::after, .bench .mon.mini:nth-child(n+6).moment-heal::after { width: 196px; top: 35.5px; font-size: 32px; }
+.bench[data-size="6"] .mon.mini.moment-damage::after, .bench[data-size="7"] .mon.mini.moment-damage::after, .bench[data-size="8"] .mon.mini.moment-damage::after, .bench[data-size="6"] .mon.mini.moment-heal::after, .bench[data-size="7"] .mon.mini.moment-heal::after, .bench[data-size="8"] .mon.mini.moment-heal::after {
+  left: 5px;
+  width: 120px;
+  top: calc((var(--chb-tile) - 13px) / 2 - 10px);
+  font-size: 28px;
+}
 
 /* damage: the picture shakes and flashes red, the amount rises, the HP box flares */
 .mon.moment-damage .art { animation: chb-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
@@ -1011,9 +1072,9 @@
 /* energy: the pill of the energy pulses (the newest icon is not always the last one: Special Energy is drawn after the basic icons) */
 .mon.moment-energy .art .energies { animation: chb-pill-pulse 560ms cubic-bezier(0.2, 0.9, 0.3, 1.2); }
 
-/* a Pokémon Tool: its row slides in (the Active), its picture pops (the bench) */
-.active .mon.moment-tool .tool-card:last-child, .active .mon.moment-tool .tool:last-child { animation: chb-row-in 520ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
-.mon.mini.moment-tool .tool-card:last-child { animation: chb-pop 520ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+/* a Pokémon Tool: its little picture pops (its row slides in, when the names are rows too) */
+.mon.moment-tool .tool-card:last-child { animation: chb-pop 520ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+.active .mon.moment-tool .tool:last-child { animation: chb-row-in 520ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
 
 /* a special condition: the icon of the condition that came pops, the picture takes its color for an instant */
 .mon.moment-status[data-status="asleep"] .status-chip[data-status="asleep"],
@@ -1040,7 +1101,7 @@
 .trainer.moment-turn::after {
   content: "";
   position: absolute;
-  top: 228px;
+  top: 304px;
   width: 12px;
   height: 200px;
   margin-left: -2px;
@@ -1135,7 +1196,7 @@
   70% { opacity: 0.6; transform: perspective(200px) rotateY(180deg) scale(1.08); filter: grayscale(0.5); box-shadow: 0 0 10px 3px rgba(140, 230, 255, 0.5); }
   100% { opacity: 0.16; transform: perspective(200px) rotateY(360deg) scale(1); filter: grayscale(1); box-shadow: none; }
 }
-@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(650px); } }
+@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(570px); } }
 @keyframes chb-head-on { 0% { opacity: 0; } 25% { opacity: 1; box-shadow: 0 0 30px 8px rgba(120, 225, 255, 0.95), inset 0 0 28px rgba(120, 225, 255, 0.65); } 100% { opacity: 1; } }
 @keyframes chb-token {
   0% { transform: scale(1); text-shadow: 0 0 0 rgba(140, 230, 255, 0); }
