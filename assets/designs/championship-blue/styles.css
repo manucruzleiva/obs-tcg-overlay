@@ -6,6 +6,9 @@
 
 :root {
   --oto-moment-ms: 1300;
+  /* (a lock that is switched on or off says its name for a few seconds) */
+  --oto-moment-lock-ms: 3000;
+  --oto-moment-unlock-ms: 3000;
   --chb-card: linear-gradient(180deg, #05216f 0%, #021866 42%, #010f4f 100%);
   --chb-head: linear-gradient(180deg, #03215c 0%, #0b3172 62%, #1b4b94 100%);
   --chb-scan: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0 1px, rgba(255, 255, 255, 0) 1px 4px);
@@ -44,8 +47,8 @@
 .trainer-b { right: 10px; text-align: left; align-items: stretch; }
 .t-top { display: block; }
 
-/* the turn: the header of the trainer whose turn it is gets a bright frame, the light bar of the column glows brighter, and a gold TURN tag
-   hangs between the header and the Active card. (.trainer::after is the light that runs down the bar when the turn starts, .t-top::before
+/* the turn: the header of the trainer whose turn it is gets a bright frame, the light bar on the inner edge of the column lights up (the
+   column of the trainer who waits has none), and a gold TURN tag hangs between the header and the Active card. (.trainer::after is the light that runs down the bar when the turn starts, .t-top::before
    the flash of a knock out.) The frame is drawn where this sheet puts the header, and goes with the scoreboard. */
 .trainer::before {
   content: "";
@@ -67,18 +70,17 @@
 .t-top::after {
   content: "";
   position: absolute;
-  top: 228px;
-  height: 830px;
-  width: 8px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 5%, #e6faff 50%, #ffffff 95%, rgba(255, 255, 255, 0) 100%);
-  box-shadow: 0 0 8px 3px rgba(139, 227, 255, 0.95), 0 0 26px 10px rgba(80, 180, 255, 0.6), 0 0 60px 18px rgba(60, 150, 255, 0.35);
+  top: 0;
+  width: 220px;
+  height: 1080px;
+  background: var(--css-glow-a, none) 0 0 / 100% 100% no-repeat;
   opacity: 0;
   transition: opacity 0.35s ease;
   pointer-events: none;
 }
-.trainer-a .t-top::after { left: 436px; }
-.trainer-b .t-top::after { left: -4px; }
+/* (the pictures are the screen from x 380 to 600, and from 1320 to 1540) */
+.trainer-a .t-top::after { left: 370px; }
+.trainer-b .t-top::after { left: -150px; background-image: var(--css-glow-b, none); }
 .trainer.is-turn .t-top::after { opacity: 1; }
 
 .turn-tag {
@@ -277,28 +279,28 @@
 .sb-round[hidden] + .sb-bo, .sb-round.opt-off + .sb-bo { padding-left: 0; border-left: 0; }
 
 /* ============================================================== the prize strip: on the inner edge at the top, a ball for each prize card
-   (the locks that are on come out under it: see below) */
+   (the locks that are on hang under it: see below) */
 
 .prizes {
   position: absolute;
   z-index: 3;
   top: 14px;
-  width: 36px;
+  width: 43px;
   display: grid;
-  grid-template-columns: 26px;
+  grid-template-columns: 31px;
   justify-content: center;
-  gap: 4px;
-  padding: 6.5px 0;
+  gap: 5px;
+  padding: 8px 0;
   border-radius: 8px;
   border: 1.5px solid #3f80da;
   background: linear-gradient(180deg, #0c2f80 0%, #031a5e 100%);
   box-shadow: inset 0 1px 0 rgba(200, 232, 255, 0.4), inset 0 0 10px rgba(90, 160, 255, 0.25), 0 2px 4px rgba(0, 8, 42, 0.5);
 }
-.trainer-a .prizes { left: 445px; }
-.trainer-b .prizes { left: -41px; }
+.trainer-a .prizes { left: 441.5px; }
+.trainer-b .prizes { left: -44.5px; }
 .prize {
-  width: 26px;
-  height: 26px;
+  width: 31px;
+  height: 31px;
   border: 0;
   border-radius: 50%;
   background: var(--prizeCardBack, none) center / 100% 100% no-repeat;
@@ -307,7 +309,7 @@
 .prize.taken { opacity: 0.16; transform: none; filter: grayscale(1); box-shadow: none; }
 .prize.penalty { box-shadow: 0 0 8px var(--danger); }
 /* a card put on a prize and shown face up: the middle of its picture in the ball */
-.prizes:not(.is-hidden) .prize.has-face::after { background-size: 50px auto; background-position: 50% 26%; }
+.prizes:not(.is-hidden) .prize.has-face::after { background-size: 60px auto; background-position: 50% 26%; }
 /* no PENALTY flag: the orange balls say it */
 .prize-flag { display: none; }
 
@@ -355,52 +357,86 @@
 .token.marker.no-icon { padding: 0 8px; border-radius: 999px; background: rgba(140, 200, 255, 0.14); }
 
 /* ============================================================== the locks: the player's, under the prize strip, only while they are on
-   A lock that is on is an orange pill with its picture in a ball at the end next to the column, coming out over the table. With no
-   lock on, nothing is drawn (the engine hides .locks). */
+   A lock that is on is an orange ball with its picture, under the prize strip. When it is switched on or off, its name comes out of the
+   ball over the table for a few seconds (moment-lock, moment-unlock: see the moments below); switched off, the ball goes after it. */
 
 .locks {
   position: absolute;
   z-index: 3;
-  top: 222px;
-  width: 36px;
-  height: 56px;
+  top: 258px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 .locks[hidden] { display: none; }
-.trainer-a .locks { left: 445px; }
-.trainer-b .locks { left: -41px; }
+/* (the balls are at the middle of the prize strip; the box grows toward the table as a name comes out) */
+.trainer-a .locks { left: 448px; }
+.trainer-b .locks { left: auto; right: 448px; align-items: flex-end; }
 .lock {
-  position: absolute;
-  top: 0;
-  height: 26px;
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+  height: 30px;
+  max-width: 30px;
   display: flex;
   align-items: center;
-  padding: 0 11px 0 34px;
-  border-radius: 13px;
+  overflow: hidden;
+  padding: 0 0 0 27px;
+  border-radius: 15px;
   white-space: nowrap;
   background: linear-gradient(180deg, #ff9f5a 0%, #f2652a 100%);
   border: 1.5px solid #ffffff;
-  color: #ffffff;
+  color: transparent;
   font: 800 11px/1 var(--font-labels, var(--font-display));
   letter-spacing: 0.1em;
-  text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7);
   box-shadow: 0 0 10px rgba(255, 120, 50, 0.75), 0 2px 6px rgba(0, 8, 42, 0.7);
 }
-.lock[data-lock="evolution"] { top: 30px; }
+.lock[hidden] { display: none; }
 .lock::before {
   content: "";
   position: absolute;
-  top: 0.5px;
-  left: 5.5px;
+  top: 2.5px;
+  left: 2.5px;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
   background: var(--css-lock-item, none) center / 20px 20px no-repeat;
 }
 .lock[data-lock="evolution"]::before { background-image: var(--css-lock-evolution, none); }
-.trainer-a .lock { left: 0; }
-/* (Trainer B's come out to the left: the ball on the right end of the pill) */
-.trainer-b .lock { right: 0; padding: 0 34px 0 11px; }
-.trainer-b .lock::before { left: auto; right: 5.5px; }
+/* (Trainer B's name comes out to the left: the ball is the right end of the pill) */
+.trainer-b .lock { padding: 0 27px 0 0; }
+.trainer-b .lock::before { left: auto; right: 2.5px; }
+
+/* ============================================================== the discard pile and the Lost Zone: on the table beside the prize strip
+   (nothing while they are empty), navy cards like the strip, the Lost Zone with a violet rim */
+
+.piles {
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.piles[hidden] { display: none; }
+.trainer-a .piles { left: 503px; align-items: flex-start; }
+.trainer-b .piles { right: 503px; flex-direction: column; align-items: flex-end; }
+.pile {
+  gap: 8px;
+  padding: 5px 12px 5px 7px;
+  border-radius: 8px;
+  border: 1.5px solid #3f80da;
+  background: linear-gradient(180deg, #0c2f80 0%, #031a5e 100%);
+  box-shadow: inset 0 1px 0 rgba(200, 232, 255, 0.4), inset 0 0 10px rgba(90, 160, 255, 0.25), 0 2px 4px rgba(0, 8, 42, 0.5);
+}
+.trainer-b .pile { flex-direction: row-reverse; padding: 5px 7px 5px 12px; }
+.pile-lost-zone { border-color: #b77dff; box-shadow: inset 0 1px 0 rgba(230, 200, 255, 0.4), inset 0 0 12px rgba(170, 100, 255, 0.45), 0 2px 4px rgba(0, 8, 42, 0.5); }
+.pile-stack { width: 50px; height: 48px; }
+.pile-card { width: 34px; height: 48px; border-radius: 3px; box-shadow: 0 2px 5px rgba(0, 8, 42, 0.7); }
+.pile-card:nth-child(2) { left: 8px; }
+.pile-card:nth-child(3) { left: 16px; }
+.pile-label { color: var(--chb-cyan); font-size: 10px; white-space: nowrap; }
+.pile-count { color: #ffffff; font-size: 20px; }
 
 /* ============================================================== Pokémon: the parts both tiles share */
 
@@ -467,7 +503,7 @@
    every row is a row of the card's details: they share the room, get lower when it is short, and one that does not fit is cut off whole
    at the bottom of the card. */
 .abilities, .tool-cards, .tools, .attacks { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-.active .abilities, .active .tools { display: contents; }
+.active .abilities, .active .tools, .active .attacks { display: contents; }
 .mon.mini .abilities, .mon.mini .attacks, .mon.mini .tools { display: contents; }
 .ability, .attack-line, .tool {
   display: flex;
@@ -506,7 +542,7 @@
 .ability.used::before { background: #6d7fa5; border: 0; }
 .ability.used .ability-name { color: #a9b8d8; text-decoration: none; }
 .ability-state { margin-left: auto; padding: 1px 6px; border-radius: 999px; background: #6d7fa5; color: #ffffff; font-size: 10px; }
-/* the attacks of a benched Pokémon: the name on the left, the damage on the right */
+/* the attacks: the name on the left, the damage on the right */
 .attack-line, .trainer-b .attacks .attack-line {
   flex-direction: row;
   justify-content: space-between;
@@ -579,14 +615,14 @@
   border-radius: 999px;
   background: var(--chb-row-ghost);
 }
-/* rows are 27px high, lower when two or three must fit (down to 15px); a fourth is cut off */
-.active .ability, .active .tool { flex: 0 1 27px; height: auto; min-height: 15px; font-size: 17px; }
+/* rows are 27px high, lower when two or three must fit (down to 15px); a fourth is cut off. The attacks come under the abilities. */
+.active .ability, .active .tool, .active .attack-line, .trainer-b .active .attacks .attack-line { flex: 0 1 27px; height: auto; min-height: 15px; font-size: 17px; }
+.active .attack-line, .trainer-b .active .attacks .attack-line { padding: 0 12px; }
 .active .ability::before, .active .tool::before { font-size: 13px; padding: 0 11px; }
 .active .ability-state { font-size: 11px; padding: 2px 7px; }
 .active .band { padding: 8px; }
 .active .energy { width: 24px; height: 24px; }
 .active .status-icon { width: 30px; height: 30px; }
-.active .attacks { display: none; }
 /* a Pokémon Tool on the Active Pokémon: a little picture on its picture, top left, as on the bench (a Tool with no picture is a purple
    pill with its name). The names a producer asks for as well are rows. */
 .active .tool-cards, .trainer-b .active .tool-cards {
@@ -1083,7 +1119,7 @@
 .trainer.moment-turn::after {
   content: "";
   position: absolute;
-  top: 228px;
+  top: 266px;
   width: 12px;
   height: 200px;
   margin-left: -2px;
@@ -1098,6 +1134,13 @@
 .trainer-a.moment-turn::after { left: 436px; }
 .trainer-b.moment-turn::after { left: -4px; }
 .trainer.moment-turn::before { animation: chb-head-on 850ms ease-out; }
+
+/* a lock switched on: the ball pops and its name comes out for a few seconds; switched off: its name comes out, struck through and gray,
+   then the ball goes (each lasts --oto-moment-lock-ms, --oto-moment-unlock-ms) */
+.trainer-a .lock.moment-lock { animation: chb-lock-on-a 3s ease-in-out both; }
+.trainer-b .lock.moment-lock { animation: chb-lock-on-b 3s ease-in-out both; }
+.trainer-a .lock.moment-unlock { animation: chb-lock-off-a 3s ease-in-out both; }
+.trainer-b .lock.moment-unlock { animation: chb-lock-off-b 3s ease-in-out both; }
 .trainer.moment-turn .turn-tag { animation: chb-pop 560ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
 
 /* a turn token or a marker used: it pops (and takes the quieter blue of a used one) */
@@ -1178,7 +1221,7 @@
   70% { opacity: 0.6; transform: perspective(200px) rotateY(180deg) scale(1.08); filter: grayscale(0.5); box-shadow: 0 0 10px 3px rgba(140, 230, 255, 0.5); }
   100% { opacity: 0.16; transform: perspective(200px) rotateY(360deg) scale(1); filter: grayscale(1); box-shadow: none; }
 }
-@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(650px); } }
+@keyframes chb-run { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(612px); } }
 @keyframes chb-head-on { 0% { opacity: 0; } 25% { opacity: 1; box-shadow: 0 0 30px 8px rgba(120, 225, 255, 0.95), inset 0 0 28px rgba(120, 225, 255, 0.65); } 100% { opacity: 1; } }
 @keyframes chb-token {
   0% { transform: scale(1); text-shadow: 0 0 0 rgba(140, 230, 255, 0); }
@@ -1199,3 +1242,31 @@
 @keyframes chb-drop { 0% { transform: translateY(-64px); } 100% { transform: none; } }
 @keyframes chb-drop-name { 0% { transform: translateY(-64px); filter: brightness(1); } 70% { transform: none; filter: brightness(1.9); } 100% { transform: none; filter: brightness(1); } }
 @keyframes chb-fx-glow { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0.45; } }
+@keyframes chb-lock-on-a {
+  0% { transform: scale(0.4); opacity: 0; }
+  8% { transform: scale(1.18); opacity: 1; max-width: 30px; padding-right: 0; color: transparent; }
+  14% { transform: none; max-width: 30px; padding-right: 0; color: transparent; text-shadow: none; }
+  26%, 82% { max-width: 220px; padding-right: 12px; color: #ffffff; text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7); }
+  96%, 100% { max-width: 30px; padding-right: 0; color: transparent; text-shadow: none; }
+}
+@keyframes chb-lock-on-b {
+  0% { transform: scale(0.4); opacity: 0; }
+  8% { transform: scale(1.18); opacity: 1; max-width: 30px; padding-left: 0; color: transparent; }
+  14% { transform: none; max-width: 30px; padding-left: 0; color: transparent; text-shadow: none; }
+  26%, 82% { max-width: 220px; padding-left: 12px; color: #ffffff; text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7); }
+  96%, 100% { max-width: 30px; padding-left: 0; color: transparent; text-shadow: none; }
+}
+@keyframes chb-lock-off-a {
+  0% { max-width: 30px; padding-right: 0; color: transparent; text-shadow: none; }
+  14% { max-width: 220px; padding-right: 12px; color: #ffffff; text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7); filter: none; text-decoration: none; }
+  34%, 72% { max-width: 220px; padding-right: 12px; color: #ffffff; filter: grayscale(1) brightness(0.85); text-decoration: line-through; }
+  86% { max-width: 30px; padding-right: 0; color: transparent; text-shadow: none; opacity: 1; transform: none; filter: grayscale(1) brightness(0.85); }
+  100% { max-width: 30px; padding-right: 0; color: transparent; opacity: 0; transform: scale(0.3); filter: grayscale(1) brightness(0.85); }
+}
+@keyframes chb-lock-off-b {
+  0% { max-width: 30px; padding-left: 0; color: transparent; text-shadow: none; }
+  14% { max-width: 220px; padding-left: 12px; color: #ffffff; text-shadow: 0 1px 2px rgba(80, 20, 0, 0.7); filter: none; text-decoration: none; }
+  34%, 72% { max-width: 220px; padding-left: 12px; color: #ffffff; filter: grayscale(1) brightness(0.85); text-decoration: line-through; }
+  86% { max-width: 30px; padding-left: 0; color: transparent; text-shadow: none; opacity: 1; transform: none; filter: grayscale(1) brightness(0.85); }
+  100% { max-width: 30px; padding-left: 0; color: transparent; opacity: 0; transform: scale(0.3); filter: grayscale(1) brightness(0.85); }
+}

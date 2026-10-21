@@ -6,18 +6,19 @@ A design for a **top-down table camera**: two blue columns, one for each trainer
 
 <p align="center"><img src="preview-moments.png" alt="Five of its animations: damage, a switch, an evolution, a knock out and a promotion" width="720"></p>
 
-**It is OTO's default look:** it comes with the app and is on the overlay until you choose another design (Settings, Look). Its files are in [`assets/designs/championship-blue`](../../../assets/designs/championship-blue); this page describes them. To put it on another computer or back the way it was, Settings, Look, **Install a .oto**, and choose [`../championship-blue.oto`](../championship-blue.oto) (made from those files with `npm run pack:example`). Install the control settings too: they switch on the attacks of the benched Pokémon, the turn highlight and the design animations (Settings, Overlay, *Design animations*), and switch off the toast banners at the bottom of the screen.
+**It is OTO's default look:** it comes with the app and is on the overlay until you choose another design (Settings, Look). Its files are in [`assets/designs/championship-blue`](../../../assets/designs/championship-blue); this page describes them. To put it on another computer or back the way it was, Settings, Look, **Install a .oto**, and choose [`../championship-blue.oto`](../championship-blue.oto) (made from those files with `npm run pack:example`). Install the control settings too: they switch on the attacks of the Active and benched Pokémon, the turn highlight and the design animations (Settings, Overlay, *Design animations*), and switch off the toast banners at the bottom of the screen.
 
 ## What is where
 
-Each column is a medium blue frame with a glossy rim. Its cards are stacked inside it, and a light bar, like a neon tube, runs down the side that faces the table.
+Each column is a medium blue frame with a glossy rim. Its cards are stacked inside it, and while it is that trainer's turn a light bar, like a neon tube, runs down the side that faces the table.
 
 | Place | What shows |
 |-------|-----------|
 | Each column, top | The header card: the trainer's name (two lines at most, then `…`), the games won in big white numbers on the side of the table, the country in a gold pill on the outer side with the record under it, and the deck in a small pill under the name. With an avatar, the avatar takes the outer side and the gold pill moves in |
-| Next to the header | The prize cards, as six white balls in a navy strip that sits in a bump of the frame. Each taken prize fades to gray on its own. A penalty marks the balls orange (no flag: the orange says it). A card put on a prize and shown face up shows the middle of its picture in the ball |
-| Under the prize cards | The locks, which are the player's, only while they are on: ITEM LOCK or EVOLUTION LOCK is an orange pill with its name and its picture in a ball (a crossed-out potion, a crossed-out evolution arrow), coming out over the table. With no lock on, nothing is there |
-| The Active card | A light-blue name bar, the picture in a white frame (attached energy bottom left, retreat cost bottom right, conditions top right, a Pokémon Tool as a little picture top left, as on the bench), the HP box, then navy rows with rounded ends: a red **Ability** pill and the ability's name in red (gray, with USED, once it is used). One empty row sits under the HP box, as on the original card; the first row covers it. Rows are 27 px high and get lower when two or three must fit. An empty Active card shows a faint ball |
+| Next to the header | The prize cards, as six white balls (31 px) in a navy strip that sits in a bump of the frame. Each taken prize fades to gray on its own. A penalty marks the balls orange (no flag: the orange says it). A card put on a prize and shown face up shows the middle of its picture in the ball |
+| Under the prize cards | The locks, which are the player's, only while they are on: ITEM LOCK or EVOLUTION LOCK is an orange ball with its picture (a crossed-out potion, a crossed-out evolution arrow). Its name comes out of the ball over the table for a few seconds when it is switched on, and again, struck through and gray, when it is switched off, before the ball goes. With no lock on, nothing is there |
+| On the table, beside the prize cards | The discard pile and the Lost Zone (nothing while they are empty): navy cards like the prize strip with the last three cards fanned out, the name and how many, the Lost Zone with a violet rim |
+| The Active card | A light-blue name bar, the picture in a white frame (attached energy bottom left, retreat cost bottom right, conditions top right, a Pokémon Tool as a little picture top left, as on the bench), the HP box, then navy rows with rounded ends: a red **Ability** pill and the ability's name in red (gray, with USED, once it is used), then the attacks with their damage. One empty row sits under the HP box, as on the original card; the first row covers it. Rows are 27 px high and get lower when two or three must fit. An empty Active card shows a faint ball |
 | The bench | A card for each bench slot, each in a place of its own over five EMPTY plates: the picture in a white frame (attached energy bottom left, conditions top right, a Pokémon Tool as a little picture top left), the name bar, up to three rows (abilities, Tool names, attacks with their damage) and the HP bar across the bottom. An empty slot shows its EMPTY plate, so a knock out or a promotion never moves the rest of the bench |
 | A bigger bench | A bench of 6 to 8 places stays inside the column: every card gets shorter (a band of the picture, the name, the HP bar, and the rows that fit: two with 6 places, one with 7, none with 8), and so do the EMPTY plates |
 | Feature cards | While the producer shows them, they cover the bench of the trainer chosen for them: a navy card with a FEATURED name bar and the cards in white frames in the middle of it. Cards joined by a sign (`+`, `→`) are a stack, one over the other, with the sign on a navy ball between them |
@@ -29,7 +30,7 @@ The HP fill is blue while the Pokémon is healthy, yellow at half its HP or less
 
 ## The turn
 
-The trainer whose turn it is gets a gold **TURN** tag between the header and the Active card, a bright cyan frame around the header card, a brighter light bar down the column, and a cyan glow around the Active picture. The tag no longer pushes anything (the style sheet places it), so the control settings switch the turn highlight on.
+The trainer whose turn it is gets a gold **TURN** tag between the header and the Active card, a bright cyan frame around the header card, the light bar down the column (the column of the trainer who waits has none), and a cyan glow around the Active picture. The tag no longer pushes anything (the style sheet places it), so the control settings switch the turn highlight on.
 
 The footer says what that trainer has used this turn: a counter that is still free is white with a colored dot, a used one turns a quieter blue without its dot. The waiting trainer's footer is shown in light blue, all alike, without the dots: it does not say what they used on their last turn.
 
@@ -43,7 +44,7 @@ The footer says what that trainer has used this turn: a counter that is still fr
 - **It restyles the announcements.** The full-screen effects stay inside the camera window, between the light bars. Their titles are white capitals with a navy outline and a glow in the effect's color, and their second line is cyan. An attack's slash is the design's red, and its big damage number is not shown, since the Pokémon shows it and the line under the title says it. A knock out is a red glow at the edges of the window, a turn passed a blue band, a top deck gold, a victory a gold glow with confetti, a game start a navy wipe. The banner (when the producer switches the toast banners back on) is a card of the columns, low in the window, with its title in a light-blue name bar, and it rises into place. The shake of the whole overlay on a knock out is switched off (it lays the whole overlay out again at every frame, and it made the knock outs drop frames).
 - **It animates the moments** (below).
 
-The background picture (`images/backgroundImage.svg`) is only the frame of each column with its light bar and the two white rules of the footer.
+The background picture (`images/backgroundImage.svg`) is only the frame of each column and the two white rules of the footer. The light bars are pictures of the style sheet, shown on the side of the trainer whose turn it is.
 
 ## Animations
 
@@ -63,7 +64,8 @@ The overlay marks what just happened in the match on the piece it happened to, f
 | Special condition | The icon of the condition that came pops (OTO's own icons: a moon, a flame, a spiral, a lightning bolt, a drop, a chain), and the picture takes its color for an instant (asleep indigo, burned orange, confused pink, paralyzed yellow, poisoned purple, trapped gray) |
 | Ability used | The Ability pill flashes light pink and turns gray |
 | Prize card taken | The ball grows with a glow, turns over and fades |
-| Turn | A light runs down the column's light bar, the header's frame flares and the TURN tag pops |
+| Turn | The column's light bar lights up and a light runs down it, the header's frame flares and the TURN tag pops |
+| Lock switched on or off | Its name comes out of the ball for three seconds; switched off, it is struck through and gray, and the ball goes after it |
 | Turn counter or marker used | It pops with a glow and takes the quieter blue of a used one |
 | Game won | The score jumps in gold |
 | Stadium played | Its tab drops from the top edge and its name shines |
@@ -94,7 +96,7 @@ The colors in `design.json` fill what the style sheet leaves to the classic look
 ## Limits
 
 - **HP colors.** The overlay turns an HP bar yellow at half or less and orange at a quarter or less, and a design cannot change that. On the original stream any damage turns the bar yellow.
-- **Rows.** The Active card shows up to three rows, a benched Pokémon's card up to three (fewer on a bigger bench): one more is cut off whole, never half. The Active card shows no attacks (the overlay gives attacks to the benched Pokémon only). A Pokémon Tool is a picture, not a row, unless the producer switches on the Tools by name.
+- **Rows.** The Active card shows up to three rows, a benched Pokémon's card up to three (fewer on a bigger bench): one more is cut off whole, never half. The Active card shows its attacks under its abilities when *Attacks of the Active Pokémon* is on (the control settings switch it on). A Pokémon Tool is a picture, not a row, unless the producer switches on the Tools by name.
 - **The bench.** There are always five EMPTY plates, also when the bench is set smaller. A bench of six to eight has as many plates, shorter, all inside the column.
 - **Abilities.** When an ability is used, every used ability of that Pokémon flashes: the overlay does not say which one it was.
 - **The bench in a row** (a producer's option) does not fit the columns: the bench stays stacked.
@@ -110,11 +112,12 @@ They are in [`assets/designs/championship-blue`](../../../assets/designs/champio
 |------|-----------|
 | `design.json` | The colors, the font, the HP box under the pictures, the crop of the Active picture (a wide band of the card's picture) and of the Stadium's |
 | `styles.css` | The style sheet: where every piece goes, how the cards look, the announcements and the animations |
-| `images/backgroundImage.svg` | The two column frames, with their light bars, the bump that holds the prize strip, and the white rules of the footers |
+| `images/backgroundImage.svg` | The two column frames, with the bump that holds the prize strip, and the white rules of the footers |
+| `images/css-glow-a.svg`, `images/css-glow-b.svg` | Pictures for the style sheet: the light bar of each column, shown while it is that trainer's turn |
 | `images/prizeCardBack.svg` | The white ball of the prize cards |
 | `images/css-ball.svg` | A picture for the style sheet: the faint ball of an empty Active card |
 | `images/css-lock-item.svg`, `images/css-lock-evolution.svg` | Pictures for the style sheet: the crossed-out potion of ITEM LOCK and the crossed-out evolution arrow of EVOLUTION LOCK |
-| `controls.json` | The control settings that go with it: the bench attacks, the turn highlight and the design animations on, the toast banners off |
+| `controls.json` | The control settings that go with it: the attacks of the Active and benched Pokémon, the turn highlight and the design animations on, the toast banners off |
 
 `preview.png` and `preview-moments.png` are only for this page; they are not part of the package.
 

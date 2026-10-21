@@ -31,7 +31,7 @@ describe('the default design', () => {
 
     it('brings its control settings: the bench attacks, the turn highlight, the design animations, and no toast banners', async () => {
       const { settings } = await get('/api/state');
-      assert.deepEqual([settings.display.benchAttacks, settings.display.turnIndicator, settings.display.moments, settings.display.toasts], [true, true, true, false]);
+      assert.deepEqual([settings.display.activeAttacks, settings.display.benchAttacks, settings.display.turnIndicator, settings.display.moments, settings.display.toasts], [true, true, true, true, false]);
     });
 
     it('leaves the classic look one click away', async () => {

@@ -59,6 +59,7 @@
         { key: 'toolNames', label: 'Pokémon Tools by name (text), as well as or instead of their cards', off: true, style: true },
         { key: 'retreatCost', label: 'Retreat cost' },
         { key: 'abilityTokens', label: 'Ability tokens (ready / used)' },
+        { key: 'activeAttacks', label: 'Attacks of the Active Pokémon (name and damage)', off: true },
         { key: 'benchAttacks', label: 'Attacks of the benched Pokémon (name and damage)', off: true },
         { key: 'statusConditions', label: 'Status conditions' }
       ]

@@ -45,7 +45,9 @@
   const MOMENT_MIN_MS = 200;
   const MOMENT_MAX_MS = 10000;
   // the moments there are (each is the class moment-<kind>; see markMoments for when each one happens)
-  const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point'];
+  const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point', 'lock', 'unlock'];
+  // the locks a trainer can be under: the kind (data-lock), the text of its chip and where the game keeps it
+  const LOCKS = [['item', 'ITEM LOCK', 'itemLock'], ['evolution', 'EVOLUTION LOCK', 'evoLock']];
   // the moments that write something on their piece while they play: a number (data-damage and --moment-damage for moment-damage...),
   // or the condition that came (data-status). Each its own, so two at once never take each other's.
   const MOMENT_WRITES = ['damage', 'heal', 'energy', 'status'];
@@ -227,7 +229,7 @@
     const energies = opt(el('div', 'energies'), 'attachments');
     const retreat = opt(el('div', 'retreat'), 'retreatCost');
     const abilities = opt(el('div', 'abilities'), 'abilityTokens');
-    const attacks = opt(el('div', 'attacks'), 'benchAttacks'); // (the benched Pokémon only)
+    const attacks = opt(el('div', 'attacks'), mini ? 'benchAttacks' : 'activeAttacks'); // (each its own switch)
     const toolCards = opt(el('div', 'tool-cards'), 'toolCards'); // the Pokémon Tools as pictures of their cards
     const tools = opt(el('div', 'tools'), 'toolNames'); // and, when asked for, by name
     const statuses = opt(el('div', 'statuses'), 'statusConditions');
@@ -399,7 +401,7 @@
     container.hidden = list.length === 0;
   }
 
-  // What a benched Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
+  // What a Pokémon can do, as the card says: the name of each attack and its damage ("60", "50+", "20×")
   function renderAttacks(container, attacks) {
     const list = attacks || [];
     container.textContent = '';
@@ -449,7 +451,7 @@
     renderAbilities(mon.abilities, pokemon.abilities);
     renderToolCards(mon.toolCards, pokemon.tools);
     renderTools(mon.tools, pokemon.tools);
-    renderAttacks(mon.attacks, mon.mini ? pokemon.attacks : []);
+    renderAttacks(mon.attacks, pokemon.attacks);
 
     mon.statuses.textContent = '';
     status.forEach((key) => {
@@ -721,6 +723,16 @@
       [energy, stadiumUse, supporter, gx, vstar].forEach((token) => tokens.appendChild(token.root));
 
       const locks = opt(el('div', 'locks'), 'locks');
+      // a chip for each lock, shown while it is on (data-lock says which, whatever the text: "item" or "evolution", for a design to draw
+      // each its own way)
+      const lockChips = {};
+      LOCKS.forEach(([kind, text]) => {
+        const chip = el('span', 'lock', text);
+        chip.dataset.lock = kind;
+        chip.hidden = true;
+        lockChips[kind] = chip;
+        locks.appendChild(chip);
+      });
       // the cards out of play: the discard pile and the Lost Zone, each the last cards put in it and how many there are (nothing while empty)
       const piles = el('div', 'piles');
       const discard = createPile('discard', 'DISCARD', 'discardPile');
@@ -744,7 +756,7 @@
 
       [turnTag, top, active, bench].forEach((node) => root.appendChild(node));
       this.stage.appendChild(root);
-      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, piles, discard, lostZone, activeMon, bench, benchMons };
+      this.trainers[side] = { root, turnTag, prizes, prizeNodes, prizeFlag, energy, stadiumUse, supporter, gx, vstar, locks, lockChips, piles, discard, lostZone, activeMon, bench, benchMons };
     }
 
     buildCenter() {
@@ -961,15 +973,16 @@
         if (PER_TURN.indexOf(key) !== -1) refs[key].root.classList.toggle('off-turn', !trainer.isTurn);
       });
 
-      // locks (data-lock says which, whatever the text: "item" or "evolution", for a design to draw each its own way)
-      refs.locks.textContent = '';
-      const lock = (kind, text) => {
-        const chip = el('span', 'lock', text);
-        chip.dataset.lock = kind;
-        refs.locks.appendChild(chip);
-      };
-      if (trainer.locks.itemLock) lock('item', 'ITEM LOCK');
-      if (trainer.locks.evoLock) lock('evolution', 'EVOLUTION LOCK');
+      // locks (a lock that was just switched off may stay a little longer, for its moment: see markLocks)
+      LOCKS.forEach(([kind, , key]) => {
+        const chip = refs.lockChips[kind];
+        const on = Boolean(trainer.locks[key]);
+        if (on && chip.leaving) {
+          chip.leaving = false;
+          endMoment(chip, 'moment-unlock');
+        }
+        chip.hidden = !on;
+      });
       refs.locks.hidden = !(trainer.locks.itemLock || trainer.locks.evoLock);
 
       // the discard pile and the Lost Zone
@@ -1180,6 +1193,7 @@
           if (taken && !takenBefore[index]) this.queueShown(list, refs.prizeNodes[index], 'taken', side);
         });
         if (now.isTurn && !before.isTurn) this.queueShown(list, refs.root, 'turn', side, {}, refs.turnTag);
+        this.markLocks(list, side, before, now);
         TOKENS.forEach(([key, resource]) => {
           const was = before.resources && before.resources[resource];
           const is = now.resources && now.resources[resource];
@@ -1325,6 +1339,33 @@
       });
     }
 
+    // The locks that were just switched on (moment-lock on the chip) or off (moment-unlock). When the design's style sheet animates the
+    // switching off (it has a rule for moment-unlock), the chip stays until the moment is over, and goes then.
+    markLocks(list, side, before, now) {
+      const refs = this.trainers[side];
+      const was = before.locks || {};
+      const is = now.locks || {};
+      LOCKS.forEach(([kind, , key]) => {
+        const chip = refs.lockChips[kind];
+        if (is[key] && !was[key]) this.queueShown(list, chip, 'lock', side);
+        if (!is[key] && was[key] && !this.switchedOff(chip)) {
+          const extra = {};
+          if (this.designCss.textContent.indexOf('moment-unlock') !== -1) {
+            chip.hidden = false; // (renderTrainer has just hidden it)
+            refs.locks.hidden = false;
+            chip.leaving = true;
+            extra.end = () => {
+              if (!chip.leaving) return;
+              chip.leaving = false;
+              chip.hidden = true;
+              refs.locks.hidden = LOCKS.every(([other]) => refs.lockChips[other].hidden);
+            };
+          }
+          this.queueMoment(list, chip, 'unlock', side, extra);
+        }
+      });
+    }
+
     // A Pokémon that was knocked out. When the design's style sheet animates it (it has a rule for moment-ko), its tile stays as it was,
     // with what it showed, until the moment is over, and goes then (a Pokémon that comes into the slot meanwhile takes it at once: see
     // renderMon). Without such a rule the tile goes at once, as it always has.
@@ -1360,7 +1401,7 @@
     // before its class goes (so the tile of a knocked out Pokémon is hidden before its animation lets go of it, and does not flash back).
     playMoments(list) {
       if (!list.length) return;
-      const ms = this.momentDuration();
+      const durations = {};
       list.forEach((moment) => {
         const playing = moment.node.moments && moment.node.moments[moment.name];
         // (what the one that starts again was to do at its end still has to be done)
@@ -1378,6 +1419,9 @@
         }
         if (moment.status) node.setAttribute('data-status', moment.status);
         node.classList.add(moment.name);
+        // (the stage's mark of a moment, moment-lock-a, lasts as long as the moment itself)
+        const base = kind.replace(/-[ab]$/, '');
+        const ms = durations[base] || (durations[base] = this.momentDuration(base));
         const playing = { end: moment.end, timer: 0 };
         playing.timer = setTimeout(() => {
           if (playing.end) playing.end();
@@ -1387,9 +1431,11 @@
       });
     }
 
-    // How long a moment lasts, in milliseconds: what the design's style sheet says in --oto-moment-ms (in a rule for :root), else 1.5 seconds
-    momentDuration() {
-      const value = getComputedStyle(document.documentElement).getPropertyValue('--oto-moment-ms').trim();
+    // How long a moment of a kind lasts, in milliseconds: what the design's style sheet says for that kind in --oto-moment-<kind>-ms
+    // (--oto-moment-lock-ms...), else for every moment in --oto-moment-ms (in a rule for :root), else 1.5 seconds
+    momentDuration(kind) {
+      const style = getComputedStyle(document.documentElement);
+      const value = (kind && style.getPropertyValue(`--oto-moment-${kind}-ms`).trim()) || style.getPropertyValue('--oto-moment-ms').trim();
       const number = parseFloat(value);
       if (!Number.isFinite(number)) return MOMENT_MS;
       const ms = /[0-9.]s$/i.test(value) ? number * 1000 : number; // (seconds are understood too: "1.2s")
@@ -1398,7 +1444,8 @@
 
     // Play one moment as if it had happened (the design editor's "Try a moment", and the tests). `moment` is its kind ('damage', 'ko'...:
     // see MOMENT_KINDS), `side` 'a' or 'b', `target` the piece it plays on ('active', 'bench0' to 'bench7', 'prize0' to 'prize5', 'trainer',
-    // 'token-energy', 'token-stadium', 'token-supporter', 'token-gx', 'token-vstar', 'stadium' or 'wins') and `amount` the number it is
+    // 'token-energy', 'token-stadium', 'token-supporter', 'token-gx', 'token-vstar', 'lock-item', 'lock-evolution', 'stadium' or 'wins')
+    // and `amount` the number it is
     // about (the damage, the energy attached), if any. A knock out plays on the tile as it is and does not hide it. It plays even while the
     // design animations are switched off: it is asked for. False when there is no such moment or piece.
     playMoment(moment, side, target, amount) {
@@ -1412,6 +1459,17 @@
         // the condition the tile shows last, or the first there is
         const chips = node.querySelectorAll('.status-chip');
         extra.status = chips.length ? chips[chips.length - 1].dataset.status : GAME.STATUS_CONDITIONS[0].key;
+      }
+      // (a lock that is off is shown while its moment plays, so it can be tried)
+      if (node.classList.contains('lock') && node.hidden) {
+        const locks = this.trainers[trainer].locks;
+        const wasHidden = locks.hidden;
+        node.hidden = false;
+        locks.hidden = false;
+        extra.end = () => {
+          node.hidden = true;
+          locks.hidden = wasHidden;
+        };
       }
       const list = [];
       this.queueMoment(list, node, moment, trainer, extra);
@@ -1427,6 +1485,7 @@
       if (target === 'active') return refs.activeMon.root;
       if (bench) return refs.benchMons[Number(bench[1])].root;
       if (prize) return refs.prizeNodes[Number(prize[1])];
+      if (target === 'lock-item' || target === 'lock-evolution') return refs.lockChips[target.slice('lock-'.length)];
       const pieces = {
         trainer: refs.root,
         'token-energy': refs.energy.root,

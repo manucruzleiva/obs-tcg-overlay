@@ -27,6 +27,8 @@ const MOMENTS = [
   { key: 'taken', label: 'Prize card taken', target: 'prize0' },
   { key: 'turn', label: 'Turn starts', target: 'trainer' },
   { key: 'used', label: 'Supporter played', target: 'token-supporter' },
+  { key: 'lock', label: 'Item Lock on', target: 'lock-item' },
+  { key: 'unlock', label: 'Item Lock off', target: 'lock-item' },
   { key: 'stadium', moment: 'enter', label: 'A Stadium comes into play', target: 'stadium' },
   { key: 'point', label: 'Game won', target: 'wins' }
 ];

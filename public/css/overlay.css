@@ -403,6 +403,7 @@ html, body {
 .token.marker.used:not(.no-icon) { opacity: 1; }
 
 .locks { display: flex; flex-wrap: wrap; gap: 8px; }
+.lock[hidden] { display: none; }
 .lock {
   padding: 8px 14px;
   border-radius: 6px;

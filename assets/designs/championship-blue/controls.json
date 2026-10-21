@@ -2,6 +2,7 @@
   "version": 1,
   "settings": {
     "display": {
+      "activeAttacks": true,
       "benchAttacks": true,
       "turnIndicator": true,
       "moments": true,

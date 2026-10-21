@@ -318,10 +318,26 @@ describe('overlay', { skip }, () => {
         return { right: box.left >= art.right, under: box.top >= name.bottom, inside: box.bottom <= mon.getBoundingClientRect().bottom + 1 };
       });
       assert.deepEqual(places, { right: true, under: true, inside: true });
-      assert.equal(await page.locator('.trainer-a .active .attacks:visible').count(), 0, 'the Active Pokémon is as it always was');
+      assert.equal(await page.locator('.trainer-a .active .attacks:visible').count(), 0, 'the Active Pokémon has a switch of its own');
 
       await send('action:settings', { action: 'update', display: { benchAttacks: false } });
       await page.waitForFunction(() => ![...document.querySelectorAll('.bench .attacks')].some((node) => node.offsetParent !== null));
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can show the attacks of the Active Pokémon, on a switch of their own (off at first)', async () => {
+      await send('action:trainerA', { action: 'setActive', cardId: 'a-act', name: 'Gholdengo ex', image: IMG, hp: 260, abilities: ['Coin Bonus'], attacks: [{ name: 'Make It Rain', damage: '50x' }] });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .mon:not([hidden])'));
+      const shown = () => page.locator('.trainer-a .active .attacks:visible').count();
+      assert.equal((await live()).settings.display.activeAttacks, false);
+      assert.equal(await shown(), 0, 'nothing is shown at first');
+      await send('action:settings', { action: 'update', display: { benchAttacks: true } });
+      assert.equal(await shown(), 0, 'the switch of the bench is not the one of the Active Pokémon');
+      await send('action:settings', { action: 'update', display: { benchAttacks: false, activeAttacks: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .attacks').offsetParent !== null);
+      assert.deepEqual(await page.$$eval('.trainer-a .active .attack-line', (lines) => lines.map((line) => line.textContent)), ['Make It Rain50×']);
+      await send('action:settings', { action: 'update', display: { activeAttacks: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .active .attacks').offsetParent === null);
       assert.deepEqual(page.problems, []);
     });
 
@@ -366,18 +382,33 @@ describe('overlay', { skip }, () => {
   });
 
   describe('the locks', () => {
-    const locks = (side) => page.$$eval(`.trainer-${side} .lock`, (nodes) => nodes.map((node) => `${node.dataset.lock}:${node.textContent}`));
+    const locks = (side) => page.$$eval(`.trainer-${side} .lock:not([hidden])`, (nodes) => nodes.map((node) => `${node.dataset.lock}:${node.textContent}`));
 
     it('say which lock each is, whatever its text, so a design can draw each its own way', async () => {
       assert.equal(await page.locator('.trainer-a .locks').isHidden(), true);
       await send('action:trainerA', { action: 'toggleItemLock' });
       await send('action:trainerA', { action: 'toggleEvoLock' });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock').length === 2);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock:not([hidden])').length === 2);
       assert.deepEqual(await locks('a'), ['item:ITEM LOCK', 'evolution:EVOLUTION LOCK']);
       assert.deepEqual(await locks('b'), []);
       await send('action:trainerA', { action: 'toggleItemLock' });
-      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock').length === 1);
+      await page.waitForFunction(() => document.querySelectorAll('.trainer-a .lock:not([hidden])').length === 1);
       assert.deepEqual(await locks('a'), ['evolution:EVOLUTION LOCK']);
+      await send('action:trainerA', { action: 'toggleEvoLock' });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .locks').hidden);
+    });
+
+    it('play a moment when one is switched on or off, and one switched off stays for its moment when the design animates it', async () => {
+      await page.evaluate(() => { window.oto.designCss.textContent = '.lock.moment-unlock { outline: 1px solid red; } :root { --oto-moment-unlock-ms: 600; }'; });
+      await send('action:trainerA', { action: 'toggleItemLock', enabled: true });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .lock[data-lock="item"]').classList.contains('moment-lock'));
+      await send('action:trainerA', { action: 'toggleItemLock', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .lock[data-lock="item"]').classList.contains('moment-unlock'));
+      assert.deepEqual(await locks('a'), ['item:ITEM LOCK'], 'it stays while its moment plays');
+      assert.equal(await page.locator('.trainer-a .locks').isHidden(), false);
+      await page.waitForFunction(() => document.querySelector('.trainer-a .locks').hidden);
+      assert.deepEqual(await locks('a'), []);
+      await page.evaluate(() => { window.oto.designCss.textContent = ''; });
     });
   });
 
