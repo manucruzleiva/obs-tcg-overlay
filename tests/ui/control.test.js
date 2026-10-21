@@ -1110,6 +1110,21 @@ describe('control panel', { skip }, () => {
       await page.waitForFunction(() => document.querySelectorAll('.modal .pile-card').length === 2);
       assert.deepEqual(await modal().locator('.pile-card-name').allTextContents(), ['Fire Energy', 'Arven']);
       assert.equal(await page.locator('.trainer-panel.side-a .pile-btn[data-pile="discard"] .count').textContent(), '2');
+      await expectLive((state) => state.trainerA.discard.map((card) => card.kind), ['trainer', 'energy']);
+
+      // shown over the bench of the overlay from here, and with Shift+O
+      await modal().getByRole('button', { name: 'Show over the bench' }).click();
+      await expectLive((state) => state.pileView, { visible: true, side: 'trainerA', pile: 'discard' });
+      await modal().locator('.pile-view-toggle[aria-pressed="true"]', { hasText: 'Hide from the overlay' }).click();
+      await expectLive((state) => state.pileView.visible, false);
+      await press('Escape');
+      await dialogClosed();
+      await press('Shift+O');
+      await expectLive((state) => state.pileView, { visible: true, side: 'trainerA', pile: 'discard' });
+      await press('Shift+O');
+      await expectLive((state) => state.pileView.visible, false);
+      await press('o');
+      await page.waitForSelector('.modal[aria-label="Cards out of play · Ash"]');
 
       await modal().locator('.pile-card', { hasText: 'Arven' }).getByRole('button', { name: '→ Lost Zone' }).click();
       await expectLive((state) => [state.trainerA.discard.length, state.trainerA.lostZone.map((card) => card.name)], [1, ['Arven']]);

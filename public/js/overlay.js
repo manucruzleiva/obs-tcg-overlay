@@ -47,6 +47,8 @@
   // the moments there are (each is the class moment-<kind>; see markMoments for when each one happens)
   const MOMENT_KINDS = ['damage', 'heal', 'ko', 'enter', 'switch', 'evolve', 'devolve', 'energy', 'tool', 'status', 'ability', 'taken', 'turn', 'used', 'point', 'lock', 'unlock'];
   // the locks a trainer can be under: the kind (data-lock), the text of its chip and where the game keeps it
+  // the groups of the cards of a pile shown over the bench (see renderPileView)
+  const PILE_GROUPS = [['pokemon', 'POKÉMON'], ['trainer', 'TRAINER'], ['energy', 'ENERGY']];
   const LOCKS = [['item', 'ITEM LOCK', 'itemLock'], ['evolution', 'EVOLUTION LOCK', 'evoLock']];
   // the moments that write something on their piece while they play: a number (data-damage and --moment-damage for moment-damage...),
   // or the condition that came (data-status). Each its own, so two at once never take each other's.
@@ -628,6 +630,7 @@
       SIDES.forEach((side) => this.buildTrainer(side));
       this.buildCenter();
       this.buildFeatures();
+      this.buildPileView();
 
       this.toasts = el('div', 'toasts');
       ['a', 'b', 'c'].forEach((slot) => this.toasts.appendChild(el('div', `toast-slot ${slot}`)));
@@ -781,6 +784,13 @@
       this.trainers.trainerA.root.appendChild(this.featureBox);
     }
 
+    // The discard pile or the Lost Zone of a trainer, over their bench while the producer shows it (see renderPileView)
+    buildPileView() {
+      this.pileViewBox = opt(el('div', 'pile-view'), 'pileView');
+      this.pileViewBox.hidden = true;
+      this.trainers.trainerA.root.appendChild(this.pileViewBox);
+    }
+
     // ---- scaling
 
     fit() {
@@ -859,6 +869,7 @@
       SIDES.forEach((side) => this.renderTrainer(side, state, display));
       this.renderCenter(state);
       this.renderFeatures(state, display);
+      this.renderPileView(state, display);
 
       // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed, and it shows
       // whether the toast banners are on or not (they are off to begin with). The pause banner can be switched off (Settings, Overlay), and
@@ -1077,6 +1088,75 @@
           figure.appendChild(img);
           into.appendChild(figure);
         });
+      });
+    }
+
+    // The discard pile or the Lost Zone of a trainer over their bench (it covers the bench and the feature cards while it is shown): its name
+    // and how many cards, then the cards sorted into Pokémon, Trainers and Energy, each group a row of the pictures of its cards, one picture for
+    // each card with how many copies there are (×2), the newest first. A group with no card is not shown.
+    renderPileView(state, display) {
+      const view = state.pileView || {};
+      const side = view.side === 'trainerB' ? 'trainerB' : 'trainerA';
+      const pile = view.pile === 'lostZone' ? 'lostZone' : 'discard';
+      const cards = (state[side] && Array.isArray(state[side][pile]) ? state[side][pile] : []);
+      const box = this.pileViewBox;
+      if (box.parentNode !== this.trainers[side].root) this.trainers[side].root.appendChild(box);
+      box.hidden = view.visible !== true;
+      const covering = !box.hidden && display.pileView !== false;
+      SIDES.forEach((one) => {
+        this.trainers[one].root.classList.toggle('pile-view-on', covering && one === side);
+        this.stage.classList.toggle(`pile-view-on-${SIDE_CLASS[one]}`, covering && one === side);
+      });
+
+      // drawn again only when what it shows changed, so its pictures do not flash
+      const signature = JSON.stringify([pile, cards.map((card) => [card.cardId, card.name, card.image, card.kind, card.energy])]);
+      if (this.pileViewDrawn === signature) return;
+      this.pileViewDrawn = signature;
+      box.textContent = '';
+      box.dataset.pile = pile;
+      box.dataset.count = String(cards.length);
+      const head = el('div', 'pv-head');
+      head.appendChild(el('span', 'pv-title', pile === 'lostZone' ? 'LOST ZONE' : 'DISCARD PILE'));
+      head.appendChild(el('span', 'pv-count', String(cards.length)));
+      box.appendChild(head);
+      PILE_GROUPS.forEach(([kind, label]) => {
+        // one entry for each card, with its copies, the newest first (a card of no known kind goes with the Trainers)
+        const entries = [];
+        for (let i = cards.length - 1; i >= 0; i--) {
+          const card = cards[i];
+          const own = card.kind === 'pokemon' || card.kind === 'energy' ? card.kind : card.energy ? 'energy' : 'trainer';
+          if (own !== kind) continue;
+          const key = card.cardId || `${card.name}|${card.image}`;
+          const found = entries.find((entry) => entry.key === key);
+          if (found) found.count++;
+          else entries.push({ key, card, count: 1 });
+        }
+        if (!entries.length) return;
+        const group = el('div', `pv-group pv-${kind}`);
+        group.dataset.count = String(entries.reduce((sum, entry) => sum + entry.count, 0));
+        const name = el('div', 'pv-label');
+        name.appendChild(el('span', 'pv-label-text', label));
+        name.appendChild(el('span', 'pv-label-count', group.dataset.count));
+        group.appendChild(name);
+        const row = el('div', 'pv-cards');
+        row.dataset.cards = String(entries.length);
+        row.style.setProperty('--pv-cards', String(entries.length));
+        entries.forEach(({ card, count }) => {
+          const figure = el('figure', 'pv-card');
+          figure.title = card.name;
+          // a basic Energy without a picture of its own shows the icon of its type
+          const energyOnly = !card.image && Boolean(ENERGY_ICON[card.energy]);
+          figure.classList.toggle('is-energy', energyOnly);
+          const img = el('img', 'pv-img');
+          img.decoding = 'async';
+          setImage(img, card.image || ENERGY_ICON[card.energy] || '', card.name);
+          figure.appendChild(img);
+          if (!card.image && !energyOnly) figure.appendChild(el('span', 'pv-name', card.name));
+          if (count > 1) figure.appendChild(el('span', 'pv-copies', `×${count}`));
+          row.appendChild(figure);
+        });
+        group.appendChild(row);
+        box.appendChild(group);
       });
     }
 

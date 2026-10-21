@@ -57,6 +57,7 @@ export const KEYMAP = [
   { group: 'Dialogs', keys: ['S'], label: 'Stadium', test: plain('s'), run: (app) => app.openPicker({ kind: 'stadium' }) },
   { group: 'Dialogs', keys: ['X'], label: 'Abilities', test: plain('x'), run: (app) => app.openAbilities(app.focus) },
   { group: 'Dialogs', keys: ['O'], label: 'Discard pile and Lost Zone (focused trainer)', test: plain('o'), run: (app) => app.openPiles(app.focus) },
+  { group: 'Dialogs', keys: ['Shift', 'O'], label: 'Show the discard pile of the focused trainer over their bench, or hide it', test: shifted('o'), run: (app) => app.togglePileView(app.focus, 'discard') },
   { group: 'Dialogs', keys: ['L'], label: 'Decklist (focused trainer)', test: plain('l'), run: (app) => app.openDecklist(app.focus) },
 
   { group: 'Hype', keys: ['C'], label: 'Announce an attack', test: plain('c'), run: (app) => app.openAttack() },
@@ -172,6 +173,13 @@ class App {
   toggleFeatures() {
     const view = this.state && this.state.featureView;
     return this.act('action:card', { action: 'toggleFeatures', enabled: !(view && view.visible !== false) });
+  }
+
+  // Show a trainer's discard pile or Lost Zone over their bench, or hide it when that very one is shown; it says what it wants
+  togglePileView(side, pile = 'discard') {
+    const view = this.state && this.state.pileView;
+    const shown = Boolean(view && view.visible && view.side === side && view.pile === pile);
+    return this.act('action:card', { action: 'togglePileView', enabled: !shown, side, pile });
   }
 
   // The feature cards over the bench of the other trainer

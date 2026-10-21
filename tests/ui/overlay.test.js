@@ -130,6 +130,47 @@ describe('overlay', { skip }, () => {
       assert.equal((await read('a', 'lost-zone')).shown, true);
     });
 
+    it('can be shown over the bench, with the pictures of their cards sorted into Pokémon, Trainers and Energy', async () => {
+      const view = () => page.evaluate(() => {
+        const box = document.querySelector('.pile-view');
+        return {
+          shown: !box.hidden && box.getBoundingClientRect().width > 0,
+          over: box.parentElement.classList.contains('trainer-a') ? 'a' : 'b',
+          head: box.querySelector('.pv-head') ? box.querySelector('.pv-head').innerText.replace(/\s+/g, ' ').trim() : '',
+          groups: Array.from(box.querySelectorAll('.pv-group')).map((group) => `${group.querySelector('.pv-label-text').textContent} ${group.dataset.count}: ${Array.from(group.querySelectorAll('.pv-card')).map((card) => card.title + (card.querySelector('.pv-copies') ? ` ${card.querySelector('.pv-copies').textContent}` : '')).join(', ')}`),
+          on: ['a', 'b'].filter((side) => document.querySelector(`.trainer-${side}`).classList.contains('pile-view-on')),
+          benches: ['a', 'b'].map((side) => getComputedStyle(document.querySelector(`.trainer-${side} .bench`)).display)
+        };
+      });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG, supertype: 'Trainer' });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Comfey', image: IMG, supertype: 'Pokémon', count: 2 });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Fire Energy', energy: 'fire' });
+      assert.equal((await view()).shown, false, 'hidden until the producer shows it');
+
+      await send('action:card', { action: 'togglePileView', enabled: true, side: 'trainerA', pile: 'discard' });
+      await page.waitForFunction(() => !document.querySelector('.pile-view').hidden && document.querySelectorAll('.pv-group').length === 3);
+      assert.deepEqual(await view(), {
+        shown: true, over: 'a', head: 'DISCARD PILE 4',
+        groups: ['POKÉMON 2: Comfey ×2', 'TRAINER 1: Arven', 'ENERGY 1: Fire Energy'],
+        on: ['a'], benches: ['none', 'flex']
+      });
+      assert.equal(await page.$eval('.pv-energy .pv-card', (card) => card.classList.contains('is-energy')), true, 'a basic Energy shows the icon of its type');
+
+      await send('action:trainerB', { action: 'pileAdd', pile: 'lostZone', name: 'Comfey', image: IMG, supertype: 'Pokémon' });
+      await send('action:card', { action: 'togglePileView', enabled: true, side: 'trainerB', pile: 'lostZone' });
+      await page.waitForFunction(() => document.querySelector('.pile-view').parentElement.classList.contains('trainer-b') && document.querySelector('.pile-view').dataset.pile === 'lostZone');
+      assert.deepEqual(await view(), { shown: true, over: 'b', head: 'LOST ZONE 1', groups: ['POKÉMON 1: Comfey'], on: ['b'], benches: ['flex', 'none'] });
+
+      await send('action:settings', { action: 'update', display: { pileView: false } });
+      await page.waitForFunction(() => !document.querySelector('.trainer-b').classList.contains('pile-view-on'));
+      assert.equal((await view()).shown, false, 'and it can be switched off in the overlay settings');
+      await send('action:settings', { action: 'update', display: { pileView: true } });
+      await send('action:card', { action: 'togglePileView', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.pile-view').hidden);
+      assert.deepEqual((await view()).benches, ['flex', 'flex']);
+      assert.deepEqual(page.problems, []);
+    });
+
     it('are emptied for the next game', async () => {
       await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG });
       await page.waitForFunction(() => !document.querySelector('.trainer-a .pile-discard').hidden);

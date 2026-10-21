@@ -193,7 +193,8 @@ export function openPicker(app, purpose) {
       // (it stays open: a card often goes to the discard pile with others)
       const where = (PILES.find((entry) => entry.key === pile) || PILES[0]).label;
       const added = await app.act(`action:${side}`, {
-        action: 'pileAdd', pile, cardId: card.id || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined
+        action: 'pileAdd', pile, cardId: card.id || '', name: card.name, image: (card.images && (card.images.small || card.images.large)) || '', energy: DECKLIST.basicEnergyOf(card.name) || undefined,
+        supertype: card.supertype || undefined
       });
       if (added.ok) {
         status.textContent = `${card.name} is in the ${where}. Choose another card, or close this window.`;

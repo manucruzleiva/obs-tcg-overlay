@@ -70,7 +70,8 @@
       options: [
         { key: 'spaces', label: 'Frames of the reserved spaces (camera feeds and the like)' },
         { key: 'stadium', label: 'Stadium card' },
-        { key: 'featureCards', label: 'Feature cards' }
+        { key: 'featureCards', label: 'Feature cards' },
+        { key: 'pileView', label: 'Discard pile or Lost Zone over the bench, sorted into Pokémon, Trainers and Energy (while the producer shows it)' }
       ]
     },
     {

@@ -218,7 +218,9 @@ const TRAINER = {
       const energy = p.energy === undefined || p.energy === '' ? undefined : text(p.energy, 'energy', 20);
       if (energy !== undefined && !GAME.ENERGY_KEYS.includes(energy)) throw new ActionError('unknown energy type');
       const count = p.count === undefined ? 1 : integer(p.count, 'count', 1, 20);
-      const card = { cardId: text(p.cardId ?? '', 'cardId', 64), name, image: imageUrl(p.image, 'image'), energy };
+      // (what kind of card it is: the kind it says, else what its supertype says, else what the trainer's decklist says)
+      const supertype = p.supertype === undefined ? '' : text(p.supertype, 'supertype', 20);
+      const card = { cardId: text(p.cardId ?? '', 'cardId', 64), name, image: imageUrl(p.image, 'image'), energy, supertype };
       let added = 0;
       for (let i = 0; i < count; i++) if (gs.addToPile(side, pile, card)) added++;
       if (added === 0) throw new ActionError(`The ${PILE_LABEL[pile]} is full`);
@@ -1013,6 +1015,20 @@ const CARD = {
       gs.setFeatureSide(p.side);
     },
     label: (gs) => `Feature cards over ${who(gs, gs.state.featureView.side)}'s bench`
+  },
+  // Show a trainer's discard pile or Lost Zone over their bench (the cards sorted into Pokémon, Trainers and Energy), or hide it. `enabled`
+  // says which is wanted, so two producers pressing it at once agree; without it it is toggled. `side` and `pile` say whose and which.
+  togglePileView: {
+    targets: (side, p) => (typeof p.enabled === 'boolean' ? null : ['pileView']),
+    run: (gs, side, p) => {
+      if (p.side !== undefined && !isSide(p.side)) throw new ActionError('side must be trainerA or trainerB');
+      if (p.pile !== undefined && !PILES.includes(p.pile)) throw new ActionError('pile must be discard or lostZone');
+      gs.setPileView({ visible: typeof p.enabled === 'boolean' ? p.enabled : undefined, side: p.side, pile: p.pile });
+    },
+    label: (gs) => {
+      const view = gs.state.pileView;
+      return view.visible ? `${who(gs, view.side)}'s ${PILE_LABEL[view.pile]} shown over the bench` : 'Discard pile view hidden';
+    }
   }
 };
 

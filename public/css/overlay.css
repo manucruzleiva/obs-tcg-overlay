@@ -932,6 +932,40 @@ html, body {
 }
 .feature-stack > .feature-sep:last-child { margin: 0 0 0 -24px; } /* (one that waits for its card: on the edge of the last card) */
 
+/* ---------------------------------------------------------------- a pile over the bench: the discard pile or the Lost Zone of a trainer */
+
+/* overlay.js puts it in the piece of the trainer whose pile it is, after the bench, and marks that trainer .pile-view-on (and the stage
+   .pile-view-on-a or .pile-view-on-b) while it is shown: the bench and the feature cards are hidden meanwhile. .pv-head is its name and how
+   many cards it has; each .pv-group (.pv-pokemon, .pv-trainer, .pv-energy) is a label and a row of pictures, .pv-card, one for each card with
+   .pv-copies (×2) when there are more copies of it. --pv-cards says how many pictures a row has, so a row overlaps its pictures to fit;
+   --pv-card-w and --pv-card-h set their size. */
+#stage .trainer.pile-view-on .bench, #stage .trainer.pile-view-on .features { display: none; }
+.pile-view { --pv-card-w: 72px; --pv-card-h: 100px; flex: none; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+.pv-head { display: flex; align-items: baseline; gap: 12px; font: 800 18px/1 var(--font-labels, var(--font-display)); letter-spacing: 0.12em; }
+.pv-count { font: 800 26px/1 var(--font-numbers, var(--font-display)); font-variant-numeric: tabular-nums; }
+.pile-view[data-pile="lostZone"] .pv-head { color: var(--lost-zone); }
+.pv-group { display: flex; flex-direction: column; gap: 6px; }
+.pv-label { display: flex; gap: 8px; font: 700 13px/1 var(--font-labels, var(--font-display)); letter-spacing: 0.14em; color: var(--fg-secondary); }
+.pv-cards { display: flex; }
+.pv-card { position: relative; flex: none; margin: 0; width: var(--pv-card-w); }
+.pv-card + .pv-card { margin-left: clamp(calc(var(--pv-card-w) * -0.8), calc((100% - var(--pv-card-w) * var(--pv-cards)) / (var(--pv-cards) - 1)), 6px); }
+.pv-img { display: block; width: var(--pv-card-w); height: var(--pv-card-h); object-fit: cover; border-radius: 6px; background: var(--bg-card); box-shadow: 0 6px 16px var(--shadow); }
+.pv-card.is-energy .pv-img { object-fit: contain; padding: 22px 12px; box-sizing: border-box; }
+.pv-name { position: absolute; inset: 6px; display: flex; align-items: center; justify-content: center; text-align: center; font: 700 11px/1.1 var(--font-labels, var(--font-display)); }
+.pv-copies {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  font: 800 12px/1 var(--font-numbers, var(--font-display));
+}
+.trainer-b .pile-view { align-items: flex-end; }
+.trainer-b .pv-cards { flex-direction: row-reverse; }
+.trainer-b .pv-card + .pv-card { margin-left: 0; margin-right: clamp(calc(var(--pv-card-w) * -0.8), calc((100% - var(--pv-card-w) * var(--pv-cards)) / (var(--pv-cards) - 1)), 6px); }
+
 /* ---------------------------------------------------------------- center: the Stadium */
 
 .center {

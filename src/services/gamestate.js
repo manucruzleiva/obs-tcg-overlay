@@ -74,8 +74,13 @@ function stepPrizes(prizes, delta) {
   prizes.count = prizesLeft(prizes.taken);
 }
 
-// A card in a discard pile or in the Lost Zone: { id, cardId, name, image }, and `energy` (its type) for a basic Energy, which may have no
-// picture of its own (the overlay shows the icon of the type then). The id tells two copies of one card apart.
+// What kind of card a card in a pile is, for the overlay to sort them: 'pokemon', 'trainer' or 'energy' ('' when it is not known)
+const PILE_KINDS = ['pokemon', 'trainer', 'energy'];
+const SUPERTYPE_KIND = { 'Pokémon': 'pokemon', Pokemon: 'pokemon', Trainer: 'trainer', Energy: 'energy' };
+const pileKindOf = (card) => (PILE_KINDS.includes(card.kind) ? card.kind : SUPERTYPE_KIND[card.supertype] || (GAME.ENERGY_KEYS.includes(card.energy) ? 'energy' : ''));
+
+// A card in a discard pile or in the Lost Zone: { id, cardId, name, image, kind }, and `energy` (its type) for a basic Energy, which may have
+// no picture of its own (the overlay shows the icon of the type then). The id tells two copies of one card apart.
 function cleanPileCard(card) {
   if (!card || typeof card !== 'object' || typeof card.name !== 'string' || !card.name) return null;
   const clean = {
@@ -85,6 +90,8 @@ function cleanPileCard(card) {
     image: typeof card.image === 'string' ? card.image : ''
   };
   if (GAME.ENERGY_KEYS.includes(card.energy)) clean.energy = card.energy;
+  const kind = pileKindOf(card);
+  if (kind) clean.kind = kind;
   return clean;
 }
 const cleanPile = (list) => (Array.isArray(list) ? list.map(cleanPileCard).filter(Boolean).slice(-MAX_PILE) : []);
@@ -250,6 +257,8 @@ class GameStateService {
       featureCards: [],
       // The feature cards are shown over the bench of a trainer, which they cover while they are shown (see setFeaturesVisible)
       featureView: { visible: true, side: 'trainerA' },
+      // the discard pile or the Lost Zone of a trainer shown over their bench, as the feature cards are (it covers them too while it is shown)
+      pileView: { visible: false, side: 'trainerA', pile: 'discard' },
       favoriteCardIds: [],
       matchScore: { trainerAWins: 0, trainerBWins: 0, bestOf: 3 },
       // Shown on the scoreboard, for example "Round 3" or "Top 8"
@@ -311,6 +320,9 @@ class GameStateService {
     // (they were shown in the middle before they went over a bench: shown, and over Trainer A's until the producer says otherwise)
     const view = merged.featureView && typeof merged.featureView === 'object' ? merged.featureView : {};
     merged.featureView = { visible: view.visible !== false, side: view.side === 'trainerB' ? 'trainerB' : 'trainerA' };
+    // (the view of a pile came later still)
+    const pileView = merged.pileView && typeof merged.pileView === 'object' ? merged.pileView : {};
+    merged.pileView = { visible: pileView.visible === true, side: pileView.side === 'trainerB' ? 'trainerB' : 'trainerA', pile: PILES.includes(pileView.pile) ? pileView.pile : 'discard' };
     // Before TCGdex the setting held the one service there was ('pokemontcg') and nothing could change it: it is automatic now
     if (!(saved.settings && 'cardLanguage' in saved.settings) || !GAME.CARD_SOURCES.some((source) => source.key === merged.settings.apiProvider)) merged.settings.apiProvider = 'auto';
     if (!GAME.CARD_LANGUAGES.some(([code]) => code === merged.settings.cardLanguage)) merged.settings.cardLanguage = 'en';
@@ -418,9 +430,15 @@ class GameStateService {
   // ------------------------------------------------- discard pile and Lost Zone
 
   // Put a card on top of a pile ('discard' or 'lostZone'). Gives back the card as it is kept, or null when the pile is full.
+  // A card that does not say what kind it is takes the kind of the card of the same name in the trainer's decklist.
   addToPile(side, pile, card) {
     const list = this.state[side][pile];
-    const clean = cleanPileCard({ ...card, id: undefined });
+    let kind = pileKindOf(card);
+    if (!kind) {
+      const known = this.state[side].decklist.cards.find((entry) => (card.cardId && entry.cardId === card.cardId) || DECKLIST.nameKey(entry.name) === DECKLIST.nameKey(card.name));
+      if (known) kind = SUPERTYPE_KIND[known.supertype] || SUPERTYPE_KIND[known.section] || '';
+    }
+    const clean = cleanPileCard({ ...card, kind, id: undefined });
     if (!clean || list.length >= MAX_PILE) return null;
     list.push(clean);
     return clean;
@@ -457,14 +475,14 @@ class GameStateService {
       const card = deck.find((entry) => DECKLIST.basicEnergyOf(entry.name) === key && (entry.images.small || entry.images.large));
       return card ? card.images.small || card.images.large : '';
     };
-    const card = ({ cardId, name, image }) => ({ cardId, name, image });
+    const card = (kind) => ({ cardId, name, image }) => ({ cardId, name, image, kind });
     const label = (key) => `${GAME.ENERGY_TYPES.find((type) => type.key === key).label} Energy`;
     return [
-      ...(pokemon.stages || []).map(card),
-      card(pokemon),
-      ...(pokemon.tools || []).map(card),
-      ...(pokemon.specialEnergies || []).map(card),
-      ...(pokemon.energies || []).filter((key) => GAME.ENERGY_KEYS.includes(key)).map((key) => ({ cardId: '', name: label(key), image: energyPicture(key), energy: key }))
+      ...(pokemon.stages || []).map(card('pokemon')),
+      card('pokemon')(pokemon),
+      ...(pokemon.tools || []).map(card('trainer')),
+      ...(pokemon.specialEnergies || []).map(card('energy')),
+      ...(pokemon.energies || []).filter((key) => GAME.ENERGY_KEYS.includes(key)).map((key) => ({ cardId: '', name: label(key), image: energyPicture(key), energy: key, kind: 'energy' }))
     ].filter((entry) => entry.name);
   }
 
@@ -1023,6 +1041,16 @@ class GameStateService {
   // Which trainer's bench the feature cards go over: 'trainerA' or 'trainerB'
   setFeatureSide(side) {
     if (side === 'trainerA' || side === 'trainerB') this.state.featureView.side = side;
+  }
+
+  // Show a trainer's discard pile or Lost Zone over their bench, or hide it; omit `visible` to toggle, and `side` or `pile` to keep the one
+  // shown. Returns whether it is shown now.
+  setPileView({ visible, side, pile } = {}) {
+    const view = this.state.pileView;
+    if (side === 'trainerA' || side === 'trainerB') view.side = side;
+    if (PILES.includes(pile)) view.pile = pile;
+    view.visible = visible === undefined ? !view.visible : Boolean(visible);
+    return view.visible;
   }
 
   // ---------------------------------------------------------------- settings

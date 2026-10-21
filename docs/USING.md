@@ -42,6 +42,7 @@ Set the trainers' names and nationalities, pick their decks and Pokémon, and ke
 | `X` | Ability tokens: mark an ability used (abilities are not announced, only attacks) |
 | `L` | The **decklist** of the trainer: paste it and its cards are offered first |
 | `O` | The **discard pile and the Lost Zone** of the trainer |
+| `Shift` + `O` | Show the trainer's **discard pile over their bench** on the overlay, or hide it |
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack |
 | `T` | Announce a Top Deck |
@@ -114,6 +115,7 @@ Each trainer has a **discard pile** and a **Lost Zone**. The overlay shows each 
 - The **Discard** and **Lost Zone** buttons under the turn tracker (or `O`) open both piles, in two tabs, with the newest card first. **→ Lost Zone** (or **→ Discard**) moves a card to the other pile, and the little cross takes it out (a card that went back to the hand or the deck).
 - With a decklist, the cards of the deck are under the pile: **one click puts a card in**. **Search a card** finds any card, and stays open so you can put several in a row (two cards discarded with Ultra Ball, four Pokémon sent to the Lost Zone).
 - A knocked out Pokémon goes to the discard pile by itself, with what was attached to it (see *Knock outs*, above). A basic Energy shows as the icon of its type unless the decklist has a picture of it.
+- **Show over the bench** (in the pile's tab, or `Shift` + `O` for the discard pile) puts that pile on the overlay in the place of the trainer's bench, like the feature cards: the pictures of its cards, sorted into Pokémon, Trainers and Energy, with how many copies of each. **Hide from the overlay** (or `Shift` + `O` again) brings the bench back. Settings, Overlay has a switch for it.
 - **Next game** and **New match** empty both piles. Two producers can work on the same pile at once: each card is told apart, so neither takes the other's.
 
 ---
