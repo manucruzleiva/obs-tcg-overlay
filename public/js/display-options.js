@@ -40,7 +40,9 @@
         { key: 'supporterCounter', label: 'Supporter play counter' },
         { key: 'gxMarker', label: 'GX attack marker (once per game)', off: true },
         { key: 'vstarMarker', label: 'VSTAR Power marker (once per game)', off: true },
-        { key: 'locks', label: 'Item / Evolution lock badges' }
+        { key: 'locks', label: 'Item / Evolution lock badges' },
+        { key: 'discardPile', label: 'Discard pile (how many cards, and the last ones)' },
+        { key: 'lostZone', label: 'Lost Zone (how many cards, and the last ones)' }
       ]
     },
     {

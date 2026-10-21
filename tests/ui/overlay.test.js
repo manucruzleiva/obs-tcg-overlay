@@ -77,6 +77,67 @@ describe('overlay', { skip }, () => {
 
   afterEach(async () => { await page.context().close(); });
 
+  // The cards out of play: the discard pile and the Lost Zone of each trainer, next to the prize cards
+  describe('the discard pile and the Lost Zone', () => {
+    const read = (side, kind) => page.evaluate(([where, which]) => {
+      const pile = document.querySelector(`.trainer-${where} .pile-${which}`);
+      const cards = Array.from(pile.querySelectorAll('.pile-card')).filter((card) => !card.hidden);
+      return {
+        shown: !pile.hidden && !pile.classList.contains('opt-off') && pile.getBoundingClientRect().width > 0,
+        count: pile.querySelector('.pile-count').textContent,
+        cards: cards.map((card) => card.title),
+        energy: cards.map((card) => card.classList.contains('is-energy'))
+      };
+    }, [side, kind]);
+
+    it('shows nothing while they are empty', async () => {
+      for (const side of ['a', 'b']) {
+        assert.equal((await read(side, 'discard')).shown, false);
+        assert.equal((await read(side, 'lost-zone')).shown, false);
+      }
+      assert.ok(await page.evaluate(() => document.querySelector('.trainer-a .piles').hidden));
+    });
+
+    it('shows how many cards each has and the last three, the newest on top, and the cards of a knocked out Pokémon', async () => {
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .pile-discard .pile-count').textContent === '1');
+      assert.deepEqual(await read('a', 'discard'), { shown: true, count: '1', cards: ['Arven'], energy: [false] });
+      assert.equal((await read('a', 'lost-zone')).shown, false, 'an empty Lost Zone stays hidden');
+
+      // Pikachu is knocked out: it goes to the discard pile with its two Fire Energy and its Water Energy (shown by the icon of their type)
+      await send('action:trainerA', { action: 'knockOut', slot: -1 });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .pile-discard .pile-count').textContent === '5');
+      assert.deepEqual(await read('a', 'discard'), { shown: true, count: '5', cards: ['Fire Energy', 'Fire Energy', 'Water Energy'], energy: [true, true, true] });
+      assert.equal(await page.evaluate(() => document.querySelector('.trainer-a .pile-discard .pile-card:last-child img').getAttribute('src')), '/assets/energy/water.png');
+
+      await send('action:trainerB', { action: 'pileAdd', pile: 'lostZone', name: 'Comfey', image: IMG, count: 2 });
+      await page.waitForFunction(() => document.querySelector('.trainer-b .pile-lost-zone .pile-count').textContent === '2');
+      assert.deepEqual(await read('b', 'lost-zone'), { shown: true, count: '2', cards: ['Comfey', 'Comfey'], energy: [false, false] });
+      assert.equal((await read('b', 'discard')).shown, false);
+    });
+
+    it('can be switched off in the overlay settings, each on its own', async () => {
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG });
+      await send('action:trainerA', { action: 'pileAdd', pile: 'lostZone', name: 'Comfey', image: IMG });
+      await page.waitForFunction(() => !document.querySelector('.trainer-a .pile-lost-zone').hidden);
+      await send('action:settings', { action: 'update', display: { lostZone: false } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .pile-lost-zone').classList.contains('opt-off'));
+      assert.equal((await read('a', 'lost-zone')).shown, false);
+      assert.equal((await read('a', 'discard')).shown, true);
+      await send('action:settings', { action: 'update', display: { discardPile: false, lostZone: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .pile-discard').classList.contains('opt-off'));
+      assert.equal((await read('a', 'discard')).shown, false);
+      assert.equal((await read('a', 'lost-zone')).shown, true);
+    });
+
+    it('are emptied for the next game', async () => {
+      await send('action:trainerA', { action: 'pileAdd', pile: 'discard', name: 'Arven', image: IMG });
+      await page.waitForFunction(() => !document.querySelector('.trainer-a .pile-discard').hidden);
+      await send('action:match', { action: 'nextGame' });
+      await page.waitForFunction(() => document.querySelector('.trainer-a .pile-discard').hidden);
+    });
+  });
+
   // The penalty of a trainer (set on their own panel) is that many prize cards the OTHER trainer counts as taken: those are marked red on
   // the other trainer's side, and that trainer needs that many fewer to win.
   describe('a penalty', () => {

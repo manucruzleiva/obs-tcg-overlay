@@ -18,6 +18,7 @@ const { ImageCache, pictureOf } = require('./images');
 const { attacksOf, retreatOf } = require('./attacks');
 const { frontImages, field } = require('./scrydex');
 const { cardDetail } = require('./tcgdex');
+const DECKLIST = require('../../public/js/decklist');
 
 const FILE_VERSION = 1;
 const PAGE_SIZE = 250; // the most the card API allows
@@ -503,6 +504,22 @@ class CatalogService extends EventEmitter {
       source: 'library',
       library: index.label
     };
+  }
+
+  // The cards of the active library that have a name (accents, case and punctuation aside), newest first, as the card search returns them with
+  // the id of their set: what a line of a decklist is looked for in (see public/js/decklist.js). Empty when there is no library.
+  named(name) {
+    const index = this.index;
+    if (!index) return [];
+    if (!index.byName) {
+      index.byName = new Map();
+      for (const card of index.cards) {
+        const key = DECKLIST.nameKey(card.name);
+        if (!index.byName.has(key)) index.byName.set(key, []);
+        index.byName.get(key).push(card);
+      }
+    }
+    return (index.byName.get(DECKLIST.nameKey(name)) || []).map((card) => ({ ...summary(card), subtypes: card.subtypes.slice() }));
   }
 
   // One card by id from the active library, or null

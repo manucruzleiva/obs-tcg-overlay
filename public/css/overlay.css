@@ -412,6 +412,41 @@ html, body {
   letter-spacing: 0.12em;
 }
 
+/* the cards out of play: the discard pile and the Lost Zone, the last cards put in each fanned out (the newest on top), its name and how many */
+.piles { display: flex; gap: 10px; }
+.trainer-b .piles { flex-direction: row-reverse; }
+.pile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+}
+.pile-lost-zone { border-color: var(--lost-zone); box-shadow: inset 0 0 14px var(--lost-zone); }
+.pile-stack { position: relative; width: 58px; height: 56px; }
+.pile-card {
+  position: absolute;
+  top: 0;
+  width: 40px;
+  height: 56px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  box-shadow: 0 3px 8px var(--shadow);
+}
+.pile-card:nth-child(1) { left: 0; transform: rotate(-8deg); }
+.pile-card:nth-child(2) { left: 9px; transform: rotate(-3deg); }
+.pile-card:nth-child(3) { left: 18px; transform: rotate(2deg); }
+.pile-img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pile-card.is-energy { display: flex; align-items: center; justify-content: center; }
+.pile-card.is-energy .pile-img { width: 30px; height: 30px; object-fit: contain; }
+.pile-lost-zone .pile-card { filter: saturate(0.6) hue-rotate(20deg); }
+.pile-info { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pile-label { font: 700 11px/1 var(--font-labels, var(--font-display)); letter-spacing: 0.14em; color: var(--fg-secondary); }
+.pile-count { font: 800 22px/1 var(--font-numbers, var(--font-display)); font-variant-numeric: tabular-nums; }
+
 /* ---------------------------------------------------------------- Pokémon */
 
 .active { display: flex; gap: 24px; align-items: flex-start; }

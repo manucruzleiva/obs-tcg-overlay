@@ -13,6 +13,8 @@ const announcements = require('./services/announcements');
 const { attacksOf, retreatOf } = require('./services/attacks');
 const GAME = require('../public/js/game-data');
 const DECK = require('../public/js/deck');
+const DECKLIST = require('../public/js/decklist');
+const { PILES } = require('./services/gamestate');
 
 const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
 
@@ -55,6 +57,37 @@ function prizeCard(card) {
   const name = text(card.name ?? '', 'name', 80);
   if (!name) throw new ActionError('a card needs a name');
   return { cardId: text(card.cardId ?? '', 'cardId', 64), name, image: imageUrl(card.image, 'image') };
+}
+
+// The two piles of cards out of play: the discard pile and the Lost Zone
+const PILE_LABEL = { discard: 'discard pile', lostZone: 'Lost Zone' };
+// (both trainers' piles, which a new game empties)
+const PILE_TARGETS = ['trainerA', 'trainerB'].flatMap((side) => PILES.map((pile) => `${side}.${pile}`));
+function pileName(value, name = 'pile') {
+  if (!PILES.includes(value)) throw new ActionError(`${name} must be ${PILES.join(' or ')}`);
+  return value;
+}
+// Where the cards of a knocked out Pokémon go: the discard pile unless the sender says the Lost Zone, or 'none'
+function koPile(value) {
+  if (value === undefined) return 'discard';
+  if (value === 'none') return null;
+  return pileName(value, 'pile');
+}
+
+// The cards of a decklist, found in the card library on this computer when there is one (a card it has not got stays by its name)
+function readDecklist(gs, text) {
+  const { cards, skipped } = DECKLIST.parse(text);
+  const catalog = gs.pokemonTCG && gs.pokemonTCG.catalog;
+  const found = cards.map((entry) => {
+    if (!catalog || typeof catalog.named !== 'function') return entry;
+    // a basic Energy is "Fire Energy" in some sets and "Basic Fire Energy" in others
+    const names = DECKLIST.basicEnergyOf(entry.name) ? [entry.name, `Basic ${entry.name}`] : [entry.name];
+    const card = DECKLIST.pickCard(entry, names.flatMap((name) => catalog.named(name)));
+    if (!card) return entry;
+    const subtypes = Array.isArray(card.subtypes) ? card.subtypes : String(card.subtypes || '').split(', ').filter(Boolean);
+    return { ...entry, cardId: card.id, supertype: card.supertype || '', subtypes, images: card.images || {} };
+  });
+  return { cards: found, skipped };
 }
 
 const penaltyText = (count) => (count === 0 ? 'none' : `${count} prize card${count === 1 ? '' : 's'} in red`);
@@ -156,6 +189,74 @@ const TRAINER = {
     run: (gs, side, p) => gs.setDeckIcon(side, text(p.icon ?? '', 'icon', DECK.MAX_LENGTH)),
     label: (gs, side) => `${who(gs, side)} deck picture → ${gs.state[side].deckIcon || 'automatic'}`
   },
+  // The decklist, as Pokémon TCG Live exports it: its cards are offered first when a card of this trainer is chosen. Empty text takes it away.
+  setDecklist: {
+    targets: (side) => [`${side}.decklist`],
+    run: (gs, side, p, out, ctx) => {
+      const textValue = typeof p.text === 'string' ? p.text.slice(0, DECKLIST.MAX_TEXT) : null;
+      if (textValue === null) throw new ActionError('text must be text');
+      const { cards, skipped } = readDecklist(gs, textValue);
+      if (textValue.trim() && cards.length === 0) throw new ActionError('No cards were found in that list. Paste it as Pokémon TCG Live exports it: one card on each line, such as "4 Dragapult ex TWM 130"');
+      gs.setDecklist(side, cards.length ? textValue.trim() : '', cards);
+      ctx.total = DECKLIST.total(cards);
+      ctx.missing = cards.filter((card) => !card.cardId).length;
+      ctx.skipped = skipped.length;
+    },
+    label: (gs, side, p, ctx) => (ctx.total
+      ? `${who(gs, side)} decklist: ${ctx.total} cards${ctx.missing ? ` (${ctx.missing} not in the card library)` : ''}${ctx.skipped ? ` · ${ctx.skipped} line${ctx.skipped === 1 ? '' : 's'} not read` : ''}`
+      : `${who(gs, side)} decklist removed`)
+  },
+
+  // The discard pile and the Lost Zone. A card is put on top of one, taken out of it, or moved to the other; the cards are told apart by
+  // the id each gets, so two producers working on one pile never take each other's card.
+  pileAdd: {
+    targets: () => null,
+    run: (gs, side, p, out, ctx) => {
+      const pile = pileName(p.pile);
+      const name = text(p.name ?? '', 'name', 80);
+      if (!name) throw new ActionError('a card needs a name');
+      const energy = p.energy === undefined || p.energy === '' ? undefined : text(p.energy, 'energy', 20);
+      if (energy !== undefined && !GAME.ENERGY_KEYS.includes(energy)) throw new ActionError('unknown energy type');
+      const count = p.count === undefined ? 1 : integer(p.count, 'count', 1, 20);
+      const card = { cardId: text(p.cardId ?? '', 'cardId', 64), name, image: imageUrl(p.image, 'image'), energy };
+      let added = 0;
+      for (let i = 0; i < count; i++) if (gs.addToPile(side, pile, card)) added++;
+      if (added === 0) throw new ActionError(`The ${PILE_LABEL[pile]} is full`);
+      Object.assign(ctx, { pile, name, added });
+    },
+    label: (gs, side, p, ctx) => `${ctx.added > 1 ? `${ctx.added} × ` : ''}${ctx.name} → ${who(gs, side)}'s ${PILE_LABEL[ctx.pile]}`
+  },
+  pileRemove: {
+    targets: (side, p) => [`${side}.${p.pile}.${p.id}`],
+    run: (gs, side, p, out, ctx) => {
+      const pile = pileName(p.pile);
+      const card = gs.removeFromPile(side, pile, text(p.id ?? '', 'id', 64));
+      if (!card) throw new ActionError(`That card is no longer in the ${PILE_LABEL[pile]}`);
+      Object.assign(ctx, { pile, name: card.name });
+    },
+    label: (gs, side, p, ctx) => `${ctx.name} taken out of ${who(gs, side)}'s ${PILE_LABEL[ctx.pile]}`
+  },
+  pileMove: {
+    targets: (side, p) => [`${side}.${p.from}.${p.id}`],
+    run: (gs, side, p, out, ctx) => {
+      const from = pileName(p.from, 'from');
+      const to = pileName(p.to, 'to');
+      if (from === to) throw new ActionError('that is the same pile');
+      const card = gs.movePileCard(side, from, text(p.id ?? '', 'id', 64), to);
+      if (!card) throw new ActionError(`That card is no longer in the ${PILE_LABEL[from]}, or the ${PILE_LABEL[to]} is full`);
+      Object.assign(ctx, { to, name: card.name });
+    },
+    label: (gs, side, p, ctx) => `${ctx.name} → ${who(gs, side)}'s ${PILE_LABEL[ctx.to]}`
+  },
+  pileClear: {
+    targets: (side, p) => [`${side}.${p.pile}`],
+    run: (gs, side, p, out, ctx) => {
+      ctx.pile = pileName(p.pile);
+      gs.clearPile(side, ctx.pile);
+    },
+    label: (gs, side, p, ctx) => `${who(gs, side)}'s ${PILE_LABEL[ctx.pile]} emptied`
+  },
+
   setRecord: {
     targets: () => null,
     run: (gs, side, p) => gs.setRecord(side, {
@@ -459,12 +560,13 @@ const TRAINER = {
 
       ctx.name = pokemon.name || 'Pokémon';
       ctx.prizes = prizes;
-      gs.knockOut(side, slot, { prizesTaken: prizes, clear: p.clear !== false });
+      ctx.pile = p.clear !== false ? koPile(p.pile) : null;
+      gs.knockOut(side, slot, { prizesTaken: prizes, clear: p.clear !== false, pile: ctx.pile });
       const a = announcements.build(gs.state, 'ko', { side, isOOC: slot !== -1, slot });
       if (a) out.push(a);
     },
     label: (gs, side, p, ctx) =>
-      `${ctx.name} knocked out (${who(gs, opponent(side))} takes ${ctx.prizes} prize${ctx.prizes === 1 ? '' : 's'})`
+      `${ctx.name} knocked out (${who(gs, opponent(side))} takes ${ctx.prizes} prize${ctx.prizes === 1 ? '' : 's'})${ctx.pile === 'lostZone' ? ' · to the Lost Zone' : ''}`
   },
 
   // Positive amounts are damage, negative amounts heal
@@ -648,7 +750,8 @@ const MATCH = {
       });
       if (new Set(checked.map((entry) => `${entry.side}:${entry.slot}`)).size !== checked.length) throw new ActionError('a Pokémon is in the list twice');
       const clear = p.clear !== false;
-      for (const entry of checked) gs.knockOut(entry.side, entry.slot, { prizesTaken: entry.prizes, clear });
+      const pile = clear ? koPile(p.pile) : null;
+      for (const entry of checked) gs.knockOut(entry.side, entry.slot, { prizesTaken: entry.prizes, clear, pile });
       ctx.checked = checked;
       const a = announcements.build(gs.state, 'ko', checked.length === 1
         ? { side: checked[0].side, isOOC: checked[0].slot !== -1, slot: checked[0].slot }
@@ -674,14 +777,14 @@ const MATCH = {
     label: (gs) => `Turn → ${who(gs, gs.state.trainerA.isTurn ? 'trainerA' : 'trainerB')}`
   },
   startGame: {
-    targets: () => ['game', 'score', 'trainerA.prizes', 'trainerB.prizes'],
+    targets: () => ['game', 'score', 'trainerA.prizes', 'trainerB.prizes', ...PILE_TARGETS],
     run: (gs) => gs.startGame(),
     label: () => 'Game started'
   },
-  // The next game of the match: both trainers' prize cards and penalties start again and the once-per-game markers come back. The score
-  // and the names stay (startGame, above, starts a whole new match: the score goes back to 0 too).
+  // The next game of the match: both trainers' prize cards and penalties start again, the once-per-game markers come back and the discard piles
+  // and the Lost Zones are emptied. The score, the names and the decklists stay (startGame, above, starts a whole new match: the score goes back to 0 too).
   nextGame: {
-    targets: () => ['game', 'trainerA.prizes', 'trainerB.prizes', 'trainerA.penalty', 'trainerB.penalty'],
+    targets: () => ['game', 'trainerA.prizes', 'trainerB.prizes', 'trainerA.penalty', 'trainerB.penalty', ...PILE_TARGETS],
     run: (gs) => gs.nextGame(),
     label: (gs) => {
       const { trainerAWins, trainerBWins } = gs.state.matchScore;

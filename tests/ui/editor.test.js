@@ -392,7 +392,7 @@ describe('design editor', { skip }, () => {
     beforeEach(async () => { await openEditorFor('Panel Test', { layout: { scoreboard: { x: 0, y: 30, scale: 1 } } }); });
 
     it('lists the pieces, marks the ones that have moved, and edits numbers', async () => {
-      assert.equal(await page.locator('.block-item').count(), 17, 'all 17 pieces');
+      assert.equal(await page.locator('.block-item').count(), 19, 'all 19 pieces');
       assert.equal(await page.locator('.block-item.moved').count(), 1);
       assert.equal(await page.locator('.block-item.moved').textContent(), 'Scoreboard');
 

@@ -7,6 +7,7 @@ import { h, icon, replace, energyStyle } from './dom.js';
 const GAME = window.OTO_GAME;
 const COUNTRIES = window.OTO_COUNTRIES;
 const DECK = window.OTO_DECK;
+const DECKLIST = window.OTO_DECKLIST;
 const ENERGY = Object.fromEntries(GAME.ENERGY_TYPES.map((type) => [type.key, type]));
 
 const SIDE_LABEL = { trainerA: 'Trainer A', trainerB: 'Trainer B' };
@@ -142,6 +143,19 @@ export class TrainerView {
         this.toggle('Item lock (I)', (on) => act('toggleItemLock', { enabled: on }), (t) => { this.itemToggle = t; }),
         this.toggle('Evolution lock (V)', (on) => act('toggleEvoLock', { enabled: on }), (t) => { this.evoToggle = t; })));
 
+    // the decklist, and the cards out of play: the discard pile and the Lost Zone (each opens its dialog; the numbers follow the game)
+    const count = () => h('span', { class: 'count' });
+    this.decklistButton = h('button', { class: 'btn tiny pile-btn', type: 'button', title: 'Paste the decklist: its cards are offered first when you choose a card for this trainer (L)', onclick: () => app.openDecklist(side) },
+      icon('list', 14), h('span', { class: 'pile-label' }, 'Decklist'), count());
+    this.pileButtons = {
+      discard: h('button', { class: 'btn tiny pile-btn', type: 'button', dataset: { pile: 'discard' }, title: 'The discard pile: what is in it shows on the overlay (O)', onclick: () => app.openPiles(side, 'discard') },
+        icon('trash', 14), h('span', { class: 'pile-label' }, 'Discard'), count()),
+      lostZone: h('button', { class: 'btn tiny pile-btn', type: 'button', dataset: { pile: 'lostZone' }, title: 'The Lost Zone: what is in it shows on the overlay', onclick: () => app.openPiles(side, 'lostZone') },
+        icon('drop', 14), h('span', { class: 'pile-label' }, 'Lost Zone'), count())
+    };
+    const piles = h('section', { class: 'block piles-block compact' },
+      h('div', { class: 'pile-row' }, this.decklistButton, this.pileButtons.discard, this.pileButtons.lostZone));
+
     // Pokémon
     this.activeBox = h('div', { class: 'mon-slot active-slot' });
     this.benchGrid = h('div', { class: 'bench-grid' });
@@ -161,7 +175,7 @@ export class TrainerView {
     this.enableDragAndDrop(pokemon);
 
     return h('section', { class: `trainer-panel ${side === 'trainerA' ? 'side-a' : 'side-b'}`, dataset: { side } },
-      head, identity, h('div', { class: 'panel-row' }, prizes, turnBlock), pokemon);
+      head, identity, h('div', { class: 'panel-row' }, prizes, turnBlock), piles, pokemon);
   }
 
   // A labelled on/off switch; `bind` receives it so update() can set it
@@ -307,6 +321,17 @@ export class TrainerView {
       const count = this.tokens[kind].querySelector('.count');
       count.textContent = counter.available > 1 ? `${counter.used}/${counter.available}` : used ? 'used' : 'ready';
       count.classList.toggle('word', counter.available <= 1);
+    }
+
+    // the decklist and the piles
+    const decklist = (trainer.decklist && trainer.decklist.cards) || [];
+    const deckTotal = DECKLIST.total(decklist);
+    this.decklistButton.querySelector('.count').textContent = deckTotal ? String(deckTotal) : 'none';
+    this.decklistButton.classList.toggle('on', deckTotal > 0);
+    for (const [pile, button] of Object.entries(this.pileButtons)) {
+      const size = (trainer[pile] || []).length;
+      button.querySelector('.count').textContent = String(size);
+      button.classList.toggle('on', size > 0);
     }
 
     // Pokémon. The part holding an HP box being typed in is left alone, so a change by someone else

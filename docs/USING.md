@@ -40,6 +40,8 @@ Set the trainers' names and nationalities, pick their decks and Pokémon, and ke
 | `K` | **Knock out**: pick one Pokémon or several, and how many prizes the opponent takes |
 | `S` | Put a Stadium in play. `Shift` + `S`: a Supporter was played this turn |
 | `X` | Ability tokens: mark an ability used (abilities are not announced, only attacks) |
+| `L` | The **decklist** of the trainer: paste it and its cards are offered first |
+| `O` | The **discard pile and the Lost Zone** of the trainer |
 | `I` / `V` | Item lock / Evolution lock on or off |
 | `C` | Announce an attack |
 | `T` | Announce a Top Deck |
@@ -59,6 +61,7 @@ Other things that make a match easier:
 - **Autosave:** if OTO closes unexpectedly, the match is back when you open it again.
 - **Activity** (the button next to Draft mode and Preview) opens a popup with everything any producer has done, with their names, newest first. It follows what happens while it is open. Undo and redo say what they did.
 - **Deck or GLC type:** under each trainer's name, write the deck (`Charizard ex`, `Lightning GLC`, `Mega Lucario`). Suggestions start with the most played decks of the moment (from [Limitless TCG](https://limitlesstcg.com/decks); Settings, Cards, **Popular decks**, **Update** reads the list again), then energy types and every Pokémon. The overlay shows the deck next to the record, with a picture: the Pokémon the name mentions or the icon of its energy type. Use the **Picture** box to pick another one (`Gardevoir` for a deck called `Control`) or `none`. The line under the boxes says what will show.
+- **Decklist:** the **Decklist** button under each trainer's turn tracker (or `L`) takes the list as Pokémon TCG Live exports it (*Export* in the deck, then paste), or as Limitless TCG shows it: one card on each line, `4 Dragapult ex TWM 130`, under the headings *Pokémon*, *Trainer* and *Energy*. The dialog reads it as you type and says which lines it could not read. Once it is saved, every card picker for that trainer (Active, bench, evolution, tool, Special Energy, prize cards, discard pile, and the Stadium for the player who plays it) shows **the cards of the deck that fit first**, narrowed to what you type. The cards are found in the card library on this computer, so it works without internet; a card the library has not got stays in the list by its name, and clicking it searches for it. The decklist stays for the next game and a new match; **Remove** takes it away. It never shows on the overlay.
 - **Nationality:** type a code (`USA`, `JP`) or a country name (`Chile`). With *Nationality as a flag emoji* on, the overlay shows the flag.
 
 ---
@@ -87,7 +90,7 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 
 ### Knock outs and a lost board
 
-- `K` opens a list of Pokémon of both trainers. Tick **one or several** (a double or triple knock out) and give how many prizes each is worth: the overlay announces it (*DOUBLE KO!*), clears the slots and offers the next Active Pokémon.
+- `K` opens a list of Pokémon of both trainers. Tick **one or several** (a double or triple knock out) and give how many prizes each is worth: the overlay announces it (*DOUBLE KO!*), clears the slots and offers the next Active Pokémon. Their cards (the earlier stages, the Pokémon, its tools and its Energy) go to the **discard pile**; *Their cards go to* can send them to the **Lost Zone** instead, or nowhere.
 - A player who has **no Pokémon left on the table** after a knock out or after one is removed from the board **loses at once**: the other player gets the victory (see *Victory comes by itself*, below, for how that shows and how to undo it).
 
 ---
@@ -97,10 +100,21 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 - **Prize cards** are six buttons in each player's box, one for each prize card: **click the very one the player took** and only that one is taken (the others stay as they are); click it again to give it back. The keys take them in order: `↓` takes the last prize card still there for the player whose turn it is, `↑` gives back the one taken last, and `Shift` is for the other player. Two producers can take two different prize cards at the same time. The prize cards start **face down** at the beginning of each game; switch **Hide prizes** off to turn them face up.
 - **Set prizes** opens the six prize cards of a player in a small dialog: click a card to choose it with the search, and the little button on its corner takes it off again. The overlay then shows those cards where the prize cards are, and the prize card buttons in the control panel show them too.
 - **Penalties** are set on the player who got one: that many of the **other** player's prize cards show in red, and that player needs that many fewer to win.
-- **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. It is a step of its own that **OTO does by itself**: the **Activity** list shows it in green, with an *automatic* label and the name *OTO (automatic)* instead of a producer's (for example *Ash won the game by itself (took the last prize card): score 1–0*), right above the prize card or the knock out that caused it. **Undo** (`Ctrl+Z`) takes back only that game win (the prize card stays taken, so the producer can correct a mistake), and a second undo takes the prize card back; **Redo** does them again in the same order. A draft that is sent is the same: the changes are one step and the game won, if there is one, is the next. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the score and names stay). **New match** starts over with the score at 0.
+- **Victory comes by itself.** When a player has taken the prize cards they need (all of them, or all but the other player's penalty) the victory banner shows and that player gets a game win. It is a step of its own that **OTO does by itself**: the **Activity** list shows it in green, with an *automatic* label and the name *OTO (automatic)* instead of a producer's (for example *Ash won the game by itself (took the last prize card): score 1–0*), right above the prize card or the knock out that caused it. **Undo** (`Ctrl+Z`) takes back only that game win (the prize card stays taken, so the producer can correct a mistake), and a second undo takes the prize card back; **Redo** does them again in the same order. A draft that is sent is the same: the changes are one step and the game won, if there is one, is the next. **Next game** starts the next one (prizes and penalties start again, the GX and VSTAR markers come back, the discard piles and Lost Zones are emptied; the score, the names and the decklists stay). **New match** starts over with the score at 0.
 - **Winner** (`W`, in the Hype box) shows the victory banner for the player whose turn it is. It is only the banner: the game and the score do not change. **Game start** (`G`) shows the start banner.
 - **The GX attack and the VSTAR Power** (Settings, Overlay; they are off to begin with) show on the overlay as their pictures, in color while they are ready and grayed out once they are used. Click their token in the **Turn tracker** to mark one used.
 - **Pause** (`P`) puts a PAUSED banner in the middle of the overlay and grays out the rest until you resume.
+
+---
+
+## Discard pile and Lost Zone
+
+Each trainer has a **discard pile** and a **Lost Zone**. The overlay shows each one next to the prize cards, with how many cards it holds and the last three put in it; a pile that is empty is not shown. Settings, Overlay has a switch for each.
+
+- The **Discard** and **Lost Zone** buttons under the turn tracker (or `O`) open both piles, in two tabs, with the newest card first. **→ Lost Zone** (or **→ Discard**) moves a card to the other pile, and the little cross takes it out (a card that went back to the hand or the deck).
+- With a decklist, the cards of the deck are under the pile: **one click puts a card in**. **Search a card** finds any card, and stays open so you can put several in a row (two cards discarded with Ultra Ball, four Pokémon sent to the Lost Zone).
+- A knocked out Pokémon goes to the discard pile by itself, with what was attached to it (see *Knock outs*, above). A basic Energy shows as the icon of its type unless the decklist has a picture of it.
+- **Next game** and **New match** empty both piles. Two producers can work on the same pile at once: each card is told apart, so neither takes the other's.
 
 ---
 

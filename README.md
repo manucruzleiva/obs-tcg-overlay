@@ -64,6 +64,7 @@ That is all. Open the control panel, type the trainers' names and run the match.
 ### What you can do
 
 - **Run a whole match from the keyboard.** Prizes, damage, heal, energy, evolve and go back a stage, tools and maximum HP, knock outs (several at once), moving damage between Pokémon, abilities, special conditions, Stadium, feature cards for the commentary, pause, undo and redo. Press **`?`** in the control panel for every shortcut.
+- **Decklists, discard pile and Lost Zone.** Paste each player's decklist from Pokémon TCG Live and its cards are offered first whenever you choose a card. The discard pile and the Lost Zone of each player show on the overlay, and a knocked out Pokémon goes to the discard pile with what was attached to it.
 - **Produce together.** Share a link and other people drive the same match from their own device. Clicks are never counted twice, undo is shared, and a shared **draft mode** lets the team prepare changes and send them to the overlay all at once. The host can rename or remove producers and set a password from the tray icon.
 - **Several overlays for one match.** A second (or third) overlay with its own design and options, for a vertical stream next to the horizontal one.
 - **Choose what the audience sees.** A switch for every piece of the overlay, banners and full-screen effects for every big moment, and optional sound effects.
