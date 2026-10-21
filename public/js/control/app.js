@@ -61,6 +61,8 @@ export const KEYMAP = [
   { group: 'Hype', keys: ['W'], label: 'Winner banner for the player whose turn it is (the game and the score do not change)', test: plain('w'), run: (app) => app.announceWinner() },
   { group: 'Hype', keys: ['G'], label: 'Game start banner', test: plain('g'), run: (app) => app.announceGameStart() },
   { group: 'Hype', keys: ['P'], label: 'Pause the game, or resume it (the overlay is grayed out while it is paused)', test: plain('p'), run: (app) => app.togglePause() },
+  { group: 'Hype', keys: ['F'], label: 'Show the feature cards, or hide them (they cover a bench while they are shown)', test: plain('f'), run: (app) => app.toggleFeatures() },
+  { group: 'Hype', keys: ['Shift', 'F'], label: 'The feature cards over the bench of the other trainer', test: shifted('f'), run: (app) => app.switchFeatureSide() },
 
   { group: 'History', keys: ['Ctrl', 'Z'], label: 'Undo', test: (e) => ctrl('z')(e) && !e.shiftKey, run: (app) => app.undo() },
   { group: 'History', keys: ['Ctrl', 'Y'], label: 'Redo (also Ctrl+Shift+Z)', test: (e) => ctrl('y')(e) || (ctrl('z')(e) && e.shiftKey), run: (app) => app.redo() },
@@ -161,6 +163,18 @@ class App {
 
   togglePause() {
     return this.act('action:match', { action: 'togglePause', enabled: !(this.state && this.state.paused === true) });
+  }
+
+  // Show the feature cards, or hide them; like the pause, it says what it wants
+  toggleFeatures() {
+    const view = this.state && this.state.featureView;
+    return this.act('action:card', { action: 'toggleFeatures', enabled: !(view && view.visible !== false) });
+  }
+
+  // The feature cards over the bench of the other trainer
+  switchFeatureSide() {
+    const view = this.state && this.state.featureView;
+    return this.act('action:card', { action: 'setFeatureSide', side: view && view.side === 'trainerB' ? 'trainerA' : 'trainerB' });
   }
 
   // Whom the prize shortcuts are for: the player whose turn it is, or with Shift the other one. Until somebody has the turn they are

@@ -137,7 +137,8 @@ describe('design editor', { skip }, () => {
       assert.equal(await page.$eval('.editor-frame', (node) => `${node.offsetWidth}x${node.offsetHeight}`), '1920x1080');
 
       const shown = await page.$$eval('.editor-box:not([hidden])', (nodes) => nodes.map((node) => node.dataset.key).sort());
-      assert.ok(shown.includes('scoreboard') && shown.includes('trainerA.active') && shown.includes('trainerB.bench') && shown.includes('stadium') && shown.includes('features'), shown.join(' '));
+      assert.ok(shown.includes('scoreboard') && shown.includes('trainerA.active') && shown.includes('trainerA.bench') && shown.includes('trainerB.bench') && shown.includes('stadium'), shown.join(' '));
+      assert.ok(!shown.includes('features'), 'the feature cards cover a bench: they show when the Feature cards switch is on');
       assert.ok(!shown.includes('logo'), 'a design with no logo has no logo to move');
       assert.equal(await page.locator('.editor-box[data-key="logo"]').isHidden(), true);
       // each box is where the overlay really has the piece
@@ -147,6 +148,30 @@ describe('design editor', { skip }, () => {
       // the made-up match fills everything
       assert.equal(await frame.locator('.sb-name').first().textContent(), 'Ash');
       assert.equal(await frame.locator('.trainer-b .prize.penalty').count(), 1, 'even a penalty (Ash has one: Gary\'s prize card is red), so it can be placed');
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('shows the feature cards when asked, over the bench they go over on air, and hides them again so that bench can be placed', async () => {
+      const shown = () => page.$$eval('.editor-box:not([hidden])', (nodes) => nodes.map((node) => node.dataset.key));
+      const toggle = page.locator('.editor-toolbar .switch', { hasText: 'Feature cards' });
+      assert.equal(await page.getByRole('checkbox', { name: 'Show the feature cards, over the bench they go over' }).isChecked(), false);
+      await toggle.click();
+      await page.waitForFunction(() => [...document.querySelectorAll('.editor-box:not([hidden])')].some((node) => node.dataset.key === 'features'));
+      const keys = await shown();
+      assert.ok(keys.includes('features') && !keys.includes('trainerA.bench') && keys.includes('trainerB.bench'), keys.join(' '));
+      assert.equal(await overlayFrame().$eval('.features', (node) => node.parentElement.classList.contains('trainer-a')), true, 'over Trainer A\'s bench, as on air');
+      assert.equal(await overlayFrame().locator('.features .feature').count(), 2, 'the sample\'s two cards');
+
+      // over the other bench when the live game has them there
+      await page.evaluate(() => window.oto.act('action:card', { action: 'setFeatureSide', side: 'trainerB' }));
+      await page.waitForFunction(() => window.oto.conn.live.featureView.side === 'trainerB');
+      await page.evaluate(() => window.oto.designEditor.canvas.draw());
+      await overlayFrame().waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+
+      await toggle.click();
+      await page.waitForFunction(() => ![...document.querySelectorAll('.editor-box:not([hidden])')].some((node) => node.dataset.key === 'features'));
+      assert.ok((await shown()).includes('trainerB.bench'));
+      await page.evaluate(() => window.oto.act('action:card', { action: 'setFeatureSide', side: 'trainerA' }));
       assert.deepEqual(page.problems, []);
     });
 

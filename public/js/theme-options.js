@@ -91,7 +91,7 @@
     { key: 'scoreboard', label: 'Scoreboard', selector: '.scoreboard' },
     ...trainerBlocks('trainerA', 'A'),
     ...trainerBlocks('trainerB', 'B'),
-    { key: 'features', label: 'Feature cards', selector: '.center .features' },
+    { key: 'features', label: 'Feature cards', selector: '.features' }, // (over the bench of a trainer: in that trainer's piece)
     { key: 'stadium', label: 'Stadium', selector: '.center .stadium' },
     { key: 'toasts', label: 'Announcement banners', selector: '.toasts .toast-slot' }
   ];

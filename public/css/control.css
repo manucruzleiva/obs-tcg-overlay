@@ -509,6 +509,15 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .feature-signs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .feature-signs .hint { margin-right: 4px; }
 .sign-btn { min-width: 34px; font-weight: 800; }
+/* shown or hidden, and over whose bench: lit while they are shown, and the trainer's button in the trainer's color */
+.feature-view { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.feature-show.on { background: rgba(124, 140, 255, 0.22); border-color: var(--accent); color: var(--fg-primary); }
+.feature-over { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; }
+.feature-over .hint { margin-right: 2px; font-size: 12px; color: var(--fg-muted); white-space: nowrap; }
+.side-btn { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.side-btn.on.side-a { background: var(--trainer-a); color: #07101c; border-color: transparent; }
+.side-btn.on.side-b { background: var(--trainer-b); color: #1a0710; border-color: transparent; }
+.feature-list.off-air { opacity: 0.55; }
 .feature-item.feature-sign { justify-content: space-between; padding: 2px 10px 2px 14px; background: rgba(251, 191, 36, 0.12); }
 .feature-sign .sign { font: 800 22px/1 var(--font-display); color: var(--accent); }
 .stadium-info { flex: 1; min-width: 0; }

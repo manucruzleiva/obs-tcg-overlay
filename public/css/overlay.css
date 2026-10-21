@@ -854,7 +854,51 @@ html, body {
 .mon.mini .art .statuses { gap: 2px; }
 .mon.mini .status-icon.no-icon::after { font-size: 8px; }
 
-/* ---------------------------------------------------------------- center: feature cards and stadium */
+/* ---------------------------------------------------------------- feature cards: over the bench of a trainer */
+
+/* overlay.js puts them in the piece of the trainer whose bench they go over, after the bench, and marks that trainer .features-on (and the stage
+   .features-on-a or .features-on-b) while they are shown: the bench is hidden meanwhile, and the cards take its place under the Active Pokémon.
+   They are pictures, without their names. Cards joined by a sign (a combo) are a stack, .feature-stack: each card over the one before it, a
+   little further on and lower, with the sign on a badge between them. (The rule for the bench names the stage, so a design that sets the
+   bench's display still loses it while the cards cover it; a design can bring it back with the same selector.) */
+#stage .trainer.features-on .bench { display: none; }
+.features { flex: none; display: flex; flex-wrap: wrap; gap: 18px 22px; align-items: flex-start; max-width: 100%; }
+.trainer-b .features { justify-content: flex-end; }
+.feature { position: relative; flex: none; margin: 0; width: 176px; }
+.feature-img {
+  display: block;
+  width: 176px;
+  height: 246px;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 18px 40px var(--shadow);
+  background: var(--bg-card);
+}
+/* a sign that waits for the next card (or between two cards a design does not stack) */
+.feature-sep { align-self: center; min-width: 28px; text-align: center; font: 800 44px/1 var(--font-labels, var(--font-display)); color: var(--accent); text-shadow: 0 3px 14px var(--shadow); }
+.feature-stack { display: flex; align-items: flex-start; }
+.feature-stack > .feature ~ .feature { margin-left: -80px; margin-top: 18px; }
+.feature-stack > .feature ~ .feature ~ .feature { margin-top: 36px; }
+.feature-stack > .feature-sep {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-width: 0;
+  height: 48px;
+  margin: 0 56px 0 -104px; /* (in the middle of the left edge of the next card, which comes 80 px over the card before it) */
+  border-radius: 50%;
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 26px;
+  text-shadow: none;
+}
+.feature-stack > .feature-sep:last-child { margin: 0 0 0 -24px; } /* (one that waits for its card: on the edge of the last card) */
+
+/* ---------------------------------------------------------------- center: the Stadium */
 
 .center {
   position: absolute;
@@ -868,32 +912,6 @@ html, body {
   justify-content: space-between;
   pointer-events: none;
 }
-
-.features { display: flex; gap: 22px; justify-content: center; align-items: flex-start; }
-.feature { margin: 0; width: 176px; }
-/* the signs between the cards of a combo: the cards are a little smaller to make room */
-.feature-sep { align-self: center; min-width: 28px; text-align: center; font: 800 44px/1 var(--font-labels, var(--font-display)); color: var(--accent); text-shadow: 0 3px 14px var(--shadow); }
-.features.combo { gap: 10px; }
-.features.combo .feature { width: 150px; }
-.features.combo .feature-img { width: 150px; height: 209px; }
-.feature-img {
-  display: block;
-  width: 176px;
-  height: 246px;
-  object-fit: cover;
-  border-radius: 12px;
-  box-shadow: 0 18px 40px var(--shadow);
-  background: var(--bg-card);
-}
-.feature-caption {
-  margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  text-align: center;
-}
-.feature-name { font: 700 17px/1.15 var(--font-names, var(--font-display)); text-transform: uppercase; }
 
 .stadium { margin: 0 0 0 0; margin-top: auto; text-align: center; }
 /* The part of the Stadium's card that shows (--sa-*, as fractions of the card: x, y, w, h): the picture unless a design says otherwise.
@@ -935,8 +953,8 @@ html, body {
 /* ---------------------------------------------------------------- a mobile screen */
 
 /* A design for a phone held upright has a tall stage, 1080 x 1920 (overlay.js sets .portrait): the scoreboard on top, Trainer A under it, Trainer B
-   at the bottom and the middle (Stadium and feature cards side by side) between them, each trainer using the whole width. The bench is a row
-   (overlay.js). What is left in the middle is room for a camera feed, a reserved space. A logo takes the first row, and what is under it moves
+   at the bottom and the middle (the Stadium) between them, each trainer using the whole width. The bench is a row (overlay.js), and the feature
+   cards take its place while they are shown. What is left in the middle is room for a camera feed, a reserved space. A logo takes the first row, and what is under it moves
    down to make room (--shift). */
 #stage.portrait { --shift: 0px; }
 .has-logo #stage.portrait { --shift: 110px; }
@@ -959,6 +977,13 @@ html, body {
   align-items: center;
 }
 #stage.portrait .stadium { margin-top: 0; }
+/* the feature cards are smaller there, so they fit where the bench row was, between a trainer and the middle */
+#stage.portrait .feature { width: 132px; }
+#stage.portrait .feature-img { width: 132px; height: 184px; }
+#stage.portrait .feature-stack > .feature ~ .feature { margin-left: -60px; margin-top: 12px; }
+#stage.portrait .feature-stack > .feature ~ .feature ~ .feature { margin-top: 24px; }
+#stage.portrait .feature-stack > .feature-sep { margin: 0 36px 0 -84px; }
+#stage.portrait .feature-stack > .feature-sep:last-child { margin: 0 0 0 -24px; }
 #stage.portrait .toast-slot { top: 930px; width: 900px; margin-left: -450px; }
 
 /* ---------------------------------------------------------------- a paused game */

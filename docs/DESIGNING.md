@@ -95,7 +95,7 @@ The editor's overlay changes as you type. In a design folder the files are `font
 
 **Layout and crop** opens the editor: the overlay on a canvas you can zoom (scroll or pinch) and pan. Drag a piece to move it, drag a corner to resize it, or type exact numbers. Snapping lines help you align things, and a **grid** (squares of the size you choose, 8 to 480 pixels) can be shown over the canvas, with pieces jumping onto its lines (*Snap to grid*). The grid is a choice of your browser, for editing only; it is not part of the design.
 
-The pieces are: the logo, the scoreboard, the feature cards, the Stadium, the announcement banners, and for each trainer everything together plus the prize cards, the turn tokens, the locks, the Active Pokémon and the bench. Moving a trainer moves what is in it, and each piece can still be moved on its own. The editor shows sample Pokémon, tools, a Stadium and announcements, so you see how it looks with a full table.
+The pieces are: the logo, the scoreboard, the feature cards, the Stadium, the announcement banners, and for each trainer everything together plus the prize cards, the turn tokens, the locks, the Active Pokémon and the bench. Moving a trainer moves what is in it, and each piece can still be moved on its own. The editor shows sample Pokémon, tools, a Stadium and announcements, so you see how it looks with a full table. The feature cards go over the bench of a trainer (the producer chooses which, and the bench is hidden while they are shown), so they are part of that trainer, and move with it: the **Feature cards** switch above the canvas shows them, over the bench they go over on air, and hides them again so that bench can be placed. The **Banner** switch does the same for an announcement banner.
 
 The **Code** tab shows the same design as text (the JSON saved in `design.json`, without the pictures and without the style sheet, which has [a tab of its own](#style-sheet-and-animations)). Typing changes the overlay as soon as the text makes sense, what the mouse does is written back into the text, and a mistake is shown with its line.
 
@@ -103,7 +103,7 @@ The **Code** tab shows the same design as text (the JSON saved in `design.json`,
 
 ## Tall mobile screens
 
-The overlay is a wide **1920 × 1080** screen unless the design says otherwise. For a vertical stream (a phone held upright), the editor can switch the design to a **mobile screen of 1080 × 1920**: the scoreboard on top, the trainers one under the other with the Stadium and feature cards between them, the bench in a row. The canvas follows the choice. Set the OBS browser source to the same size.
+The overlay is a wide **1920 × 1080** screen unless the design says otherwise. For a vertical stream (a phone held upright), the editor can switch the design to a **mobile screen of 1080 × 1920**: the scoreboard on top, the trainers one under the other with the Stadium between them, the bench in a row (and the feature cards, smaller, in its place while they are shown). The canvas follows the choice. Set the OBS browser source to the same size.
 
 To show a wide and a tall overlay at the same time, see [Several overlays, several designs](#several-overlays-several-designs). In `design.json`: `"orientation": "portrait"`.
 
@@ -174,7 +174,7 @@ The `#stage` in front also gives your rule more weight than the built-in rule fo
 | `prize-english`, `prize-japanese`, `prize-pokeball` | The picture the prize cards show (none of these when they show the design's own card back) |
 | `prize-layout-column`, `prize-layout-two-rows`, `prize-layout-three-rows` | How the prize cards are laid out (none of these for a row) |
 
-The stage itself carries `portrait` (a tall screen), `bench-row` (the bench in a row) and `is-paused` (the game is paused): write `#stage.is-paused .scoreboard`. Other pieces have classes for their state too, for example `.trainer.is-turn` (the trainer whose turn it is), `.prize.taken`, `.token.used`, and `.hp.warn` and `.hp.low` (an HP bar at half or less, at a quarter or less). To find the pieces and their classes, open the overlay (`http://localhost:6767/overlay`) in a browser and look with its developer tools, or read [`public/css/overlay.css`](../public/css/overlay.css).
+The stage itself carries `portrait` (a tall screen), `bench-row` (the bench in a row), `is-paused` (the game is paused) and `features-on-a` or `features-on-b` (the feature cards are shown over the bench of Trainer A, of Trainer B): write `#stage.is-paused .scoreboard`. Other pieces have classes for their state too, for example `.trainer.is-turn` (the trainer whose turn it is), `.prize.taken`, `.token.used`, and `.hp.warn` and `.hp.low` (an HP bar at half or less, at a quarter or less). To find the pieces and their classes, open the overlay (`http://localhost:6767/overlay`) in a browser and look with its developer tools, or read [`public/css/overlay.css`](../public/css/overlay.css).
 
 Some pieces also say what they are in an attribute, whatever their text says:
 
@@ -186,6 +186,8 @@ Some pieces also say what they are in an attribute, whatever their text says:
 | `data-slot` | `.mon` of the bench | Its place on the bench, from 0 (the first) to 7, as the game counts them: `.bench .mon[data-slot="5"]` is the sixth place |
 
 So a bigger bench can have a layout of its own, for example smaller tiles when it has 6 places or more: `.bench[data-size="6"] .mon.mini, .bench[data-size="7"] .mon.mini, .bench[data-size="8"] .mon.mini { height: 72px; }`.
+
+**The feature cards** are in the piece of the trainer whose bench they cover, after the bench: `.trainer-a .features` or `.trainer-b .features`. While they are shown that trainer has `features-on` (and the stage `features-on-a` or `features-on-b`), and the built-in look hides its bench with `#stage .trainer.features-on .bench { display: none; }` (write the same selector to keep the bench, under the cards). In the built-in look they take the bench's place under the Active Pokémon; a design that places the bench itself (`position: absolute`) places the cards there too: `.features { position: absolute; left: 8px; top: 464px; width: 424px; }`. Each card is a `figure.feature` with its picture, `img.feature-img`, and no name written on it (it is the picture's `alt` and the card's `title`). Cards joined by a sign are a stack, `.feature-stack`, with `data-cards` (how many cards) and the signs between them (`.feature-sep`, whose text is the sign); a card on its own is a `.feature` of its own, and `.features.combo` says there is at least one sign.
 
 ### What is not allowed, and why
 

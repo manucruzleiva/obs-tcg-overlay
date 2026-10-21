@@ -790,6 +790,38 @@ describe('control panel', { skip }, () => {
       await expectLive((state) => state.featureCards.map((entry) => entry.separator || entry.name), ['Ultra Ball', '→']);
       assert.deepEqual(page.problems, []);
     });
+
+    it('shows or hides the feature cards on the overlay, and chooses whose bench they cover, with the buttons or F and Shift+F', async () => {
+      await producer.act('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Boss Orders', image: IMG });
+      await expectLive((state) => state.featureCards.length, 1);
+      const show = page.locator(`${FEATURES} .feature-show`);
+      const side = (name) => page.locator(`${FEATURES} .feature-over`).getByRole('button', { name, exact: true });
+      const pressed = (selector, value) => page.waitForFunction(([where, wanted]) => document.querySelector(where).getAttribute('aria-pressed') === wanted, [selector, value]);
+      assert.equal(await show.getAttribute('aria-pressed'), 'true', 'shown to begin with');
+      assert.match(await show.textContent(), /^Hide/, 'the button says what it does');
+      assert.deepEqual(await page.locator(`${FEATURES} .side-btn`).allTextContents(), ['Ash', 'Gary'], 'each trainer by name');
+      assert.equal(await side('Ash').getAttribute('aria-pressed'), 'true', 'over the bench of Trainer A to begin with');
+
+      await show.click();
+      await expectLive((state) => state.featureView.visible, false);
+      await pressed('.feature-show', 'false');
+      assert.match(await show.textContent(), /^Show/);
+      assert.equal(await page.locator(`${FEATURES} .feature-list.off-air`).count(), 1, 'the list looks off the air');
+      await side('Gary').click();
+      await expectLive((state) => state.featureView, { visible: false, side: 'trainerB' });
+      await pressed('.side-btn.side-b', 'true');
+      assert.equal(await side('Ash').getAttribute('aria-pressed'), 'false');
+
+      // F shows or hides them, Shift+F puts them over the other bench
+      await press('f');
+      await expectLive((state) => state.featureView.visible, true);
+      await press('Shift+F');
+      await expectLive((state) => state.featureView.side, 'trainerA');
+      await press('f');
+      await expectLive((state) => state.featureView, { visible: false, side: 'trainerA' });
+      assert.match(await feedText(), /Feature cards hidden/);
+      assert.deepEqual(page.problems, []);
+    });
   });
 
   it('shows who else is producing and what they do', async () => {
@@ -2070,7 +2102,7 @@ describe('control panel', { skip }, () => {
     await press('?');
     await page.waitForSelector('.modal');
     const text = await modal().textContent();
-    for (const label of ['Deploy a new Active Pokémon', 'Edit the bench', 'Knock out', 'Stadium', 'Abilities', 'Redo', 'Announce an attack']) {
+    for (const label of ['Deploy a new Active Pokémon', 'Edit the bench', 'Knock out', 'Stadium', 'Abilities', 'Redo', 'Announce an attack', 'Show the feature cards, or hide them', 'over the bench of the other trainer']) {
       assert.match(text, new RegExp(label));
     }
     // the prize arrows say whom they are for: the player whose turn it is, and with Shift the other one

@@ -100,10 +100,25 @@ export class CenterView {
         });
         return button;
       }));
+    // shown or hidden, and over whose bench: while they are shown the cards cover that bench on the overlay. The button says what pressing it
+    // does, and is lit while they are shown.
+    this.featureShow = h('button', { class: 'btn tiny feature-show', type: 'button', 'aria-pressed': 'true', title: 'The overlay shows the feature cards over the bench chosen here, and hides that bench meanwhile', onclick: () => app.toggleFeatures() },
+      h('span', { class: 'feature-show-label' }, 'Hide'), h('kbd', {}, 'F'));
+    this.featureSides = {};
+    const over = h('div', { class: 'feature-over', role: 'group', 'aria-label': 'Over the bench of' },
+      h('span', { class: 'hint' }, 'Over the bench of'),
+      ['trainerA', 'trainerB'].map((side) => {
+        this.featureSides[side] = h('button', {
+          class: `btn tiny side-btn ${side === 'trainerA' ? 'side-a' : 'side-b'}`, type: 'button', 'aria-pressed': 'false',
+          onclick: () => app.act('action:card', { action: 'setFeatureSide', side })
+        }, side === 'trainerA' ? 'Trainer A' : 'Trainer B');
+        return this.featureSides[side];
+      }));
     const features = h('section', { class: 'block feature-block' },
       h('div', { class: 'block-title' }, 'Feature cards',
         h('span', { class: 'hint' }, 'The overlay shows the last three'),
         h('button', { class: 'btn tiny', type: 'button', onclick: () => app.openPicker({ kind: 'feature' }) }, 'Add')),
+      h('div', { class: 'feature-view' }, this.featureShow, over),
       signs,
       this.featureList);
 
@@ -196,7 +211,20 @@ export class CenterView {
     replace(this.stadiumArt, present && stadium.image ? h('img', { src: stadium.image, alt: '' }) : h('span', { class: 'art-fallback' }, icon('star', 22)));
     this.stadiumName.textContent = present ? stadium.name || 'Stadium in play' : 'No stadium in play';
 
-    // feature cards
+    // feature cards: shown or hidden, over whose bench (each button has the name of its trainer), and the list
+    const view = state.featureView || { visible: true, side: 'trainerA' };
+    const shown = view.visible !== false;
+    this.featureShow.classList.toggle('on', shown);
+    this.featureShow.setAttribute('aria-pressed', String(shown));
+    this.featureShow.querySelector('.feature-show-label').textContent = shown ? 'Hide' : 'Show';
+    for (const side of ['trainerA', 'trainerB']) {
+      const button = this.featureSides[side];
+      button.classList.toggle('on', view.side === side);
+      button.setAttribute('aria-pressed', String(view.side === side));
+      button.textContent = state[side].name || (side === 'trainerA' ? 'Trainer A' : 'Trainer B');
+      button.title = `Over the bench of ${button.textContent} (Shift+F puts them over the other one)`;
+    }
+    this.featureList.classList.toggle('off-air', !shown);
     this.featureEntries = state.featureCards;
     replace(this.featureList, state.featureCards.length === 0
       ? h('p', { class: 'empty' }, 'Nothing featured. Add a card to show it to the audience.')

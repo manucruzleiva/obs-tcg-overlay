@@ -629,25 +629,87 @@ describe('overlay', { skip }, () => {
   });
 
   describe('the feature cards', () => {
-    const add = (name) => send('action:card', { action: 'addFeatureCard', cardId: name, name, image: '/art/area-zero.svg' });
+    const add = (name) => send('action:card', { action: 'addFeatureCard', cardId: name, name, image: `/art/${name.toLowerCase().replace(/ /g, '-')}.svg` });
     const sign = (symbol) => send('action:card', { action: 'addFeatureSeparator', symbol });
-    const shown = () => page.$$eval('.features > *', (nodes) => nodes.map((node) => (node.classList.contains('feature-sep') ? node.textContent : node.querySelector('.feature-name').textContent)));
+    // the cards (by the name of their picture) and the signs, in order
+    const shown = () => page.$$eval('.features .feature, .features .feature-sep', (nodes) => nodes.map((node) => (node.classList.contains('feature-sep') ? node.textContent : node.querySelector('.feature-img').alt)));
+    // and how they are grouped: a stack of so many cards, or a card on its own
+    const groups = () => page.$$eval('.features > *', (nodes) => nodes.map((node) => (node.classList.contains('feature-stack')
+      ? `stack of ${node.dataset.cards}: ${[...node.children].map((child) => (child.classList.contains('feature-sep') ? child.textContent : child.querySelector('img').alt)).join(' ')}`
+      : node.classList.contains('feature-sep') ? node.textContent : node.querySelector('img').alt)));
     const cardWidth = () => page.$eval('.features .feature', (node) => node.getBoundingClientRect().width);
+    const rect = (selector) => page.$eval(selector, (node) => { const box = node.getBoundingClientRect(); return { left: box.left, top: box.top, right: box.right, bottom: box.bottom }; });
+    const looks = () => page.evaluate(() => ({
+      over: document.querySelector('.features').parentElement.className,
+      on: ['a', 'b'].filter((side) => document.querySelector(`.trainer-${side}`).classList.contains('features-on')),
+      stage: ['a', 'b'].filter((side) => document.getElementById('stage').classList.contains(`features-on-${side}`)),
+      benches: ['a', 'b'].map((side) => getComputedStyle(document.querySelector(`.trainer-${side} .bench`)).display),
+      hidden: document.querySelector('.features').hidden
+    }));
+    const benchOf = async (side) => {
+      for (let slot = 0; slot < 2; slot++) await send(`action:${side}`, { action: 'setBench', slot, cardId: `${side}-${slot}`, name: `Mon ${slot}`, image: IMG, hp: 60 });
+    };
 
-    it('are hidden until there is one, and show the last three in the order they were added', async () => {
+    it('are hidden until there is one, and show the last three in the order they were added, as their pictures without their names', async () => {
       assert.equal(await page.locator('.features').isHidden(), true);
       await add('Boss Orders');
       await page.waitForSelector('.features:not([hidden])');
       assert.deepEqual(await shown(), ['Boss Orders']);
       for (const name of ['Ultra Ball', 'Iono', 'Switch']) await add(name);
-      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3 && document.querySelector('.features .feature-name').textContent === 'Ultra Ball');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3 && document.querySelector('.features .feature-img').alt === 'Ultra Ball');
       assert.deepEqual(await shown(), ['Ultra Ball', 'Iono', 'Switch'], 'the oldest one makes room');
+      assert.equal(await page.$eval('.features .feature-img', (node) => node.getAttribute('src')), '/art/ultra-ball.svg');
+      assert.equal(await page.locator('.features figcaption, .features .feature-name, .features .feature-caption').count(), 0, 'no names on the cards');
+      assert.equal(await page.$eval('.features', (node) => node.innerText.trim()), '');
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
       assert.ok(Math.abs((await cardWidth()) - 176) < 1);
       assert.deepEqual(page.problems, []);
     });
 
-    it('have the signs between them that explain a combo, and the cards are a little smaller to make room', async () => {
+    it('cover the bench of Trainer A to begin with, and that of Trainer B when the producer says so', async () => {
+      await benchOf('trainerA');
+      await benchOf('trainerB');
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a features-on', on: ['a'], stage: ['a'], benches: ['none', 'flex'], hidden: false });
+      // where the bench was: under the Active Pokémon, in the trainer's column, inside the screen
+      const cards = await rect('.features');
+      assert.ok(cards.top >= (await rect('.trainer-a .active')).bottom, 'under the Active Pokémon');
+      assert.ok(cards.left >= 36 && cards.right <= 36 + 620 && cards.bottom <= 1080, `in the column of Trainer A: ${JSON.stringify(cards)}`);
+
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+      assert.deepEqual(await looks(), { over: 'trainer trainer-b features-on', on: ['b'], stage: ['b'], benches: ['flex', 'none'], hidden: false });
+      const there = await rect('.features');
+      assert.ok(Math.abs(there.right - (1920 - 36)) < 1, 'at the right edge of the screen, like the bench of Trainer B');
+      assert.ok(there.top >= (await rect('.trainer-b .active')).bottom);
+      assert.deepEqual(page.problems, []);
+    });
+
+    it('can be hidden, and the bench is back; nothing covers it while there is no card, or while the cards are switched off', async () => {
+      await benchOf('trainerA');
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      await send('action:card', { action: 'toggleFeatures', enabled: false });
+      await page.waitForFunction(() => document.querySelector('.features').hidden);
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: true });
+      await send('action:card', { action: 'toggleFeatures', enabled: true });
+      await page.waitForFunction(() => !document.querySelector('.features').hidden);
+      assert.deepEqual((await looks()).on, ['a']);
+
+      await send('action:settings', { action: 'update', display: { featureCards: false } });
+      await page.waitForFunction(() => document.querySelector('.features').classList.contains('opt-off'));
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: false }, 'switched off: the bench shows');
+      await send('action:settings', { action: 'update', display: { featureCards: true } });
+      await page.waitForFunction(() => document.querySelector('.trainer-a').classList.contains('features-on'));
+
+      await send('action:card', { action: 'clearFeatureCards' });
+      await page.waitForFunction(() => document.querySelector('.features').hidden);
+      assert.deepEqual(await looks(), { over: 'trainer trainer-a', on: [], stage: [], benches: ['flex', 'flex'], hidden: true });
+      assert.equal((await live()).featureView.visible, true, 'shown still: the next card shows at once');
+    });
+
+    it('stack the cards joined by a sign, one over the other, with the sign between them, and each can be seen', async () => {
       await add('Boss Orders');
       await sign('+');
       await add('Ultra Ball');
@@ -655,14 +717,32 @@ describe('overlay', { skip }, () => {
       await add('Iono');
       await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3);
       assert.deepEqual(await shown(), ['Boss Orders', '+', 'Ultra Ball', '→', 'Iono']);
+      assert.deepEqual(await groups(), ['stack of 3: Boss Orders + Ultra Ball → Iono']);
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), true);
-      assert.ok(Math.abs((await cardWidth()) - 150) < 1, 'smaller');
-      const together = await page.$eval('.features', (node) => node.getBoundingClientRect().width);
-      assert.ok(together < 700, `the combo fits in the middle of the screen (${together}px)`);
-      // the signs are in the middle of the cards, not on top or below
-      const middle = await page.$eval('.feature-sep', (node) => { const sign = node.getBoundingClientRect(); const card = document.querySelector('.feature-img').getBoundingClientRect(); return sign.top >= card.top && sign.bottom <= card.bottom; });
-      assert.equal(middle, true);
+      const cards = await page.$$eval('.feature-stack .feature', (nodes) => nodes.map((node) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; }));
+      for (let i = 1; i < cards.length; i++) {
+        assert.ok(cards[i].left < cards[i - 1].right, `card ${i + 1} is over the card before it`);
+        assert.ok(cards[i].left - cards[i - 1].left > 60, `and the card before it can still be seen: ${cards[i].left - cards[i - 1].left}px of it`);
+      }
+      const signs = await page.$$eval('.feature-stack .feature-sep', (nodes) => nodes.map((node) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, z: getComputedStyle(node).zIndex }; }));
+      signs.forEach((one, i) => {
+        assert.ok(one.left < cards[i + 1].left && one.right > cards[i + 1].left, `sign ${i + 1} is on the edge where the next card starts`);
+        assert.ok(one.top >= cards[i].top && one.bottom <= cards[i].bottom, 'in the middle of the cards, not above or below them');
+        assert.equal(one.z, '1', 'over the cards');
+      });
+      assert.ok((await rect('.features')).right <= 36 + 620, 'the stack fits in the column');
       assert.deepEqual(page.problems, []);
+    });
+
+    it('keep a card on its own apart from a stack', async () => {
+      await add('Arven');
+      await add('Rare Candy');
+      await sign('+');
+      await add('Charizard');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 3);
+      assert.deepEqual(await groups(), ['Arven', 'stack of 2: Rare Candy + Charizard']);
+      const [alone, stacked] = [await rect('.features > .feature'), await rect('.features > .feature-stack')];
+      assert.ok(alone.right <= stacked.left, 'side by side, not over each other');
     });
 
     it('never start with a sign, and keep one that waits for the next card', async () => {
@@ -672,18 +752,33 @@ describe('overlay', { skip }, () => {
       }
       await add('Four');
       await sign('or');
-      await page.waitForFunction(() => document.querySelector('.features .feature-name').textContent === 'Two');
+      await page.waitForFunction(() => document.querySelector('.features .feature-img').alt === 'Two');
       assert.deepEqual(await shown(), ['Two', '=', 'Three', '=', 'Four', 'or'], 'the sign before the oldest card shown is left out, the last one stays');
+      assert.deepEqual(await groups(), ['stack of 3: Two = Three = Four or']);
     });
 
     it('stay hidden when there are only signs, and a card with no sign is as it always was', async () => {
       await sign('+');
       await page.waitForFunction(() => document.querySelector('.features').hidden === true);
       assert.deepEqual(await shown(), []);
+      assert.deepEqual((await looks()).on, [], 'nothing covers the bench');
       await add('Boss Orders');
       await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 1);
-      assert.deepEqual(await shown(), ['Boss Orders'], 'a sign before the first card is not shown');
+      assert.deepEqual(await groups(), ['Boss Orders'], 'a sign before the first card is not shown');
       assert.equal(await page.$eval('.features', (node) => node.classList.contains('combo')), false);
+    });
+
+    it('are not drawn again when something else changes, so their pictures do not flash', async () => {
+      await add('Boss Orders');
+      await page.waitForSelector('.features:not([hidden])');
+      await page.$eval('.features .feature-img', (node) => { node.dataset.mark = 'first'; });
+      await send('action:trainerA', { action: 'activeDamage', amount: 10 });
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForFunction(() => document.querySelector('.features').parentElement.classList.contains('trainer-b'));
+      assert.equal(await page.$eval('.features .feature-img', (node) => node.dataset.mark), 'first', 'the same picture, moved with its box');
+      await add('Iono');
+      await page.waitForFunction(() => document.querySelectorAll('.features .feature').length === 2);
+      assert.deepEqual(await shown(), ['Boss Orders', 'Iono']);
     });
   });
 
@@ -743,8 +838,18 @@ describe('overlay', { skip }, () => {
         assert.deepEqual([...new Set(row.map((mon) => mon.top))].length, 1, `${side}: the whole bench in one row`);
         assert.ok(row.every((mon) => mon.left >= 0 && mon.right <= 1080));
       }
-      const features = await box('.features');
-      assert.ok(features.right <= (await box('.stadium')).left, 'the feature cards at one side of the middle and the Stadium at the other');
+      // the feature cards take the place of a bench, and stay out of the middle
+      await send('action:card', { action: 'addFeatureCard', cardId: 'f-1', name: 'Iono', image: IMG });
+      await send('action:card', { action: 'addFeatureSeparator', symbol: '+' });
+      await send('action:card', { action: 'addFeatureCard', cardId: 'f-2', name: 'Arven', image: IMG });
+      await page.waitForSelector('.trainer-a.features-on');
+      const middle = await box('.center');
+      let cards = await box('.features');
+      assert.ok(cards.left >= 0 && cards.right <= 1080 && cards.top >= (await box('.trainer-a .active')).bottom && cards.bottom <= middle.top, `over Trainer A's bench, above the middle: ${JSON.stringify(cards)}`);
+      await send('action:card', { action: 'setFeatureSide', side: 'trainerB' });
+      await page.waitForSelector('.trainer-b.features-on');
+      cards = await box('.features');
+      assert.ok(cards.left >= 0 && cards.right <= 1080 && cards.top >= middle.bottom && cards.bottom <= 1920, `over Trainer B's bench, below the middle: ${JSON.stringify(cards)}`);
       assert.deepEqual(page.problems, []);
     });
 

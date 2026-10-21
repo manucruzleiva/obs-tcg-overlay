@@ -425,6 +425,7 @@
       this.themeGeneration = 0;
       this.toastTimers = {};
       this.effectNodes = [];
+      this.featuresDrawn = ''; // the feature cards as they were last drawn (see renderFeatures)
       // The colors of the design that is on, the addresses of its pictures and its other variables (see applyTheme), in a rule for :root
       // of their own: after the built-in style sheets, and before the design's style sheet, so that a rule of the style sheet for :root
       // or html changes them. (Each is set with setProperty, so a value can never end the rule and start another.)
@@ -559,6 +560,7 @@
       this.trainers = {};
       SIDES.forEach((side) => this.buildTrainer(side));
       this.buildCenter();
+      this.buildFeatures();
 
       this.toasts = el('div', 'toasts');
       ['a', 'b', 'c'].forEach((slot) => this.toasts.appendChild(el('div', `toast-slot ${slot}`)));
@@ -676,7 +678,6 @@
 
     buildCenter() {
       const center = el('div', 'center');
-      this.featureBox = opt(el('div', 'features'), 'featureCards');
       // the Stadium: the part of its card that the crop says (the picture, unless a design says otherwise) and its name below
       this.stadiumBox = opt(el('figure', 'stadium'), 'stadium');
       this.stadiumArt = el('div', 'stadium-art');
@@ -686,9 +687,15 @@
       this.stadiumName = el('figcaption', 'stadium-name');
       this.stadiumBox.appendChild(this.stadiumArt);
       this.stadiumBox.appendChild(this.stadiumName);
-      center.appendChild(this.featureBox);
       center.appendChild(this.stadiumBox);
       this.stage.appendChild(center);
+    }
+
+    // The feature cards go over the bench of a trainer: they are in that trainer's piece, after the bench (see renderFeatures)
+    buildFeatures() {
+      this.featureBox = opt(el('div', 'features'), 'featureCards');
+      this.featureBox.hidden = true;
+      this.trainers.trainerA.root.appendChild(this.featureBox);
     }
 
     // ---- scaling
@@ -768,6 +775,7 @@
       this.renderScoreboard(state, display);
       SIDES.forEach((side) => this.renderTrainer(side, state, display));
       this.renderCenter(state);
+      this.renderFeatures(state, display);
 
       // A paused game: the banner, and the rest of the overlay grayed out. Unlike a toast it stays until the game is resumed. Banners can
       // be switched off (Settings, Overlay), and then the game is not shown as paused.
@@ -905,13 +913,19 @@
         setImage(this.stadiumImg, stadium.image, stadium.name);
         this.stadiumName.textContent = stadium.name || '';
       }
+    }
 
-      // the last three cards that were featured, in the order they were added, with the separators between them ("A + B → C")
-      this.featureBox.textContent = '';
+    // The feature cards: the last three that were featured, in the order they were added, with the signs between them ("A + B → C"), as
+    // pictures (no names). They go over the bench of the trainer the producer chose, while the producer shows them: the box is moved into
+    // that trainer's piece, after the bench, and the trainer gets features-on (the bench is hidden meanwhile) and the stage features-on-a or
+    // features-on-b. Cards joined by a sign are a stack (.feature-stack, with data-cards: how many), one over the other; a card on its own
+    // is a .feature of its own.
+    renderFeatures(state, display) {
       const shown = [];
       let counted = 0;
-      for (let i = state.featureCards.length - 1; i >= 0; i--) {
-        const entry = state.featureCards[i];
+      const entries = state.featureCards || [];
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
         if (!entry.separator) {
           if (counted === 3) break;
           counted++;
@@ -919,22 +933,53 @@
         shown.unshift(entry);
       }
       while (shown.length && shown[0].separator) shown.shift(); // a sign with nothing before it
-      this.featureBox.classList.toggle('combo', shown.some((entry) => entry.separator));
-      shown.forEach((card) => {
-        if (card.separator) {
-          this.featureBox.appendChild(el('div', 'feature-sep', card.separator));
-          return;
-        }
-        const figure = el('figure', 'feature');
-        const img = el('img', 'feature-img');
-        setImage(img, card.image, card.name);
-        figure.appendChild(img);
-        const caption = el('figcaption', 'feature-caption');
-        caption.appendChild(el('div', 'feature-name', card.name));
-        figure.appendChild(caption);
-        this.featureBox.appendChild(figure);
+
+      const view = state.featureView || {};
+      const side = view.side === 'trainerB' ? 'trainerB' : 'trainerA';
+      const box = this.featureBox;
+      if (box.parentNode !== this.trainers[side].root) this.trainers[side].root.appendChild(box);
+      box.hidden = shown.length === 0 || view.visible === false;
+      // (the bench is covered only while the cards are really there: not while they are hidden, or switched off)
+      const covering = !box.hidden && display.featureCards !== false;
+      SIDES.forEach((one) => {
+        this.trainers[one].root.classList.toggle('features-on', covering && one === side);
+        this.stage.classList.toggle(`features-on-${SIDE_CLASS[one]}`, covering && one === side);
       });
-      this.featureBox.hidden = shown.length === 0;
+
+      // drawn again only when the cards changed, so their pictures do not flash
+      const signature = JSON.stringify(shown.map((entry) => (entry.separator ? ['sign', entry.separator] : [entry.id, entry.image, entry.name])));
+      if (this.featuresDrawn === signature) return;
+      this.featuresDrawn = signature;
+      box.textContent = '';
+      box.classList.toggle('combo', shown.some((entry) => entry.separator));
+      // a card, with the cards joined to it by a sign (and the signs), is a run; the last sign can be waiting for its card
+      const runs = [];
+      shown.forEach((entry, index) => {
+        if (!entry.separator && !(index > 0 && shown[index - 1].separator)) runs.push([]);
+        runs[runs.length - 1].push(entry);
+      });
+      runs.forEach((run) => {
+        const cards = run.filter((entry) => !entry.separator).length;
+        let into = box;
+        if (cards > 1) {
+          into = el('div', 'feature-stack');
+          into.dataset.cards = String(cards);
+          box.appendChild(into);
+        }
+        run.forEach((entry) => {
+          if (entry.separator) {
+            into.appendChild(el('div', 'feature-sep', entry.separator));
+            return;
+          }
+          const figure = el('figure', 'feature');
+          figure.title = entry.name || '';
+          const img = el('img', 'feature-img');
+          img.decoding = 'async';
+          setImage(img, entry.image, entry.name);
+          figure.appendChild(img);
+          into.appendChild(figure);
+        });
+      });
     }
 
     // ---- announcements

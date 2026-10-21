@@ -46,6 +46,7 @@ Set the trainers' names and nationalities, pick their decks and Pokémon, and ke
 | `W` | **Winner** banner for the player whose turn it is (only the banner: the game and the score do not change) |
 | `G` | **Game start** banner |
 | `P` | **Pause** the game, or resume it |
+| `F` | Show the **feature cards**, or hide them. `Shift` + `F` puts them over the other trainer's bench |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` (or `Ctrl` + `Shift` + `Z`) | Redo |
 | `Shift` + `Enter` | Turn **draft mode** on or off |
@@ -106,7 +107,7 @@ Pick a Pokémon with `A` (Active) or `B` (bench) and search for the card. HP, ab
 ## Stadium and feature cards
 
 - **Stadium** (`S`): putting one in play uses the Stadium play of the player who played it (the one whose turn it is unless you choose the other). Turn the switch in the picker off for a correction, or for a Stadium an effect put there. The control panel shows just the art of the card; Settings, General, can show the whole card instead (a choice of that browser only).
-- **Feature cards** let you show something to the audience during commentary. The overlay shows the last three, in the order they are in, and **Between cards** adds a sign (`+`, `→`, `=` or `or`) to explain a combo: *Boss's Orders + Ultra Ball → …*. **Drag a card or a sign to put it where you want it** in the row. A sign is removed like a card.
+- **Feature cards** let you show something to the audience during commentary. The overlay shows the last three, in the order they are in, as their pictures (without their names), **over the bench of the trainer you choose**: the bench is hidden while they are shown. **Hide** (`F`) takes them off the overlay and brings the bench back, **Show** puts them back; **Over the bench of** chooses the trainer (`Shift` + `F` switches). They start shown, over Trainer A's bench. **Between cards** adds a sign (`+`, `→`, `=` or `or`) to explain a combo: *Boss's Orders + Ultra Ball → …*; the cards joined by a sign are stacked, one over the other, with the sign between them. **Drag a card or a sign to put it where you want it** in the row. A sign is removed like a card.
 
 ---
 
