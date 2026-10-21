@@ -472,6 +472,8 @@ body.drafting .trainer-panel { outline: 2px dashed rgba(251, 191, 36, 0.5); outl
 .match-meta select { width: auto; }
 .match-block input[type="text"] { width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--fg-primary); outline: none; }
 .match-block input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.25); }
+/* Next game, New match and Reset score: centred in the card, on one line or on two */
+.match-block .button-row { justify-content: center; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
 .turn-pass .turn-now { margin-top: 10px; text-align: center; color: var(--fg-secondary); }

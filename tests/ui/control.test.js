@@ -1812,6 +1812,36 @@ describe('control panel', { skip }, () => {
     await expectLive((state) => state.matchScore.trainerAWins, 0);
   });
 
+  it('centres Next game, New match and Reset score in the Match card, on one line or on two', async () => {
+    const gaps = () => page.$eval('.match-block .button-row', (row) => {
+      const box = row.getBoundingClientRect();
+      const lines = {};
+      for (const button of row.children) {
+        const rect = button.getBoundingClientRect();
+        const line = Math.round(rect.top);
+        lines[line] = lines[line] || { left: Infinity, right: -Infinity };
+        lines[line].left = Math.min(lines[line].left, rect.left);
+        lines[line].right = Math.max(lines[line].right, rect.right);
+      }
+      return Object.values(lines).map((line) => [line.left - box.left, box.right - line.right]);
+    });
+    const size = page.viewportSize();
+    try {
+      for (const width of [1600, 1100]) {
+        await page.setViewportSize({ width, height: size.height });
+        await page.$eval('.match-block', (block) => { block.style.width = ''; });
+        for (const blockWidth of ['', '230px']) {
+          // (230 px: so narrow the buttons wrap onto two lines)
+          await page.$eval('.match-block', (block, value) => { block.style.width = value; }, blockWidth);
+          for (const [left, right] of await gaps()) assert.ok(Math.abs(left - right) <= 1.5, `centred at ${width} px${blockWidth ? `, the card ${blockWidth}` : ''}: ${left} and ${right}`);
+        }
+      }
+    } finally {
+      await page.$eval('.match-block', (block) => { block.style.width = ''; });
+      await page.setViewportSize(size);
+    }
+  });
+
   it('pauses the game with the button or P, and the button says what it does next', async () => {
     const button = page.locator('.hype-block .btn.hype.amber');
     assert.match(await button.textContent(), /Pause game/);
