@@ -326,7 +326,19 @@ class Client {
 
 // `prepare(dir)` runs before the server starts, to put files in its data folder (a design from an older version, say)
 // `appRoot` is the folder the app is started from (the project, unless a test puts a copy somewhere else)
-async function startServer({ env = {}, label = 'srv', prepare, appRoot = ROOT } = {}) {
+// freePort() closes its probe before the server listens, so another test file running at the same time can take the port
+// in between: start again on a new port when that happens
+async function startServer(options) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startServerOnce(options);
+    } catch (error) {
+      if (attempt >= 3 || !/EADDRINUSE/.test(error.message)) throw error;
+    }
+  }
+}
+
+async function startServerOnce({ env = {}, label = 'srv', prepare, appRoot = ROOT, stdin = 'ignore' } = {}) {
   fs.mkdirSync(SCRATCH, { recursive: true });
   const dir = fs.mkdtempSync(path.join(SCRATCH, `${label}-`));
   if (prepare) prepare(dir);
@@ -359,14 +371,17 @@ async function startServer({ env = {}, label = 'srv', prepare, appRoot = ROOT } 
       OTO_PING_TIMEOUT_MS: '60000',
       ...env
     },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: [stdin, 'pipe', 'pipe']
   });
   child.stdout.on('data', (d) => { logs += d; });
   child.stderr.on('data', (d) => { logs += d; });
 
   const deadline = Date.now() + 20000;
   for (;;) {
-    if (child.exitCode !== null) throw new Error(`server exited early (code ${child.exitCode}):\n${logs}`);
+    if (child.exitCode !== null) {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      throw new Error(`server exited early (code ${child.exitCode}):\n${logs}`);
+    }
     try {
       if ((await fetch(`${base}/api/health`)).ok) break;
     } catch {
@@ -382,6 +397,7 @@ async function startServer({ env = {}, label = 'srv', prepare, appRoot = ROOT } 
     appRoot,
     port,
     dir,
+    child,
     logs: () => logs,
 
     // Open a socket client; `await client.ready()` before using it
