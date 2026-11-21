@@ -428,6 +428,10 @@ initialize()
         controlPanel: hosts.map((h) => `http://${h}:${PORT}/control`),
         overlay: `http://localhost:${PORT}/overlay`
       });
+      // The Tauri desktop app waits for this line, then opens its window and lists the links for other devices
+      if (process.env.OTO_DESKTOP_CHILD === '1') {
+        process.stdout.write(`OTO_READY ${JSON.stringify({ lan: lan.map(({ name, address }) => ({ name, control: `http://${address}:${PORT}/control` })) })}\n`);
+      }
       checkPort({ port: PORT, host: HOST, instanceId: INSTANCE_ID }).then((result) => {
         if (!result.ok) getLogger().warn('Port check', { port: PORT, reason: result.reason, message: result.message });
         resolvePortCheck(result);
@@ -445,6 +449,15 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     shutdown();
     process.exit(0);
   });
+}
+
+// Run by the Tauri desktop app: Windows has no stop signal for a child process, so the app writes "quit" on stdin
+// (or stdin closes when the app is gone) and OTO saves before exiting
+if (process.env.OTO_DESKTOP_CHILD === '1') {
+  const stop = () => { shutdown(); process.exit(0); };
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (text) => { if (text.includes('quit')) stop(); });
+  process.stdin.on('end', stop);
 }
 
 // Is there a control panel password, and where does it come from ('stored' in the data of OTO, or 'environment': OTO_PASSWORD)

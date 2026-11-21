@@ -13,7 +13,8 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --publish never",
     "update:decks": "node scripts/update-popular-decks.js",
-    "pack:example": "node scripts/pack-example.js"
+    "pack:example": "node scripts/pack-example.js",
+    "tauri:stage": "node scripts/stage-tauri.js"
   },
   "build": {
     "appId": "com.obs.tcg-overlay",

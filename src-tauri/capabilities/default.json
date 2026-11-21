@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The control panel window is the local web page of the OTO server; it needs no Tauri commands",
+  "windows": [],
+  "permissions": []
+}

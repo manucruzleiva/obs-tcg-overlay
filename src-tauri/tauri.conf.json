@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OTO",
+  "version": "../package.json",
+  "identifier": "com.obs.tcg-overlay",
+  "build": {
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "copyright": "Copyright © 2026 obs-tcg-overlay contributors",
+    "externalBin": ["binaries/node"],
+    "resources": { "server/": "server/" },
+    "fileAssociations": [
+      { "ext": ["oto"], "name": "OTO package", "description": "OTO design and settings package" }
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}
