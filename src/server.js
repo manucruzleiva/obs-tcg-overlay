@@ -429,9 +429,7 @@ initialize()
         overlay: `http://localhost:${PORT}/overlay`
       });
       // The Tauri desktop app waits for this line, then opens its window and lists the links for other devices
-      if (process.env.OTO_DESKTOP_CHILD === '1') {
-        process.stdout.write(`OTO_READY ${JSON.stringify({ lan: lan.map(({ name, address }) => ({ name, control: `http://${address}:${PORT}/control` })) })}\n`);
-      }
+      tellDesktop('READY', { lan: lan.map(({ name, address }) => ({ name, control: `http://${address}:${PORT}/control` })), password: passwordStatus() });
       checkPort({ port: PORT, host: HOST, instanceId: INSTANCE_ID }).then((result) => {
         if (!result.ok) getLogger().warn('Port check', { port: PORT, reason: result.reason, message: result.message });
         resolvePortCheck(result);
@@ -451,12 +449,32 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-// Run by the Tauri desktop app: Windows has no stop signal for a child process, so the app writes "quit" on stdin
-// (or stdin closes when the app is gone) and OTO saves before exiting
+// Run by the Tauri desktop app (src-tauri): it reads OTO_* lines on stdout and writes one command per line on stdin.
+// "quit" saves and exits (Windows has no stop signal for a child process), and so does stdin closing when the app is gone;
+// {"password": "..."} sets the control panel password ("" removes it) and answers with an OTO_PASSWORD line.
+const tellDesktop = (kind, value) => {
+  if (process.env.OTO_DESKTOP_CHILD === '1') process.stdout.write(`OTO_${kind} ${JSON.stringify(value)}\n`);
+};
 if (process.env.OTO_DESKTOP_CHILD === '1') {
   const stop = () => { shutdown(); process.exit(0); };
+  let pending = '';
   process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (text) => { if (text.includes('quit')) stop(); });
+  process.stdin.on('data', (text) => {
+    pending += text;
+    let end;
+    while ((end = pending.indexOf('\n')) !== -1) {
+      const line = pending.slice(0, end).trim();
+      pending = pending.slice(end + 1);
+      if (line === 'quit') return stop();
+      let command;
+      try { command = JSON.parse(line); } catch { continue; }
+      if (command && typeof command.password === 'string') {
+        let error = null;
+        try { setPassword(command.password); } catch (e) { error = e.message; }
+        tellDesktop('PASSWORD', { ...passwordStatus(), error });
+      }
+    }
+  });
   process.stdin.on('end', stop);
 }
 

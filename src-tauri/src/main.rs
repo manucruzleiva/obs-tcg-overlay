@@ -1,9 +1,9 @@
 // OTO desktop app on Tauri: a tray app that runs the OTO server (src/server.js on a bundled Node) and shows its control panel.
-// Prototype that sits next to electron/: the server, the overlay and the control panel are the same files.
+// The server, the overlay and the control panel are the same files as in the Electron app (electron/).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Mutex,
@@ -11,29 +11,54 @@ use std::{
     time::Duration,
 };
 
-use serde_json::Value;
+use base64::Engine;
+use serde_json::{json, Value};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    webview::NewWindowResponse,
+    AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
+use tokio::sync::oneshot;
 
 const DEFAULT_PORT: u16 = 6767; // src/config.js
 const TRAY_ID: &str = "oto";
 const MAX_RESTARTS: u32 = 3;
+const MAX_PACKAGE_BYTES: u64 = 48 * 1024 * 1024; // as electron/main.js
+
+// What the control panel page finds as window.electronAPI (the name the page already looks for)
+const PAGE_BRIDGE: &str = r#"(() => {
+  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+  const bytes = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+  let onPackage = null;
+  const take = () => invoke('take_opened_packages').then((files) => files.forEach((f) => onPackage({ name: f.name, bytes: bytes(f.bytes) })));
+  window.__otoTakePackages = () => { if (onPackage) take(); };
+  window.electronAPI = {
+    getAppSettings: () => invoke('get_app_settings'),
+    setAppSetting: (key, value) => invoke('set_app_setting', { key, value }),
+    onPackageOpened: (callback) => { onPackage = callback; take(); }
+  };
+})();"#;
 
 struct Server {
     child: Mutex<Option<CommandChild>>,
     quitting: AtomicBool,
+    ready: AtomicBool,
     restarts: AtomicU32,
     // links for other devices, from the server's OTO_READY line: (network name, control panel URL)
     lan: Mutex<Vec<(String, String)>>,
+    // { enabled, source } of the control panel password, from OTO_READY and OTO_PASSWORD lines
+    password: Mutex<Value>,
+    password_reply: Mutex<Option<oneshot::Sender<Value>>>,
+    // .oto files opened from the file manager, waiting for the control panel to take them: (name, bytes)
+    packages: Mutex<Vec<(String, Vec<u8>)>>,
     port: u16,
     data_dir: PathBuf,
 }
@@ -44,6 +69,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|a| a == "--quit") {
                 quit(app);
+            } else if let Some(file) = package_in(&argv) {
+                open_package(app, &file);
             } else {
                 show_main_window(app);
             }
@@ -51,6 +78,14 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            get_app_settings,
+            set_app_setting,
+            take_opened_packages,
+            save_password,
+            close_password_window
+        ])
         .setup(|app| {
             // The same folder as the Electron app (%APPDATA%\obs-tcg-overlay), so matches, designs and settings carry over
             let data_dir = std::env::var_os("OTO_DATA_DIR")
@@ -60,8 +95,12 @@ fn main() {
             app.manage(Server {
                 child: Mutex::new(None),
                 quitting: AtomicBool::new(false),
+                ready: AtomicBool::new(false),
                 restarts: AtomicU32::new(0),
                 lan: Mutex::new(Vec::new()),
+                password: Mutex::new(json!({ "enabled": false, "source": null })),
+                password_reply: Mutex::new(None),
+                packages: Mutex::new(Vec::new()),
                 port,
                 data_dir,
             });
@@ -77,16 +116,21 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            if let Some(file) = package_in(&std::env::args().collect::<Vec<_>>()) {
+                open_package(app.handle(), &file);
+            }
             start_server(app.handle())?;
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && keep_in_tray(window.app_handle()) {
-                    api.prevent_close();
+                if window.label() != "main" {
+                    return;
+                }
+                api.prevent_close();
+                if settings(window.app_handle())["keepInTray"].as_bool().unwrap_or(true) {
                     let _ = window.hide();
-                } else if window.label() == "main" {
-                    api.prevent_close();
+                } else {
                     quit(window.app_handle());
                 }
             }
@@ -105,6 +149,8 @@ fn main() {
             _ => {}
         });
 }
+
+// ---- the server ---------------------------------------------------------------------------------------------------
 
 fn start_server(app: &AppHandle) -> tauri::Result<()> {
     let state = app.state::<Server>();
@@ -135,8 +181,11 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
             match event {
                 CommandEvent::Stdout(line) => {
                     let line = String::from_utf8_lossy(&line);
-                    if let Some(json) = line.trim().strip_prefix("OTO_READY ") {
+                    let line = line.trim();
+                    if let Some(json) = line.strip_prefix("OTO_READY ") {
                         server_ready(&app, json);
+                    } else if let Some(json) = line.strip_prefix("OTO_PASSWORD ") {
+                        password_changed(&app, json);
                     }
                 }
                 CommandEvent::Stderr(line) => eprint!("{}", String::from_utf8_lossy(&line)),
@@ -162,36 +211,44 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+// One command line on the server's stdin (see the end of src/server.js)
+fn tell_server(app: &AppHandle, line: &str) -> bool {
+    match app.state::<Server>().child.lock().unwrap().as_mut() {
+        Some(child) => child.write(format!("{line}\n").as_bytes()).is_ok(),
+        None => false,
+    }
+}
+
 fn server_ready(app: &AppHandle, json: &str) {
     let state = app.state::<Server>();
-    let lan = serde_json::from_str::<Value>(json)
-        .ok()
-        .and_then(|v| v["lan"].as_array().cloned())
+    let ready = serde_json::from_str::<Value>(json).unwrap_or_default();
+    let lan = ready["lan"]
+        .as_array()
+        .cloned()
         .unwrap_or_default()
         .iter()
         .filter_map(|l| Some((l["name"].as_str()?.to_string(), l["control"].as_str()?.to_string())))
         .collect();
     *state.lan.lock().unwrap() = lan;
-    set_tooltip(app, &format!("OTO - running on port {}", state.port));
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), tray_menu(app)) {
-        let _ = tray.set_menu(Some(menu));
+    if ready["password"].is_object() {
+        *state.password.lock().unwrap() = ready["password"].clone();
     }
+    state.ready.store(true, Ordering::SeqCst);
+    set_tooltip(app, &format!("OTO - running on port {}", state.port));
+    refresh_tray(app);
     show_main_window(app);
 }
 
-fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-        return;
+fn password_changed(app: &AppHandle, json: &str) {
+    let state = app.state::<Server>();
+    let status = serde_json::from_str::<Value>(json).unwrap_or_default();
+    if status["error"].is_null() {
+        *state.password.lock().unwrap() = json!({ "enabled": status["enabled"], "source": status["source"] });
     }
-    let url = format!("http://localhost:{}/control", app.state::<Server>().port);
-    let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().unwrap()))
-        .title("OTO")
-        .inner_size(1280.0, 800.0)
-        .min_inner_size(800.0, 600.0)
-        .build();
+    if let Some(reply) = state.password_reply.lock().unwrap().take() {
+        let _ = reply.send(status);
+    }
+    refresh_tray(app);
 }
 
 // Save the match and the database (the server does it on "quit"), then leave; force it if the server does not answer
@@ -201,11 +258,7 @@ fn quit(app: &AppHandle) {
         return;
     }
     set_tooltip(app, "OTO - saving and closing");
-    let wrote = match state.child.lock().unwrap().as_mut() {
-        Some(child) => child.write(b"quit\n").is_ok(),
-        None => false,
-    };
-    if !wrote {
+    if !tell_server(app, "quit") {
         app.exit(0);
         return;
     }
@@ -219,19 +272,199 @@ fn quit(app: &AppHandle) {
     });
 }
 
-fn keep_in_tray(app: &AppHandle) -> bool {
-    // the same app-settings.json as electron/app-settings.js (default: keep running in the tray)
-    let file = app.state::<Server>().data_dir.join("app-settings.json");
-    std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|v| v["keepInTray"].as_bool())
-        .unwrap_or(true)
+// ---- windows ------------------------------------------------------------------------------------------------------
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let port = app.state::<Server>().port;
+    let url = format!("http://localhost:{port}/control");
+    let opener = app.clone();
+    let new_window = app.clone();
+    let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().unwrap()))
+        .title("OTO")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(800.0, 600.0)
+        .initialization_script(PAGE_BRIDGE)
+        // the window shows only OTO's own pages; any other link opens in the browser
+        .on_navigation(move |url| {
+            let own = matches!(url.host_str(), Some("localhost" | "127.0.0.1")) && url.port() == Some(port);
+            if !own && matches!(url.scheme(), "http" | "https") {
+                let _ = opener.opener().open_url(url.as_str(), None::<&str>);
+            }
+            own || !matches!(url.scheme(), "http" | "https")
+        })
+        .on_new_window(move |url: Url, _| {
+            let _ = new_window.opener().open_url(url.as_str(), None::<&str>);
+            NewWindowResponse::Deny
+        })
+        .build();
 }
+
+fn open_password_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("password") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "password", WebviewUrl::App("password.html".into()))
+        .title("OTO - Control panel password")
+        .inner_size(440.0, 380.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .build();
+}
+
+fn confirm_remove_password(app: &AppHandle) {
+    let app = app.clone();
+    app.dialog()
+        .message("Anyone who has the link to the control panel, on this network, will be able to produce without it.")
+        .title("Remove the control panel password?")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("Remove the password".into(), "Cancel".into()))
+        .show(move |remove| {
+            if !remove {
+                return;
+            }
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = set_password(&app, "").await {
+                    app.dialog().message(error).title("The password was not removed").kind(MessageDialogKind::Error).show(|_| {});
+                }
+            });
+        });
+}
+
+// Set ("" removes) the control panel password in the server; everybody who was signed in has to sign in again, this window too
+async fn set_password(app: &AppHandle, password: &str) -> Result<(), String> {
+    let state = app.state::<Server>();
+    let (reply, answer) = oneshot::channel();
+    *state.password_reply.lock().unwrap() = Some(reply);
+    if !tell_server(app, &json!({ "password": password }).to_string()) {
+        return Err("OTO's server is not running.".into());
+    }
+    let status = tokio::time::timeout(Duration::from_secs(10), answer)
+        .await
+        .map_err(|_| "OTO's server did not answer.".to_string())?
+        .map_err(|_| "OTO's server did not answer.".to_string())?;
+    if let Some(error) = status["error"].as_str() {
+        return Err(error.into());
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval("location.reload()");
+    }
+    Ok(())
+}
+
+// ---- commands the pages call (capabilities/) ----------------------------------------------------------------------
+
+#[tauri::command]
+async fn save_password(app: AppHandle, password: String) -> Result<(), String> {
+    if password.is_empty() {
+        return Err("Write the password.".into());
+    }
+    set_password(&app, &password).await?;
+    if let Some(window) = app.get_webview_window("password") {
+        let _ = window.close();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_password_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("password") {
+        let _ = window.close();
+    }
+}
+
+#[tauri::command]
+fn get_app_settings(app: AppHandle) -> Value {
+    settings(&app)
+}
+
+#[tauri::command]
+fn set_app_setting(app: AppHandle, key: String, value: Value) -> Result<Value, String> {
+    if key != "keepInTray" || !value.is_boolean() {
+        return Err(format!("Unknown setting: {key}"));
+    }
+    let mut values = settings(&app);
+    values[key] = value;
+    let file = app.state::<Server>().data_dir.join("app-settings.json");
+    std::fs::write(file, serde_json::to_string_pretty(&values).unwrap()).map_err(|e| e.to_string())?;
+    refresh_tray(&app);
+    Ok(values)
+}
+
+#[tauri::command]
+fn take_opened_packages(app: AppHandle) -> Vec<Value> {
+    let files = std::mem::take(&mut *app.state::<Server>().packages.lock().unwrap());
+    files
+        .into_iter()
+        .map(|(name, bytes)| json!({ "name": name, "bytes": base64::engine::general_purpose::STANDARD.encode(bytes) }))
+        .collect()
+}
+
+// ---- desktop settings and .oto files ------------------------------------------------------------------------------
+
+// The same app-settings.json as electron/app-settings.js, with its defaults; unknown keys and wrong types are ignored
+fn settings(app: &AppHandle) -> Value {
+    let file = app.state::<Server>().data_dir.join("app-settings.json");
+    let saved = std::fs::read_to_string(file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or_default();
+    let mut values = json!({ "keepInTray": true, "trayHintShown": false });
+    for key in ["keepInTray", "trayHintShown"] {
+        if saved[key].is_boolean() {
+            values[key] = saved[key].clone();
+        }
+    }
+    values
+}
+
+// The .oto file in a command line (a double click in the file manager), as electron/args.js
+fn package_in(argv: &[String]) -> Option<String> {
+    argv.iter().skip(1).find(|a| !a.starts_with('-') && a.to_lowercase().ends_with(".oto")).cloned()
+}
+
+// Read a .oto file and hand it to the control panel, which offers to install it
+fn open_package(app: &AppHandle, file: &str) {
+    let path = Path::new(file);
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let read = std::fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file() && m.len() <= MAX_PACKAGE_BYTES)
+        .and_then(|_| std::fs::read(path).ok());
+    let Some(bytes) = read else {
+        app.dialog().message(format!("That file could not be opened: {name}")).title("OTO").kind(MessageDialogKind::Error).show(|_| {});
+        return;
+    };
+    app.state::<Server>().packages.lock().unwrap().push((name, bytes));
+    match app.get_webview_window("main") {
+        // an open page takes it now; a page still loading takes it when it starts listening
+        Some(window) => {
+            let _ = window.eval("window.__otoTakePackages && window.__otoTakePackages()");
+            show_main_window(app);
+        }
+        // before the server is ready the window opens by itself (server_ready)
+        None if app.state::<Server>().ready.load(Ordering::SeqCst) => show_main_window(app),
+        None => {}
+    }
+}
+
+// ---- the tray -----------------------------------------------------------------------------------------------------
 
 fn set_tooltip(app: &AppHandle, text: &str) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(text));
+    }
+}
+
+fn refresh_tray(app: &AppHandle) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), tray_menu(app)) {
+        let _ = tray.set_menu(Some(menu));
     }
 }
 
@@ -245,13 +478,30 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     for (name, url) in &lan {
         share.append(&MenuItem::with_id(app, format!("copy:{url}"), format!("{url}  ({name})"), true, None::<&str>)?)?;
     }
+
+    let password = state.password.lock().unwrap().clone();
+    let (enabled, source) = (password["enabled"].as_bool().unwrap_or(false), password["source"].as_str().unwrap_or(""));
+    let status = match (source, enabled) {
+        ("environment", _) => "Set by OTO_PASSWORD: it cannot be changed here",
+        (_, true) => "A password is set",
+        _ => "No password: anyone who opens the link can produce",
+    };
+    let passwords = Submenu::with_id(app, "password", "Control panel password", true)?;
+    passwords.append(&MenuItem::with_id(app, "password-status", status, false, None::<&str>)?)?;
+    let set_label = if enabled { "Change the password…" } else { "Set a password…" };
+    passwords.append(&MenuItem::with_id(app, "password-set", set_label, source != "environment", None::<&str>)?)?;
+    passwords.append(&MenuItem::with_id(app, "password-remove", "Remove the password…", source == "stored", None::<&str>)?)?;
+
+    let keep = settings(app)["keepInTray"].as_bool().unwrap_or(true);
     Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "open", "Open the control panel", true, None::<&str>)?,
             &MenuItem::with_id(app, "overlay", "Open the overlay in the browser", true, None::<&str>)?,
             &share,
+            &passwords,
             &PredefinedMenuItem::separator(app)?,
+            &CheckMenuItem::with_id(app, "keep-in-tray", "Keep running in the tray when the window is closed", true, keep, None::<&str>)?,
             &MenuItem::with_id(app, "data", "Open the data folder", true, None::<&str>)?,
             &MenuItem::with_id(app, "logs", "Open the logs folder", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
@@ -266,6 +516,12 @@ fn on_menu(app: &AppHandle, id: &str) {
         "open" => show_main_window(app),
         "overlay" => {
             let _ = app.opener().open_url(format!("http://localhost:{}/overlay", state.port), None::<&str>);
+        }
+        "password-set" => open_password_window(app),
+        "password-remove" => confirm_remove_password(app),
+        "keep-in-tray" => {
+            let keep = settings(app)["keepInTray"].as_bool().unwrap_or(true);
+            let _ = set_app_setting(app.clone(), "keepInTray".into(), Value::Bool(!keep));
         }
         "data" => {
             let _ = app.opener().open_path(state.data_dir.to_string_lossy(), None::<&str>);

@@ -1,7 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "The control panel window is the local web page of the OTO server; it needs no Tauri commands",
-  "windows": [],
-  "permissions": []
+  "identifier": "control-panel",
+  "description": "The control panel window (the OTO server's page on this computer): desktop settings and .oto files opened from the file manager",
+  "windows": ["main"],
+  "remote": { "urls": ["http://localhost:*/*", "http://127.0.0.1:*/*"] },
+  "permissions": ["allow-get-app-settings", "allow-set-app-setting", "allow-take-opened-packages"]
 }
