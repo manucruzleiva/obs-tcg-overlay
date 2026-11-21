@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-21
+
+### Security
+- The desktop app runs on **Electron 45** (45.3.2, from 44.8), with its newer Chromium and its security fixes
+
+### Changed
+- Updated dependencies: electron-updater 6.8.11, sql.js 1.15.2, electron-builder 26.18.0
+
 ## [1.1.0] - 2026-10-21
 
 ### Added
