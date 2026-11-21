@@ -97,7 +97,7 @@
     "concurrently": "^10.0.6",
     "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
-    "playwright-core": "^1.65.0",
+    "playwright-core": "^1.65.1",
     "socket.io-client": "^4.7.2",
     "wait-on": "^9.5.1"
   },
