@@ -1,29 +1,18 @@
-# OTO on Tauri (prototype)
+# OTO desktop app (Tauri)
 
-A replacement for the Electron shell in `electron/`, written in Rust with [Tauri 2](https://tauri.app). Only the
-desktop part changes: the server (`src/`), the overlay and the control panel (`public/`) are the same files.
+The Windows tray app, written in Rust with [Tauri 2](https://tauri.app). It runs `src/server.js` on a bundled Node as a
+sidecar process and shows the control panel; the server, the overlay and the control panel are the same files as with
+`npm start`. How it talks to the server, the installer, the updates and the updater key are in
+[docs/DEVELOPING.md](../docs/DEVELOPING.md#building-and-releasing).
 
-- The app runs `src/server.js` on a bundled Node (`binaries/node-<target>`) as a separate process, with the data in the
-  same folder as the Electron app (`%APPDATA%\obs-tcg-overlay`, or `OTO_DATA_DIR`).
-- The server prints `OTO_READY {...}` once it listens; the app then opens the control panel window and fills the tray
-  menu. To quit, the app writes `quit` on the server's stdin, the server saves the match and the database, and both exit.
-- `OTO.exe --quit` asks the running OTO to save and quit, as the Electron app does for the installer.
-
-## Build
+- `src/main.rs`: the server process, the window, the tray, the password window, `.oto` files, desktop settings
+- `src/updater.rs`: over-the-air updates from GitHub Releases
+- `capabilities/`: which window may call which command (the control panel only from the local server's pages)
+- `frontend/password.html`: the small window that sets the control panel password
+- `windows/hooks.nsh`: the installer's extra steps (closing OTO politely, removing the Electron app, deleting data only when asked)
+- `tauri.updater.conf.json`: merged into the build by the release workflow when the updater key is set
 
 ```
 npm ci
-npm run tauri:stage                       # copies the server and this Node into src-tauri/
-npx @tauri-apps/cli@2.12.6 build          # src-tauri/target/release/bundle/nsis/OTO_<version>_x64-setup.exe
+npm run desktop:dev       # or desktop:build for the installer
 ```
-
-The `Tauri prototype` workflow does the same on Windows and uploads the installer as an artifact.
-
-## Not done yet (the Electron app still has these)
-
-- Automatic updates (tauri-plugin-updater), and a last Electron release that moves existing installs to the Tauri installer
-- The installer page in `installer/installer.nsh` (Repair, Reinstall, Destroy) as Tauri NSIS hooks, and the portable exe
-- Setting the control panel password from the tray (Electron's small password window)
-- Opening `.oto` files with a double click (the association is registered, the file is not handed to the page yet)
-- Links that open a new window going to the browser, the "Keep running in the tray" switch in Settings, the one-time tray hint
-- Restarting the server from the tray, moving the data to a backup ("start fresh")

@@ -1,8 +1,9 @@
 name: Release
 
 # Push a tag like v1.2.3 (matching "version" in package.json) to build the Windows
-# installer and portable .exe and publish them as a GitHub Release. The installer
-# build checks this release (latest.yml) for over-the-air updates.
+# installer and the portable zip of the Tauri app (src-tauri/) and publish them as a
+# GitHub Release. Installed copies check the latest release for over-the-air updates:
+# latest.json (the Tauri app) and latest.yml (Electron installs, which move to Tauri).
 #
 # Run it manually from the Actions tab to build without publishing: the files are
 # uploaded as a workflow artifact instead.
@@ -32,7 +33,7 @@ jobs:
           node-version: 24
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm test
       # the control panel and settings in a real browser (Windows runners ship with Edge)
       - run: npm run test:ui
@@ -47,13 +48,27 @@ jobs:
             exit 1
           fi
 
-      # Builds the NSIS installer (self-updating) and the portable exe, plus latest.yml.
-      # Code signing: when the repository has the two secrets below, the .exe files are signed; without them they are built unsigned, as always
-      # (see docs/SIGNING.md). WIN_CSC_LINK is the certificate (a .pfx, as a link or as base64 text) and WIN_CSC_KEY_PASSWORD its password.
-      - run: npm run dist
+      # the server and this runner's node.exe go into src-tauri/ (the app runs them as its sidecar)
+      - run: npm run tauri:stage
+      - run: rustup default stable
+
+      # Over-the-air updates need the updater key: the secret TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD), and its public half in
+      # src-tauri/tauri.updater.conf.json (see docs/DEVELOPING.md). Without them the build works and the app does not update itself.
+      - name: Build the Tauri app
+        shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pubkey="$(node -p "require('./src-tauri/tauri.updater.conf.json').plugins.updater.pubkey")"
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$pubkey" ]; then
+            npx --yes @tauri-apps/cli@2.12.6 build --config src-tauri/tauri.updater.conf.json
+          else
+            echo "::warning::No updater key: this build will not update itself"
+            npx --yes @tauri-apps/cli@2.12.6 build
+          fi
+
+      - run: node scripts/tauri-release-files.js
 
       - name: Say whether the files are signed
         shell: pwsh
@@ -72,15 +87,17 @@ jobs:
           ls -la dist
           test -f dist/latest.yml
           ls dist/OTO-Setup-*.exe
-          ls dist/OTO-*-portable.exe
+          ls dist/OTO-*-portable.zip
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then test -f dist/latest.json; fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-build
           path: |
             dist/*.exe
-            dist/*.exe.blockmap
+            dist/*.zip
             dist/latest.yml
+            dist/latest.json
           if-no-files-found: error
 
       - name: Publish the GitHub Release
@@ -89,9 +106,10 @@ jobs:
         with:
           files: |
             dist/*.exe
-            dist/*.exe.blockmap
+            dist/*.zip
             dist/latest.yml
+            dist/latest.json
           generate_release_notes: true
           # Pre-release tags (v1.2.0-beta.1) are not offered to installed apps as updates
           prerelease: ${{ contains(github.ref_name, '-') }}
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false

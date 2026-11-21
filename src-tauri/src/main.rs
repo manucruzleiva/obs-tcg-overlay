@@ -2,6 +2,8 @@
 // The server, the overlay and the control panel are the same files as in the Electron app (electron/).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updater;
+
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -47,9 +49,25 @@ const PAGE_BRIDGE: &str = r#"(() => {
   };
 })();"#;
 
+// What to do once the server has saved and stopped, when OTO is not quitting
+#[derive(Clone, Copy, PartialEq)]
+enum Then {
+    // it stopped by itself: start it again, a few times
+    Nothing,
+    // "Restart the service"
+    Restart,
+    // "Back up and start fresh": move the data folder aside first
+    Fresh,
+}
+
 struct Server {
     child: Mutex<Option<CommandChild>>,
     quitting: AtomicBool,
+    // quitting to install a downloaded update and start again ("Restart to update")
+    restart: AtomicBool,
+    then: Mutex<Then>,
+    // counts the servers started, so a late "force it" never hits the next one
+    generation: AtomicU32,
     ready: AtomicBool,
     restarts: AtomicU32,
     // links for other devices, from the server's OTO_READY line: (network name, control panel URL)
@@ -95,6 +113,9 @@ fn main() {
             app.manage(Server {
                 child: Mutex::new(None),
                 quitting: AtomicBool::new(false),
+                restart: AtomicBool::new(false),
+                then: Mutex::new(Then::Nothing),
+                generation: AtomicU32::new(0),
                 ready: AtomicBool::new(false),
                 restarts: AtomicU32::new(0),
                 lan: Mutex::new(Vec::new()),
@@ -104,6 +125,7 @@ fn main() {
                 port,
                 data_dir,
             });
+            updater::init(app.handle())?;
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().expect("icons/icon.ico").clone())
                 .tooltip("OTO - starting")
@@ -174,6 +196,8 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
         .spawn()
         .map_err(|e| tauri::Error::Anyhow(e.into()))?;
     *state.child.lock().unwrap() = Some(child);
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    state.ready.store(false, Ordering::SeqCst);
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -192,8 +216,19 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
                 CommandEvent::Terminated(status) => {
                     let state = app.state::<Server>();
                     state.child.lock().unwrap().take();
+                    let then = std::mem::replace(&mut *state.then.lock().unwrap(), Then::Nothing);
                     if state.quitting.load(Ordering::SeqCst) {
+                        updater::install_if_ready(&app, state.restart.load(Ordering::SeqCst));
                         app.exit(0);
+                    } else if then != Then::Nothing {
+                        if then == Then::Fresh {
+                            move_data_aside(&app);
+                        }
+                        state.restarts.store(0, Ordering::SeqCst);
+                        set_tooltip(&app, "OTO - starting");
+                        if let Err(error) = start_server(&app) {
+                            eprintln!("[OTO] the server could not start: {error}");
+                        }
                     } else if state.restarts.fetch_add(1, Ordering::SeqCst) < MAX_RESTARTS {
                         eprintln!("[OTO] the server stopped ({status:?}); starting it again");
                         set_tooltip(&app, "OTO - restarting");
@@ -236,7 +271,75 @@ fn server_ready(app: &AppHandle, json: &str) {
     state.ready.store(true, Ordering::SeqCst);
     set_tooltip(app, &format!("OTO - running on port {}", state.port));
     refresh_tray(app);
+    // a window left from before a restart shows the new server's page
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval("location.reload()");
+    }
     show_main_window(app);
+}
+
+// Stop the server the polite way (it saves first), then restart it or start fresh (see the Terminated event)
+fn stop_then(app: &AppHandle, then: Then) {
+    let state = app.state::<Server>();
+    *state.then.lock().unwrap() = then;
+    set_tooltip(app, "OTO - restarting");
+    if !tell_server(app, "quit") {
+        // no server running: start one now
+        *state.then.lock().unwrap() = Then::Nothing;
+        if then == Then::Fresh {
+            move_data_aside(app);
+        }
+        let _ = start_server(app);
+        return;
+    }
+    let generation = state.generation.load(Ordering::SeqCst);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(15));
+        let state = app.state::<Server>();
+        if state.generation.load(Ordering::SeqCst) == generation {
+            if let Some(child) = state.child.lock().unwrap().take() {
+                let _ = child.kill();
+            }
+        }
+    });
+}
+
+// Move everything OTO has saved (matches, designs, sounds, card libraries, settings) into data-backup, data-backup-2, ...
+// Nothing is deleted: the backup sits next to the data and can be moved back.
+fn move_data_aside(app: &AppHandle) {
+    let dir = app.state::<Server>().data_dir.clone();
+    let data = dir.join("data");
+    if !data.exists() {
+        return;
+    }
+    let mut backup = dir.join("data-backup");
+    let mut n = 2;
+    while backup.exists() {
+        backup = dir.join(format!("data-backup-{n}"));
+        n += 1;
+    }
+    let name = backup.file_name().unwrap().to_string_lossy().into_owned();
+    let (text, kind) = match std::fs::rename(&data, &backup) {
+        Ok(()) => (format!("Your data was saved in {name}. OTO is starting fresh."), MessageDialogKind::Info),
+        Err(error) => (format!("The data could not be moved: {error}"), MessageDialogKind::Error),
+    };
+    app.dialog().message(text).title("OTO").kind(kind).show(|_| {});
+}
+
+fn confirm_start_fresh(app: &AppHandle) {
+    let app = app.clone();
+    // asked without stopping anything: the overlay keeps working while the question is open
+    app.dialog()
+        .message("Your matches, designs, sounds, card libraries and settings are moved into a backup folder, not deleted. OTO restarts empty.")
+        .title("Start again with empty data?")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("Back up and start fresh".into(), "Cancel".into()))
+        .show(move |fresh| {
+            if fresh {
+                stop_then(&app, Then::Fresh);
+            }
+        });
 }
 
 fn password_changed(app: &AppHandle, json: &str) {
@@ -267,6 +370,7 @@ fn quit(app: &AppHandle) {
         std::thread::sleep(Duration::from_secs(15));
         if let Some(child) = app.state::<Server>().child.lock().unwrap().take() {
             let _ = child.kill();
+            updater::install_if_ready(&app, app.state::<Server>().restart.load(Ordering::SeqCst));
         }
         app.exit(0);
     });
@@ -462,7 +566,7 @@ fn set_tooltip(app: &AppHandle, text: &str) {
     }
 }
 
-fn refresh_tray(app: &AppHandle) {
+pub(crate) fn refresh_tray(app: &AppHandle) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), tray_menu(app)) {
         let _ = tray.set_menu(Some(menu));
     }
@@ -492,8 +596,26 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     passwords.append(&MenuItem::with_id(app, "password-set", set_label, source != "environment", None::<&str>)?)?;
     passwords.append(&MenuItem::with_id(app, "password-remove", "Remove the password…", source == "stored", None::<&str>)?)?;
 
+    let troubleshooting = Submenu::with_id_and_items(
+        app,
+        "troubleshooting",
+        "Troubleshooting",
+        true,
+        &[
+            &MenuItem::with_id(app, "restart", "Restart the service", true, None::<&str>)?,
+            &MenuItem::with_id(app, "data", "Open the data folder", true, None::<&str>)?,
+            &MenuItem::with_id(app, "logs", "Open the logs folder", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "fresh", "Back up and start fresh…", true, None::<&str>)?,
+        ],
+    )?;
     let keep = settings(app)["keepInTray"].as_bool().unwrap_or(true);
-    Menu::with_items(
+    let update = match (updater::ready_version(app), updater::status(app)) {
+        (Some(version), _) => Some(MenuItem::with_id(app, "update", format!("Restart to update (v{version})"), true, None::<&str>)?),
+        (None, Some(status)) => Some(MenuItem::with_id(app, "update-status", status, false, None::<&str>)?),
+        (None, None) => None,
+    };
+    let menu = Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "open", "Open the control panel", true, None::<&str>)?,
@@ -502,12 +624,15 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &passwords,
             &PredefinedMenuItem::separator(app)?,
             &CheckMenuItem::with_id(app, "keep-in-tray", "Keep running in the tray when the window is closed", true, keep, None::<&str>)?,
-            &MenuItem::with_id(app, "data", "Open the data folder", true, None::<&str>)?,
-            &MenuItem::with_id(app, "logs", "Open the logs folder", true, None::<&str>)?,
+            &troubleshooting,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Quit OTO", true, None::<&str>)?,
         ],
-    )
+    )?;
+    if let Some(update) = update {
+        menu.insert(&update, menu.items()?.len() - 1)?;
+    }
+    Ok(menu)
 }
 
 fn on_menu(app: &AppHandle, id: &str) {
@@ -530,6 +655,12 @@ fn on_menu(app: &AppHandle, id: &str) {
             let _ = app.opener().open_path(state.data_dir.join("logs").to_string_lossy(), None::<&str>);
         }
         "quit" => quit(app),
+        "restart" => stop_then(app, Then::Restart),
+        "fresh" => confirm_start_fresh(app),
+        "update" => {
+            state.restart.store(true, Ordering::SeqCst);
+            quit(app);
+        }
         _ => {
             if let Some(url) = id.strip_prefix("copy:") {
                 let _ = app.clipboard().write_text(url.to_string());

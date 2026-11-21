@@ -10,24 +10,28 @@ const tauri = path.join(root, 'src-tauri');
 const server = path.join(tauri, 'server');
 const binaries = path.join(tauri, 'binaries');
 
-// The same files the Electron build ships (package.json "build.files"), minus electron/
-const files = require(path.join(root, 'package.json')).build.files.filter((f) => !f.startsWith('electron/'));
-const tops = [...new Set(files.map((f) => f.split('/')[0]))];
+// What the app ships next to the server (the Electron build shipped the same)
+const shipped = [
+  'src', 'public', 'package.json', 'package-lock.json', 'README.md', 'LICENSE', 'NOTICE.md',
+  'assets/logo.ico', 'assets/logo.gif', 'assets/energy', 'assets/status', 'assets/fonts', 'assets/cardbacks', 'assets/markers', 'assets/designs'
+];
 
-fs.rmSync(server, { recursive: true, force: true });
-fs.mkdirSync(server, { recursive: true });
-for (const top of [...tops, 'package-lock.json']) {
-  const from = path.join(root, top);
-  if (fs.existsSync(from)) fs.cpSync(from, path.join(server, top), { recursive: true });
+if (require.main === module) {
+  fs.rmSync(server, { recursive: true, force: true });
+  for (const entry of shipped) fs.cpSync(path.join(root, entry), path.join(server, entry), { recursive: true });
+
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  execFileSync(npm, ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: server, stdio: 'inherit', shell: process.platform === 'win32' });
+
+  // sql.js ships ~30 MB of builds; the server loads only sql-asm.js (src/db/database.js)
+  const sqlDist = path.join(server, 'node_modules', 'sql.js', 'dist');
+  for (const file of fs.readdirSync(sqlDist)) if (file !== 'sql-asm.js') fs.rmSync(path.join(sqlDist, file));
+
+  const target = execFileSync('rustc', ['-vV'], { encoding: 'utf8' }).match(/^host: (.+)$/m)[1].trim();
+  fs.mkdirSync(binaries, { recursive: true });
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  fs.copyFileSync(process.execPath, path.join(binaries, `node-${target}${ext}`));
+  console.log(`Staged the server in ${server} and Node ${process.version} as binaries/node-${target}${ext}`);
 }
-// assets/screenshots and the like are not shipped by the Electron build either
-for (const extra of ['assets/screenshots', 'assets/README.md']) fs.rmSync(path.join(server, extra), { recursive: true, force: true });
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-execFileSync(npm, ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: server, stdio: 'inherit', shell: process.platform === 'win32' });
-
-const target = execFileSync('rustc', ['-vV'], { encoding: 'utf8' }).match(/^host: (.+)$/m)[1].trim();
-fs.mkdirSync(binaries, { recursive: true });
-const ext = process.platform === 'win32' ? '.exe' : '';
-fs.copyFileSync(process.execPath, path.join(binaries, `node-${target}${ext}`));
-console.log(`Staged the server in ${server} and Node ${process.version} as binaries/node-${target}${ext}`);
+module.exports = { shipped };

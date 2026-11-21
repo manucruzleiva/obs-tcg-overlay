@@ -8,21 +8,44 @@
   },
   "app": {
     "windows": [],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "copyright": "Copyright © 2026 obs-tcg-overlay contributors",
-    "externalBin": ["binaries/node"],
-    "resources": { "server/": "server/" },
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": {
+      "server/": "server/"
+    },
     "fileAssociations": [
-      { "ext": ["oto"], "name": "OTO package", "description": "OTO design and settings package" }
+      {
+        "ext": [
+          "oto"
+        ],
+        "name": "OTO package",
+        "description": "OTO design and settings package"
+      }
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" },
-      "nsis": { "installMode": "currentUser" }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh"
+      }
     }
-  }
+  },
+  "mainBinaryName": "OTO"
 }

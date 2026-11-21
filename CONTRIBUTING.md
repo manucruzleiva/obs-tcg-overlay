@@ -34,12 +34,10 @@ Useful commands:
 | Command | What it does |
 |---------|--------------|
 | `npm start` | Run the server only |
-| `npm run electron:dev` | Run the server and the Electron window |
+| `npm run desktop:dev` | Run the desktop (tray) app from source (needs [Rust](https://rustup.rs/)) |
 | `npm test` | Run the server and logic tests (real server, mock card API; a minute or so) |
 | `npm run test:ui` | Run the control panel and settings in a real browser. Needs Chrome or Edge (set `BROWSER_PATH` to use another) |
-| `npm run test:desktop` | Run the Electron app end to end (needs the Electron binary: `npm install` without `--ignore-scripts`) |
-| `npm run pack` | Build an unpacked Electron app into `dist/` |
-| `npm run dist` | Build the Windows installer and portable `.exe` into `dist/` |
+| `npm run desktop:build` | Build the Windows installer into `src-tauri/target/release/bundle/` |
 
 The architecture, the project layout, the configuration and the API are in the [developer guide](docs/DEVELOPING.md).
 
@@ -93,7 +91,7 @@ The [README](README.md) stays short: a taste of each, with links. Add a line to 
 
 - `tests/server/` holds server and logic tests with `node:test` (`npm test`). They boot the real server through [tests/support/harness.js](tests/support/harness.js) (a throwaway database, a mock card API and card image host) and drive it over HTTP and socket.io. Use a **fresh client id for each test producer**: the server ignores an action it has already seen from the same client id and sequence number.
 - `tests/ui/` (`npm run test:ui`) drives the control panel and settings in a real browser with `playwright-core`; no browser is downloaded, it uses the Chrome or Edge you already have. Wait for the page to show a change before pressing the next key, rather than sleeping.
-- `tests/desktop/` (`npm run test:desktop`) launches the Electron app in a throwaway data folder (`OTO_DATA_DIR`) on its own port (`OTO_PORT`). Run it before a release.
+- The desktop app (`src-tauri/`) is built for Windows on every pull request that touches it (the **Desktop build** workflow); try its installer before a release.
 - Never write a test that depends on the real card API or the internet.
 
 ## Pull request checklist
@@ -124,7 +122,7 @@ Open an issue describing the problem you want to solve and how you imagine it wo
 
 ## Dependencies
 
-Keep dependencies current and free of known vulnerabilities. Dependabot opens weekly update pull requests for npm packages and GitHub Actions, and CI runs `npm audit` on the production dependencies. Before sending a dependency change, run `npm audit` and `npm test`. For Electron or electron-builder bumps also run `npm run dist` and start the built app.
+Keep dependencies current and free of known vulnerabilities. Dependabot opens weekly update pull requests for npm packages, the Rust crates of the desktop app and GitHub Actions, and CI runs `npm audit` on the production dependencies. Before sending a dependency change, run `npm audit` and `npm test`. For Tauri bumps, try the installer the **Desktop build** workflow makes on the pull request.
 
 Workflow actions are pinned to a commit SHA (with the version in a comment); Dependabot updates both.
 
@@ -134,9 +132,9 @@ Releases are built by GitHub Actions ([release.yml](.github/workflows/release.ym
 
 1. In a pull request, move the `Unreleased` notes in `CHANGELOG.md` under the new version heading and bump the version in `package.json`
 2. After it is merged, tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`
-3. The workflow checks that the tag matches `package.json`, runs the tests, builds the Windows installer and portable `.exe`, and publishes them with `latest.yml` as a GitHub Release
+3. The workflow checks that the tag matches `package.json`, runs the tests, builds the Windows installer and the portable zip, and publishes them with the update feeds (`latest.json`, and `latest.yml` for copies still on the Electron app) as a GitHub Release
 
-Installed copies (the installer build, not the portable one) pick the new version up automatically from that release. A tag containing a hyphen, such as `v1.3.0-beta.1`, is published as a pre-release and is not offered to installed apps.
+Installed copies (the installer build, not the portable one) pick the new version up automatically from that release, once the updater key is set up ([docs/DEVELOPING.md](docs/DEVELOPING.md#building-and-releasing)). A tag containing a hyphen, such as `v1.3.0-beta.1`, is published as a pre-release and is not offered to installed apps.
 
 The build is unsigned unless the repository has a code signing certificate in its secrets: see [docs/SIGNING.md](docs/SIGNING.md).
 

@@ -8,7 +8,7 @@ This guide is for the people who run a match: store organizers, casters, produce
 
 ## Start in five minutes
 
-1. **Download** the installer (`OTO-Setup-x.y.z.exe`) from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page and run it. If you would rather not install anything, the portable file (`OTO-x.y.z-portable.exe`) works from any folder or USB stick, but it does not update itself and starts slowly (up to a minute the first time).
+1. **Download** the installer (`OTO-Setup-x.y.z.exe`) from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page and run it. If you would rather not install anything, the portable zip (`OTO-x.y.z-portable.zip`) works from any folder or USB stick once unzipped (run `OTO.exe` in it), but it does not update itself.
 2. **Allow it through Windows.** The first run may show *"Windows protected your PC"* because OTO is not code-signed yet: click **More info, then Run anyway**. If the Windows Firewall asks, choose **Private networks**, so a phone or tablet on your network can reach OTO.
 3. **Add the overlay to OBS.** Under *Sources* click **+**, choose **Browser** and set:
    - **URL:** `http://localhost:6767/overlay`
@@ -231,16 +231,13 @@ Searching for cards normally asks an online service, which can be slow, rate-lim
 
 ## Installing, repairing, updating and removing
 
-**The installer** installs OTO for your user account. Run it again while OTO is installed and it first asks what you want:
+**The installer** installs OTO for your user account. Run it again while OTO is installed and it asks whether to reinstall or uninstall first; your matches, designs, sounds and settings stay either way. If an older OTO (1.1 or before) is installed, the installer removes it first and keeps everything it saved: both use the same folder.
 
-- **Repair:** put the program files back (and update them if the installer is newer). Your matches, designs, sounds and settings stay.
-- **Reinstall from scratch:** as Repair, and OTO starts with empty data. What you had is **moved into a backup folder, not deleted**.
-- **Uninstall:** remove OTO. At the end it asks whether to also delete what OTO saved; the answer it starts with is No.
-- **Destroy:** remove OTO **and delete everything it saved**: matches, designs, sounds, card libraries, pictures, settings and logs. It asks once to be sure, and it cannot be undone.
+**Uninstalling** (Apps in Windows Settings, or the installer) removes the program. Tick **Delete the application data** to also delete everything OTO saved: matches, designs, sounds, card libraries, pictures, settings and logs. It is unticked to start with, and an update never deletes anything.
 
-If OTO is running, the installer **closes it the polite way**: OTO is asked to save the match and quit, and is only ended by force if it does not finish in about fifteen seconds. For scripts: `OTO-Setup.exe /S` repairs silently, `OTO-Setup.exe /S --mode=reinstall` starts fresh, and `"Uninstall OTO.exe" /S --destroy` removes everything.
+If OTO is running, the installer **closes it the polite way**: OTO is asked to save the match and quit, and is only ended if it does not finish in about fifteen seconds. For scripts: `OTO-Setup.exe /S` installs silently, and `uninstall.exe /S --destroy` (in OTO's program folder) removes OTO and everything it saved.
 
-**Updates.** The installed version checks GitHub for a newer release shortly after it starts and every few hours. A new version downloads in the background and is **never installed while you are live**: it applies the next time you quit, or at once if you choose **Restart to update** in the tray menu. The portable version does not update itself. Set `OBS_TCG_DISABLE_UPDATES=1` to turn the check off.
+**Updates.** The installed version checks GitHub for a newer release shortly after it starts and every few hours. A new version downloads in the background and is **never installed while you are live**: it applies the next time you quit, or at once if you choose **Restart to update** in the tray menu. The portable zip does not update itself. Set `OBS_TCG_DISABLE_UPDATES=1` to turn the check off.
 
 **The tray icon** keeps OTO running when you close the window (Settings, General). Right-click it for:
 
@@ -273,7 +270,7 @@ If OTO is running, the installer **closes it the polite way**: OTO is asked to s
 
 **I forgot the password.** See [Password](#password).
 
-**Something is badly wrong.** Tray, **Troubleshooting**, **Back up and start fresh**, or run the installer again and choose **Repair**. If you really want to start from nothing, choose **Destroy**.
+**Something is badly wrong.** Tray, **Troubleshooting**, **Back up and start fresh**, or run the installer again (it puts the program files back). If you really want to start from nothing, uninstall with **Delete the application data** ticked.
 
 ---
 

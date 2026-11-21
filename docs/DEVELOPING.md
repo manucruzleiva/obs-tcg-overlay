@@ -13,20 +13,17 @@ You need [Node.js](https://nodejs.org/) 22 or newer.
 ```bash
 git clone https://github.com/manucruzleiva/obs-tcg-overlay.git
 cd obs-tcg-overlay
-npm install            # also downloads Electron (~100 MB); add --ignore-scripts to skip it
+npm install
 npm start              # http://localhost:6767/control
 ```
 
 | Command | What it does |
 |---------|--------------|
 | `npm start` | Run the server only |
-| `npm run electron` | Run the desktop (tray) app from source |
-| `npm run electron:dev` | The server plus the Electron window |
+| `npm run desktop:dev` | Run the desktop (tray) app from source (needs [Rust](https://rustup.rs/); on Linux, the [Tauri prerequisites](https://tauri.app/start/prerequisites/)) |
 | `npm test` | Server and logic tests: they boot the real server and drive it over HTTP and socket.io (about 860 tests, a couple of minutes) |
 | `npm run test:ui` | The control panel, settings and overlay in a real browser (needs Chrome or Edge; set `BROWSER_PATH` to use another). About 360 tests, several minutes |
-| `npm run test:desktop` | The desktop app end to end: opening a `.oto`, `--quit`, the fresh-start backup, the tray password window (needs the Electron binary) |
-| `npm run pack` | Build an unpacked desktop app into `dist/` |
-| `npm run dist` | Build the Windows installer and portable `.exe` into `dist/` |
+| `npm run desktop:build` | Build the Windows installer into `src-tauri/target/release/bundle/nsis/` |
 
 Scratch work (test databases, one-off scripts, screenshots, test builds) goes in `.local/`, which is git-ignored.
 
@@ -43,14 +40,14 @@ Scratch work (test databases, one-off scripts, screenshots, test builds) goes in
         │        activity,      │  ├ card library + pictures   │                 (one or several,
         │        drafts         │  ├ SQLite (sql.js) file      │──▶ card APIs     /overlay?screen=)
    password gate                └──────────────────────────────┘
-        Electron wraps the server in a tray app (installer and portable builds)
+        A Tauri tray app runs the server on its own Node (installer and portable builds)
 ```
 
 - The server owns **one game state** with a `revision`. Clients send `action:*` events carrying the revision they last saw; the server applies the action, records it (undo, activity, conflict detection) and broadcasts the new state. Every change goes through `Session.finish()`.
 - **Actions** are declared in [src/actions.js](../src/actions.js): each says which part of the state it touches (`targets`), how to validate and run itself, how it is described in the activity feed (`label`) and which announcements it fires (`cues`). `resolve()` returns that, with `run()`, and `automatic()` for what the game then does by itself: the prizes victory, and the instant victory of a player who has no Pokémon left after a knock out or a removal (`automaticChanges()`). Those are **steps of their own**: `Session` records each as an entry of the activity written by `actions.SYSTEM` (`OTO (automatic)`, kind `auto`) and as its own step of the history, so an undo takes back the game won and leaves the change that caused it. A sent draft applies all its changes as one step and then looks once for what follows.
 - **Conflicts.** If another producer changed an overlapping part since the sender's revision, the action is refused (`action:rejected`, reason `conflict`) rather than applied twice. Absolute actions ("set the name to X") are last-writer-wins.
 - **Drafts.** Draft mode is a mode of the table: one shared draft in which every producer's actions queue (each entry carries who made it) and replay atomically on send. After a send the draft starts empty and the mode stays on. Redoing a draft send reopens the draft with the sent changes.
-- **The host** is a socket from a loopback address that also has a loopback `Host` header. Only the host may rename others, kick (and forgive) producers, and, from the Electron tray, set the password.
+- **The host** is a socket from a loopback address that also has a loopback `Host` header. Only the host may rename others, kick (and forgive) producers, and, from the tray of the desktop app, set the password.
 - **Announcements and sounds are events, not state:** `announce` and `sfx` fire once, so a reconnecting overlay never replays them.
 - **Screens.** `settings.screens` lists extra overlays; an overlay opened with `?screen=<id>` reads its design from `/api/theme?screen=<id>`, applies that screen's display overrides and plays sounds only if its `sound` flag is on.
 - **Shared catalog modules** (UMD files in `public/js/`, loaded by both the server and the browser): `display-options.js` (what can be shown or hidden, screens), `theme-options.js`, `theme-rules.js` and `theme-css.js` (what a design may contain and how it is validated, its style sheet included), `sound-options.js`, `game-data.js`, `deck.js` and `deck-popular.js`, `pokedex.js`, `countries.js`. One source of truth for the server's validation and the editor's UI.
@@ -85,13 +82,11 @@ Scratch work (test databases, one-off scripts, screenshots, test builds) goes in
 │   ├── overlay/, js/overlay.js
 │   ├── login/
 │   └── css/, js/            # styles and the shared catalogs
-├── electron/                # desktop wrapper: main process, preload, tray, updater, password window
-├── installer/installer.nsh  # Windows installer: graceful close, repair/reinstall/uninstall/destroy page
+├── src-tauri/               # desktop app (Rust, Tauri): tray, window, password window, updater, installer hooks (windows/hooks.nsh)
 ├── tests/
 │   ├── server/              # server and logic tests (node:test): npm test
 │   ├── ui/                  # browser tests (Playwright driving Chrome or Edge): npm run test:ui
-│   ├── desktop/             # Electron end-to-end tests: npm run test:desktop
-│   └── support/             # the test harness and sample files, shared by the three
+│   └── support/             # the test harness and sample files, shared by both
 ├── docs/                    # guides, the .oto format, the classic look as a design file
 └── assets/                  # logo, app icon, energy and status icons, card backs, flag font, README screenshots
 ```
@@ -210,7 +205,7 @@ Each action carries `{ action, ...params, meta: { baseRevision, seq } }`. The ha
 
 `npm run test:ui` drives the control panel, settings and overlay in a real browser: keyboard shortcuts, dialogs, drafts, two producers, designs and the editor, packages, screens, the library, and the moments and style sheet on the overlay. It is slow, and under load a test can time out; run it again alone before suspecting a bug (`node --test --test-name-pattern="..." tests/ui/control.test.js`). `tests/ui/css-safety.test.js` puts what the reader writes for each of `CSS_ATTACKS` in a page like the overlay's and records every request the browser makes: there must be none but the pages themselves.
 
-`npm run test:desktop` runs the Electron app itself (the tray password window uses the `OTO_TEST_HOOKS=1` hook, which exposes the main process to the test).
+The desktop app is built for Windows by the **Desktop build** workflow on each pull request that touches it. `tests/server/desktop-child.test.js` covers its conversation with the server (below), and `tests/server/installer.test.js` what the installer hooks may delete.
 
 Never write a test that depends on the real card API or the internet. Use a fresh client id for each test producer. The tests write to `.local/test/`.
 
@@ -218,14 +213,22 @@ Never write a test that depends on the real card API or the internet. Use a fres
 
 ## Building and releasing
 
-`npm run dist` builds the NSIS installer (`OTO-Setup-x.y.z.exe`, self-updating through `latest.yml`) and the portable `.exe` into `dist/`. Releases are built and published by GitHub Actions when a version tag is pushed ([release.yml](../.github/workflows/release.yml); see [CONTRIBUTING.md](../CONTRIBUTING.md#releasing-maintainers)).
+The desktop app is in [src-tauri/](../src-tauri): a Rust ([Tauri 2](https://tauri.app)) tray app that runs `src/server.js` on its own copy of Node (a *sidecar*), opens the control panel in a window (Windows' WebView2) and keeps the data in `%APPDATA%\obs-tcg-overlay` (or `OTO_DATA_DIR`), on port 6767 (or `OTO_PORT`). The server, the overlay and the control panel are the same files as with `npm start`.
 
-The Windows build is **unsigned today**. The release workflow signs the `.exe` files when the repository has a certificate in its secrets; how to get one and set it up is in [SIGNING.md](SIGNING.md).
+- **Talking to the server.** With `OTO_DESKTOP_CHILD=1` the server prints `OTO_READY {"lan": [...], "password": {...}}` once it listens, and reads one command per line on stdin: `quit` saves the match and the database and exits (Windows has no stop signal for a child process; stdin closing does the same), and `{"password": "..."}` sets the control panel password (`""` removes it) and answers with an `OTO_PASSWORD` line.
+- **The control panel page** finds `window.electronAPI` (the desktop settings and the `.oto` files opened with a double click), which the app adds to its own window only; `src-tauri/capabilities/` allows it for the local server's pages and nothing else.
+- **`OTO.exe --quit`** asks the running OTO to save and quit (the installer uses it).
 
-A test build for yourself, into a folder that does not touch an installed copy:
+`npm run desktop:build` stages the server (`npm run tauri:stage`: the shipped files with production packages only, and this Node as `src-tauri/binaries/node-<target>`) and builds the NSIS installer. `node scripts/tauri-release-files.js` then puts the release files in `dist/`: `OTO-Setup-x.y.z.exe`, `OTO-x.y.z-portable.zip`, `latest.json` and `latest.yml`. Releases are built and published by GitHub Actions when a version tag is pushed ([release.yml](../.github/workflows/release.yml); see [CONTRIBUTING.md](../CONTRIBUTING.md#releasing-maintainers)).
 
-```bash
-npx electron-builder --win portable --publish never --config.directories.output=.local/portable-build
-```
+**The installer** (Tauri's NSIS installer with [src-tauri/windows/hooks.nsh](../src-tauri/windows/hooks.nsh)) asks a running OTO to save and quit before it installs or uninstalls, removes an Electron install of OTO first (silently, which keeps the data: both apps use the same folder), and deletes what OTO saved only when the person ticks *Delete the application data* in the uninstaller, or with `uninstall.exe /S --destroy`, never in an update.
 
-Run the result with its own `OTO_DATA_DIR` and `OTO_PORT`, so it does not mix with a copy you use.
+**Updates.** Installed copies check `latest.json` in the latest GitHub Release, download a new version in the background and install it when OTO quits (or from *Restart to update* in the tray); the portable zip does not update itself. Copies still on the Electron app read `latest.yml` from the same release, install the Tauri installer, and it takes their place. The updater needs a key, set up once:
+
+1. `npx @tauri-apps/cli@2.12.6 signer generate -w oto-updater.key` (choose a password; keep the two files out of the repository)
+2. In the repository settings, add the secrets `TAURI_SIGNING_PRIVATE_KEY` (the contents of `oto-updater.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+3. Put the contents of `oto-updater.key.pub` in `pubkey` in [src-tauri/tauri.updater.conf.json](../src-tauri/tauri.updater.conf.json)
+
+Without the key the release still builds, with a warning, and that version does not update itself. Never lose the key: copies installed with it accept updates signed with it only.
+
+The Windows build is **unsigned today** (code signing is a separate matter from the updater key); how to get a certificate is in [SIGNING.md](SIGNING.md).

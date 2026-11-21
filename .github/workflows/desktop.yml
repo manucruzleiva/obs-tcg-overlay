@@ -1,7 +1,7 @@
-name: Tauri prototype
+name: Desktop build
 
-# Builds the Tauri version of OTO (src-tauri/) as a Windows installer, for trying it next to the Electron app.
-# Nothing is published: the installer is uploaded as a workflow artifact.
+# Builds the desktop app (src-tauri/) on a pull request that touches it, as the release does, without the updater key.
+# Nothing is published: the installer, the portable zip and the update feeds are uploaded as a workflow artifact.
 
 on:
   workflow_dispatch:
@@ -9,8 +9,11 @@ on:
     paths:
       - 'src-tauri/**'
       - 'scripts/stage-tauri.js'
+      - 'scripts/tauri-release-files.js'
+      - 'package.json'
+      - 'package-lock.json'
       - 'src/server.js'
-      - '.github/workflows/tauri.yml'
+      - '.github/workflows/desktop.yml'
 
 permissions:
   contents: read
@@ -30,8 +33,9 @@ jobs:
       - run: npm run tauri:stage
       - run: rustup default stable
       - run: npx --yes @tauri-apps/cli@2.12.6 build
+      - run: node scripts/tauri-release-files.js
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: oto-tauri-windows
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          name: oto-windows
+          path: dist/
           if-no-files-found: error
