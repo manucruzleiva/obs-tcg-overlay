@@ -3,3 +3,4 @@
 # filled by the Tauri workflow: the Node runtime and the staged server
 /binaries/
 /server/
+/target-portable/

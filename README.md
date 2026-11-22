@@ -53,7 +53,7 @@ What a producer does in the control panel shows on the overlay at once. Nothing 
 
 1. Download from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page:
    - **`OTO-Setup-x.y.z.exe`**: installs OTO for your user and keeps itself up to date. **Recommended.**
-   - **`OTO-x.y.z-portable.zip`**: runs without installing (a USB stick, say): unzip it and run `OTO.exe`. It does not update itself.
+   - **`OTO-x.y.z-portable.exe`**: runs without installing (a USB stick, say). It does not update itself, and the first start takes a little longer while it unpacks.
 2. Run it. An icon appears in the system tray (near the clock) and the control panel opens.
    - Windows may show a blue *"Windows protected your PC"* screen, because OTO is not code-signed yet ([why](docs/SIGNING.md)). Click **More info, then Run anyway**.
    - If Windows Firewall asks, allow OTO on **Private networks** so your other devices can reach it.

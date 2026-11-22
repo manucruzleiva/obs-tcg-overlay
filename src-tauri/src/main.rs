@@ -2,6 +2,8 @@
 // The server, the overlay and the control panel are the same files as in the Electron app (electron/).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "portable")]
+mod portable;
 mod updater;
 
 use std::{
@@ -69,6 +71,8 @@ struct Server {
     // counts the servers started, so a late "force it" never hits the next one
     generation: AtomicU32,
     ready: AtomicBool,
+    // the server's last lines of output, shown when it cannot start (all of it goes to logs/desktop.log)
+    output: Mutex<Vec<String>>,
     restarts: AtomicU32,
     // links for other devices, from the server's OTO_READY line: (network name, control panel URL)
     lan: Mutex<Vec<(String, String)>>,
@@ -117,6 +121,7 @@ fn main() {
                 then: Mutex::new(Then::Nothing),
                 generation: AtomicU32::new(0),
                 ready: AtomicBool::new(false),
+                output: Mutex::new(Vec::new()),
                 restarts: AtomicU32::new(0),
                 lan: Mutex::new(Vec::new()),
                 password: Mutex::new(json!({ "enabled": false, "source": null })),
@@ -180,12 +185,14 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
     let db_dir = state.data_dir.join("data");
     std::fs::create_dir_all(&logs)?;
     std::fs::create_dir_all(&db_dir)?;
-    let script = app.path().resource_dir()?.join("server").join("src").join("server.js");
+    let (node, server_dir) = runtime(app)?;
+    let script = server_dir.join("src").join("server.js");
+    let mut log = std::fs::OpenOptions::new().create(true).append(true).open(logs.join("desktop.log")).ok();
+    note(&mut log, &format!("starting {} {}", node.display(), script.display()));
 
     let (mut events, child) = app
         .shell()
-        .sidecar("node")
-        .map_err(|e| tauri::Error::Anyhow(e.into()))?
+        .command(node)
         .arg(script)
         .envs([
             ("OTO_DESKTOP_CHILD", "1".into()),
@@ -203,17 +210,25 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
-                CommandEvent::Stdout(line) => {
+                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
                     let line = String::from_utf8_lossy(&line);
-                    let line = line.trim();
+                    let line = line.trim_end();
+                    note(&mut log, line);
+                    let state = app.state::<Server>();
+                    let mut output = state.output.lock().unwrap();
+                    output.push(line.to_string());
+                    let excess = output.len().saturating_sub(20);
+                    output.drain(..excess);
+                    drop(output);
                     if let Some(json) = line.strip_prefix("OTO_READY ") {
                         server_ready(&app, json);
                     } else if let Some(json) = line.strip_prefix("OTO_PASSWORD ") {
                         password_changed(&app, json);
                     }
                 }
-                CommandEvent::Stderr(line) => eprint!("{}", String::from_utf8_lossy(&line)),
+                CommandEvent::Error(error) => note(&mut log, &format!("error: {error}")),
                 CommandEvent::Terminated(status) => {
+                    note(&mut log, &format!("stopped: {status:?}"));
                     let state = app.state::<Server>();
                     state.child.lock().unwrap().take();
                     let then = std::mem::replace(&mut *state.then.lock().unwrap(), Then::Nothing);
@@ -226,16 +241,17 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
                         }
                         state.restarts.store(0, Ordering::SeqCst);
                         set_tooltip(&app, "OTO - starting");
-                        if let Err(error) = start_server(&app) {
-                            eprintln!("[OTO] the server could not start: {error}");
+                        if start_server(&app).is_err() {
+                            server_failed(&app);
                         }
                     } else if state.restarts.fetch_add(1, Ordering::SeqCst) < MAX_RESTARTS {
-                        eprintln!("[OTO] the server stopped ({status:?}); starting it again");
                         set_tooltip(&app, "OTO - restarting");
-                        let _ = start_server(&app);
+                        if start_server(&app).is_err() {
+                            server_failed(&app);
+                        }
                     } else {
-                        eprintln!("[OTO] the server keeps stopping ({status:?}); see the logs folder");
                         set_tooltip(&app, "OTO - the server stopped (see the logs folder)");
+                        server_failed(&app);
                     }
                     break;
                 }
@@ -244,6 +260,43 @@ fn start_server(app: &AppHandle) -> tauri::Result<()> {
         }
     });
     Ok(())
+}
+
+// Where Node and the server are: next to OTO.exe (the installer), or unpacked from OTO.exe itself (the portable exe)
+fn runtime(app: &AppHandle) -> tauri::Result<(PathBuf, PathBuf)> {
+    #[cfg(feature = "portable")]
+    {
+        return portable::unpack(&app.state::<Server>().data_dir, &app.package_info().version.to_string()).map_err(|e| tauri::Error::Anyhow(e.into()));
+    }
+    #[cfg(not(feature = "portable"))]
+    {
+        let exe_dir = std::env::current_exe()?.parent().map(Path::to_path_buf).unwrap_or_default();
+        Ok((exe_dir.join(format!("node{}", std::env::consts::EXE_SUFFIX)), app.path().resource_dir()?.join("server")))
+    }
+}
+
+fn note(log: &mut Option<std::fs::File>, line: &str) {
+    use std::io::Write;
+    if let Some(file) = log.as_mut() {
+        let seconds = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = writeln!(file, "[{seconds}] {line}");
+    }
+}
+
+// The server could not start: say so, with what it said, instead of leaving an empty window
+fn server_failed(app: &AppHandle) {
+    let state = app.state::<Server>();
+    let output = state.output.lock().unwrap().join("\n");
+    let log = state.data_dir.join("logs").join("desktop.log");
+    let text = format!(
+        "OTO's server did not start, so the control panel and the overlay cannot open.\n\nWhat it said:\n{}\n\nAll of it is in {}",
+        if output.is_empty() { "(nothing)".into() } else { output },
+        log.display()
+    );
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(format!("document.body.innerText = {}", json!(text)));
+    }
+    app.dialog().message(text).title("OTO could not start").kind(MessageDialogKind::Error).show(|_| {});
 }
 
 // One command line on the server's stdin (see the end of src/server.js)
@@ -271,9 +324,9 @@ fn server_ready(app: &AppHandle, json: &str) {
     state.ready.store(true, Ordering::SeqCst);
     set_tooltip(app, &format!("OTO - running on port {}", state.port));
     refresh_tray(app);
-    // a window left from before a restart shows the new server's page
+    // a window opened before the server was ready (or before a restart) shows the server's page now
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.eval("location.reload()");
+        let _ = window.navigate(control_url(state.port));
     }
     show_main_window(app);
 }
@@ -386,17 +439,19 @@ fn show_main_window(app: &AppHandle) {
         return;
     }
     let port = app.state::<Server>().port;
-    let url = format!("http://localhost:{port}/control");
+    // until the server answers, a local page that says OTO is starting (server_ready moves the window on)
+    let url = if app.state::<Server>().ready.load(Ordering::SeqCst) { WebviewUrl::External(control_url(port)) } else { WebviewUrl::App("index.html".into()) };
     let opener = app.clone();
     let new_window = app.clone();
-    let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().unwrap()))
+    let _ = WebviewWindowBuilder::new(app, "main", url)
         .title("OTO")
         .inner_size(1280.0, 800.0)
         .min_inner_size(800.0, 600.0)
         .initialization_script(PAGE_BRIDGE)
         // the window shows only OTO's own pages; any other link opens in the browser
         .on_navigation(move |url| {
-            let own = matches!(url.host_str(), Some("localhost" | "127.0.0.1")) && url.port() == Some(port);
+            // (tauri.localhost is the app's own "starting" page on Windows)
+            let own = (matches!(url.host_str(), Some("localhost" | "127.0.0.1")) && url.port() == Some(port)) || url.host_str() == Some("tauri.localhost");
             if !own && matches!(url.scheme(), "http" | "https") {
                 let _ = opener.opener().open_url(url.as_str(), None::<&str>);
             }
@@ -407,6 +462,10 @@ fn show_main_window(app: &AppHandle) {
             NewWindowResponse::Deny
         })
         .build();
+}
+
+fn control_url(port: u16) -> Url {
+    format!("http://localhost:{port}/control").parse().unwrap()
 }
 
 fn open_password_window(app: &AppHandle) {

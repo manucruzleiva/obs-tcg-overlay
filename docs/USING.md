@@ -8,7 +8,7 @@ This guide is for the people who run a match: store organizers, casters, produce
 
 ## Start in five minutes
 
-1. **Download** the installer (`OTO-Setup-x.y.z.exe`) from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page and run it. If you would rather not install anything, the portable zip (`OTO-x.y.z-portable.zip`) works from any folder or USB stick once unzipped (run `OTO.exe` in it), but it does not update itself.
+1. **Download** the installer (`OTO-Setup-x.y.z.exe`) from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page and run it. If you would rather not install anything, the portable file (`OTO-x.y.z-portable.exe`) works from any folder or USB stick, but it does not update itself, and its first start takes a little longer while it unpacks.
 2. **Allow it through Windows.** The first run may show *"Windows protected your PC"* because OTO is not code-signed yet: click **More info, then Run anyway**. If the Windows Firewall asks, choose **Private networks**, so a phone or tablet on your network can reach OTO.
 3. **Add the overlay to OBS.** Under *Sources* click **+**, choose **Browser** and set:
    - **URL:** `http://localhost:6767/overlay`
@@ -237,7 +237,7 @@ Searching for cards normally asks an online service, which can be slow, rate-lim
 
 If OTO is running, the installer **closes it the polite way**: OTO is asked to save the match and quit, and is only ended if it does not finish in about fifteen seconds. For scripts: `OTO-Setup.exe /S` installs silently, and `uninstall.exe /S --destroy` (in OTO's program folder) removes OTO and everything it saved.
 
-**Updates.** The installed version checks GitHub for a newer release shortly after it starts and every few hours. A new version downloads in the background and is **never installed while you are live**: it applies the next time you quit, or at once if you choose **Restart to update** in the tray menu. The portable zip does not update itself. Set `OBS_TCG_DISABLE_UPDATES=1` to turn the check off.
+**Updates.** The installed version checks GitHub for a newer release shortly after it starts and every few hours. A new version downloads in the background and is **never installed while you are live**: it applies the next time you quit, or at once if you choose **Restart to update** in the tray menu. The portable version does not update itself. Set `OBS_TCG_DISABLE_UPDATES=1` to turn the check off.
 
 **The tray icon** keeps OTO running when you close the window (Settings, General). Right-click it for:
 

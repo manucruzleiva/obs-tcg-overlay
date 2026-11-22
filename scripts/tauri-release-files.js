@@ -1,10 +1,14 @@
 // After "tauri build": puts the release files in dist/ with the names OTO always used, and writes the two update feeds.
 //   dist/OTO-Setup-<version>.exe       the installer
-//   dist/OTO-<version>-portable.zip    OTO.exe, node.exe and the server, to run from a folder (no updates)
+//   dist/OTO-<version>-portable.exe    one OTO.exe that carries Node and the server and unpacks them once (no updates)
 //   dist/latest.json                   the feed of the Tauri updater (needs the .sig the build makes with the updater key)
 //   dist/latest.yml                    the feed of electron-updater: Electron installs of OTO find this release and install it,
 //                                      and the Tauri installer then removes the Electron app (src-tauri/windows/hooks.nsh)
-// Usage: node scripts/tauri-release-files.js
+// Usage, after "tauri build":
+//   node scripts/tauri-release-files.js payload   zips node.exe and the server into src-tauri/target/portable-payload.zip,
+//                                                 for the portable build (cargo feature "portable", OTO_PAYLOAD=that zip,
+//                                                 CARGO_TARGET_DIR=src-tauri/target-portable)
+//   node scripts/tauri-release-files.js           then puts the release files in dist/
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -38,7 +42,10 @@ function releaseFiles({ version, repo, setup, signature, releaseDate = new Date(
   return { name, yml, json };
 }
 
-if (require.main === module) {
+if (require.main === module && process.argv[2] === 'payload') {
+  // Windows' tar writes a zip when the name ends in .zip
+  execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-c', '-f', path.join(root, 'src-tauri', 'target', 'portable-payload.zip'), '-C', release, 'node.exe', 'server'], { stdio: 'inherit' });
+} else if (require.main === module) {
   const nsis = path.join(release, 'bundle', 'nsis');
   const setupFile = fs.readdirSync(nsis).find((f) => f.endsWith('-setup.exe'));
   if (!setupFile) throw new Error(`No installer in ${nsis}`);
@@ -54,13 +61,7 @@ if (require.main === module) {
   if (files.json) fs.writeFileSync(path.join(dist, 'latest.json'), `${JSON.stringify(files.json, null, 2)}\n`);
   else console.warn('No updater signature (.sig): the build had no updater key, so latest.json was not written');
 
-  // the portable folder: what the installer puts in place, minus the uninstaller
-  const portable = path.join(dist, 'OTO-portable');
-  fs.mkdirSync(portable);
-  for (const entry of ['OTO.exe', 'node.exe', 'server']) fs.cpSync(path.join(release, entry), path.join(portable, entry), { recursive: true });
-  const zip = path.join(dist, `OTO-${version}-portable.zip`);
-  execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path '${portable}\\*' -DestinationPath '${zip}'`], { stdio: 'inherit' });
-  fs.rmSync(portable, { recursive: true, force: true });
+  fs.copyFileSync(path.join(root, 'src-tauri', 'target-portable', 'release', 'OTO.exe'), path.join(dist, `OTO-${version}-portable.exe`));
   console.log(fs.readdirSync(dist).join('\n'));
 }
 

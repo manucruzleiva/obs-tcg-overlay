@@ -1,7 +1,7 @@
 name: Desktop build
 
 # Builds the desktop app (src-tauri/) on a pull request that touches it, as the release does, without the updater key.
-# Nothing is published: the installer, the portable zip and the update feeds are uploaded as a workflow artifact.
+# Nothing is published: the installer, the portable exe and the update feeds are uploaded as a workflow artifact.
 
 on:
   workflow_dispatch:
@@ -33,6 +33,12 @@ jobs:
       - run: npm run tauri:stage
       - run: rustup default stable
       - run: npx --yes @tauri-apps/cli@2.12.6 build
+      # the portable exe: the same app with Node and the server inside it
+      - run: node scripts/tauri-release-files.js payload
+      - run: npx --yes @tauri-apps/cli@2.12.6 build --no-bundle --features portable
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target-portable
+          OTO_PAYLOAD: ${{ github.workspace }}/src-tauri/target/portable-payload.zip
       - run: node scripts/tauri-release-files.js
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

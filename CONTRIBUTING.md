@@ -132,7 +132,7 @@ Releases are built by GitHub Actions ([release.yml](.github/workflows/release.ym
 
 1. In a pull request, move the `Unreleased` notes in `CHANGELOG.md` under the new version heading and bump the version in `package.json`
 2. After it is merged, tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`
-3. The workflow checks that the tag matches `package.json`, runs the tests, builds the Windows installer and the portable zip, and publishes them with the update feeds (`latest.json`, and `latest.yml` for copies still on the Electron app) as a GitHub Release
+3. The workflow checks that the tag matches `package.json`, runs the tests, builds the Windows installer and the portable `.exe`, and publishes them with the update feeds (`latest.json`, and `latest.yml` for copies still on the Electron app) as a GitHub Release
 
 Installed copies (the installer build, not the portable one) pick the new version up automatically from that release, once the updater key is set up ([docs/DEVELOPING.md](docs/DEVELOPING.md#building-and-releasing)). A tag containing a hyphen, such as `v1.3.0-beta.1`, is published as a pre-release and is not offered to installed apps.
 

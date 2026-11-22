@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v1.2.3 (matching "version" in package.json) to build the Windows
-# installer and the portable zip of the Tauri app (src-tauri/) and publish them as a
+# installer and the portable .exe of the Tauri app (src-tauri/) and publish them as a
 # GitHub Release. Installed copies check the latest release for over-the-air updates:
 # latest.json (the Tauri app) and latest.yml (Electron installs, which move to Tauri).
 #
@@ -68,6 +68,12 @@ jobs:
             npx --yes @tauri-apps/cli@2.12.6 build
           fi
 
+      # the portable exe: the same app with Node and the server inside it
+      - run: node scripts/tauri-release-files.js payload
+      - run: npx --yes @tauri-apps/cli@2.12.6 build --no-bundle --features portable
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target-portable
+          OTO_PAYLOAD: ${{ github.workspace }}/src-tauri/target/portable-payload.zip
       - run: node scripts/tauri-release-files.js
 
       - name: Say whether the files are signed
@@ -87,7 +93,7 @@ jobs:
           ls -la dist
           test -f dist/latest.yml
           ls dist/OTO-Setup-*.exe
-          ls dist/OTO-*-portable.zip
+          ls dist/OTO-*-portable.exe
           if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then test -f dist/latest.json; fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -95,7 +101,6 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
-            dist/*.zip
             dist/latest.yml
             dist/latest.json
           if-no-files-found: error
@@ -106,7 +111,6 @@ jobs:
         with:
           files: |
             dist/*.exe
-            dist/*.zip
             dist/latest.yml
             dist/latest.json
           generate_release_notes: true
