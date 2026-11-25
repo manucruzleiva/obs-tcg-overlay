@@ -2,7 +2,7 @@
   "bundle": { "createUpdaterArtifacts": true },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5MjRCQjNFMDgyMkY2N0IKUldSNzlpSUlQcnNraWNobVFBbjczS0dJVkQxemh2QVl2TjJkQk83dkNuQ0h0VjNvdDJIZnZoeXgK",
       "endpoints": ["https://github.com/manucruzleiva/obs-tcg-overlay/releases/latest/download/latest.json"],
       "requireSignedVersion": true,
       "windows": { "installMode": "passive" }
