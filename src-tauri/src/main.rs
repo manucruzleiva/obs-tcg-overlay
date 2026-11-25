@@ -95,6 +95,7 @@ fn main() {
                 open_package(app, &file);
             } else {
                 show_main_window(app);
+                retry_failed_server(app);
             }
         }))
         .plugin(tauri_plugin_shell::init())
@@ -280,6 +281,20 @@ fn note(log: &mut Option<std::fs::File>, line: &str) {
     if let Some(file) = log.as_mut() {
         let seconds = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let _ = writeln!(file, "[{seconds}] {line}");
+    }
+}
+
+// Opening OTO again after its server gave up tries once more, instead of showing the dead window forever
+fn retry_failed_server(app: &AppHandle) {
+    let state = app.state::<Server>();
+    if state.ready.load(Ordering::SeqCst) || state.quitting.load(Ordering::SeqCst) || state.child.lock().unwrap().is_some() {
+        return;
+    }
+    state.restarts.store(0, Ordering::SeqCst);
+    state.output.lock().unwrap().clear();
+    set_tooltip(app, "OTO - starting");
+    if start_server(app).is_err() {
+        server_failed(app);
     }
 }
 
