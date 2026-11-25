@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The desktop app is now built with Tauri (Rust) instead of Electron.** It uses Windows' own WebView2 instead of shipping a copy of Chromium, so the installer is about a third of the size. The server, the overlay and the control panel are the same, and so is the data folder: matches, designs, sounds, card libraries and settings carry over
 - Installing this version over the Electron app removes the Electron app first, keeping everything it saved. Installed Electron copies update to it by themselves
 - The installer asks whether to reinstall or uninstall when OTO is already there; uninstalling deletes what OTO saved only when *Delete the application data* is ticked. The Electron installer's Repair, Reinstall from scratch and Destroy page is gone: the tray's **Back up and start fresh** starts over with empty data, and uninstalling with that box ticked removes everything
+### Fixed
+- OTO no longer refuses to open when its database file is damaged (*file is not a database*): the damaged file is kept next to it as `overlay.sqlite.broken-<time>` and OTO starts with a new one. The database is now saved by writing a new file and swapping it in, so closing or a power cut mid-save can no longer damage it
 
 ## [1.1.1] - 2026-11-21
 

@@ -33,13 +33,21 @@ class DatabaseService {
     const sql = await SQL();
 
     this.db = filebuffer ? new sql.Database(filebuffer) : new sql.Database();
-
-    // Run schema
-    this.runSchema();
+    try {
+      this.runSchema();
+    } catch (error) {
+      if (!filebuffer) throw error;
+      // A damaged file must not stop OTO from opening: keep it next to the new one and start empty
+      const aside = `${this.dbPath}.broken-${Date.now()}`;
+      fs.renameSync(this.dbPath, aside);
+      console.error(`The database could not be read (${error.message}); moved it to ${aside} and started a new one`);
+      this.db = new sql.Database();
+      this.runSchema();
+    }
     this.initialized = true;
 
     // Auto-save every 5 seconds
-    setInterval(() => this.save(), 5000);
+    setInterval(() => this.save(), 5000).unref();
 
     console.log('Database initialized (SQL.js)');
   }
@@ -134,8 +142,10 @@ class DatabaseService {
 
   save() {
     if (this.db) {
-      const data = this.db.export();
-      fs.writeFileSync(this.dbPath, Buffer.from(data));
+      // Write then rename, so a crash or power cut mid-write never leaves half a database
+      const tmp = `${this.dbPath}.tmp`;
+      fs.writeFileSync(tmp, Buffer.from(this.db.export()));
+      fs.renameSync(tmp, this.dbPath);
     }
   }
 
