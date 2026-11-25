@@ -53,7 +53,7 @@ What a producer does in the control panel shows on the overlay at once. Nothing 
 
 1. Download from the [Releases](https://github.com/manucruzleiva/obs-tcg-overlay/releases) page:
    - **`OTO-Setup-x.y.z.exe`**: installs OTO for your user and keeps itself up to date. **Recommended.**
-   - **`OTO-x.y.z-portable.exe`**: runs without installing (a USB stick, say). It does not update itself and opens slowly the first time.
+   - **`OTO-x.y.z-portable.exe`**: runs without installing (a USB stick, say). It does not update itself, and the first start takes a little longer while it unpacks.
 2. Run it. An icon appears in the system tray (near the clock) and the control panel opens.
    - Windows may show a blue *"Windows protected your PC"* screen, because OTO is not code-signed yet ([why](docs/SIGNING.md)). Click **More info, then Run anyway**.
    - If Windows Firewall asks, allow OTO on **Private networks** so your other devices can reach it.
@@ -101,27 +101,26 @@ A **design** is the look of the overlay: colors, logo, background, avatars, card
 
 ## For developers
 
-OTO is a Node.js server (Express and Socket.io) with a plain HTML, CSS and JavaScript control panel and overlay, **no build step** for the web parts, wrapped in an Electron tray app for Windows.
+OTO is a Node.js server (Express and Socket.io) with a plain HTML, CSS and JavaScript control panel and overlay, **no build step** for the web parts, wrapped in a small Tauri (Rust) tray app for Windows that runs the server on its own copy of Node.
 
 ```bash
 git clone https://github.com/manucruzleiva/obs-tcg-overlay.git
 cd obs-tcg-overlay
-npm install            # also downloads Electron (~100 MB); add --ignore-scripts to skip it
+npm install
 npm start              # http://localhost:6767/control
 ```
 
 | Command | What it does |
 |---------|--------------|
 | `npm start` | Run the server only |
-| `npm run electron:dev` | The server plus the Electron window |
+| `npm run desktop:dev` | The desktop (tray) app from source (needs [Rust](https://rustup.rs/)) |
 | `npm test` | Server and logic tests: they boot the real server and drive it over HTTP and socket.io |
 | `npm run test:ui` | The control panel, settings and overlay in a real browser (Chrome or Edge) |
-| `npm run test:desktop` | The desktop app end to end |
-| `npm run dist` | Build the Windows installer and the portable `.exe` into `dist/` |
+| `npm run desktop:build` | Build the Windows installer into `src-tauri/target/release/bundle/` |
 
 - **One authoritative game state** with a `revision`. Every change goes through `Session.finish()`, and an action that touches something another producer just changed is refused instead of applied twice.
 - Shared **catalog modules** (UMD, used by the server and the browser) keep the options, designs and card rules in one place.
-- Everything is tested: about a thousand automated tests over the server, a real browser and the Electron app. Pull requests are welcome.
+- Everything is tested: about a thousand automated tests over the server and a real browser. Pull requests are welcome.
 
 **Learn more:** [the developer guide](docs/DEVELOPING.md) covers the architecture, configuration, the security model, the REST and socket API, the tests, releases and code signing. To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -155,4 +154,4 @@ Contributions are welcome whether you write them by hand or with AI help. Either
 
 ## Acknowledgments
 
-[Pokémon TCG API](https://pokemontcg.io/), [TCGdex](https://tcgdex.dev/), [PokeAPI](https://pokeapi.co/) and [Limitless TCG](https://limitlesstcg.com/) for the data that makes the cards and decks easy to pick; [OBS Studio](https://obsproject.com/); [Electron](https://www.electronjs.org/) and [Socket.io](https://socket.io/).
+[Pokémon TCG API](https://pokemontcg.io/), [TCGdex](https://tcgdex.dev/), [PokeAPI](https://pokeapi.co/) and [Limitless TCG](https://limitlesstcg.com/) for the data that makes the cards and decks easy to pick; [OBS Studio](https://obsproject.com/); [Tauri](https://tauri.app/) and [Socket.io](https://socket.io/).

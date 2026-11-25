@@ -9,7 +9,7 @@ const path = require('node:path');
 const { startServer, ROOT } = require('../support/harness');
 const GAME = require('../../public/js/game-data');
 const THEME = require('../../public/js/theme-options');
-const pkg = require('../../package.json');
+const { shipped } = require('../../scripts/stage-tauri');
 
 const ASSETS = path.join(ROOT, 'assets');
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -105,13 +105,12 @@ describe('the assets folder', () => {
   });
 
   it('is packaged into the app and used for the app icon, but the README pictures are not', () => {
-    const files = pkg.build.files;
-    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy/**/*', 'assets/status/**/*', 'assets/fonts/**/*', 'assets/cardbacks/**/*', 'assets/markers/**/*', 'assets/designs/**/*']) assert.ok(files.includes(entry), entry);
+    const files = shipped;
+    for (const entry of ['assets/logo.ico', 'assets/logo.gif', 'assets/energy', 'assets/status', 'assets/fonts', 'assets/cardbacks', 'assets/markers', 'assets/designs']) assert.ok(files.includes(entry), entry);
     assert.ok(!files.some((entry) => entry.includes('screenshots')), 'screenshots stay out of the installer');
-    assert.ok(!files.includes('logo.ico') && !files.includes('logo.gif'), 'no entry for the old place');
-    assert.equal(pkg.build.win.icon, 'assets/logo.ico');
-    for (const association of pkg.build.fileAssociations) assert.equal(association.icon, 'assets/logo.ico');
-    for (const entry of [pkg.build.win.icon, ...pkg.build.fileAssociations.map((a) => a.icon)]) assert.ok(fs.existsSync(path.join(ROOT, entry)), entry);
+    assert.ok(!files.includes('assets'), 'not the whole folder');
+    // the icon of the app and of .oto files (src-tauri/icons) is the logo
+    assert.deepEqual(fs.readFileSync(path.join(ROOT, 'src-tauri', 'icons', 'icon.ico')), fs.readFileSync(path.join(ROOT, 'assets', 'logo.ico')));
   });
 
   it('has the font that draws country flags, where the stylesheet asks for it (Windows draws none of its own)', () => {

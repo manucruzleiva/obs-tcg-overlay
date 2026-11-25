@@ -1,92 +1,19 @@
 {
   "name": "obs-tcg-overlay",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "OTO (OBS TCG Overlay): streaming overlay and producer control panel for Pokémon TCG matches",
-  "main": "electron/main.js",
   "scripts": {
     "start": "node src/server.js",
-    "electron": "electron electron/main.js",
-    "electron:dev": "concurrently \"npm start\" \"wait-on http://localhost:6767 && electron electron/main.js\"",
     "test": "node --test \"tests/server/*.test.js\"",
     "test:ui": "node --test \"tests/ui/*.test.js\"",
-    "test:desktop": "node --test \"tests/desktop/*.test.js\"",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --win --publish never",
     "update:decks": "node scripts/update-popular-decks.js",
-    "pack:example": "node scripts/pack-example.js"
-  },
-  "build": {
-    "appId": "com.obs.tcg-overlay",
-    "productName": "OTO",
-    "copyright": "Copyright © 2026 obs-tcg-overlay contributors",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "src/**/*",
-      "public/**/*",
-      "electron/**/*",
-      "assets/logo.ico",
-      "assets/logo.gif",
-      "assets/energy/**/*",
-      "assets/status/**/*",
-      "assets/fonts/**/*",
-      "assets/cardbacks/**/*",
-      "assets/markers/**/*",
-      "assets/designs/**/*",
-      "package.json",
-      "README.md",
-      "LICENSE",
-      "NOTICE.md"
-    ],
-    "win": {
-      "icon": "assets/logo.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "requestedExecutionLevel": "asInvoker"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "OTO",
-      "include": "installer/installer.nsh",
-      "artifactName": "OTO-Setup-${version}.${ext}"
-    },
-    "portable": {
-      "artifactName": "OTO-${version}-portable.${ext}"
-    },
-    "fileAssociations": [
-      {
-        "ext": "oto",
-        "name": "OTO package",
-        "description": "OTO design and settings package",
-        "icon": "assets/logo.ico"
-      }
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "manucruzleiva",
-      "repo": "obs-tcg-overlay"
-    }
+    "pack:example": "node scripts/pack-example.js",
+    "tauri:stage": "node scripts/stage-tauri.js",
+    "desktop:dev": "npm run tauri:stage && npx --yes @tauri-apps/cli@2.12.6 dev",
+    "desktop:build": "npm run tauri:stage && npx --yes @tauri-apps/cli@2.12.6 build"
   },
   "dependencies": {
     "compression": "^1.7.4",
-    "electron-updater": "^6.8.11",
     "express": "^5.3.0",
     "helmet": "^8.3.0",
     "socket.io": "^4.7.2",
@@ -94,12 +21,8 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6",
-    "electron": "^45.3.2",
-    "electron-builder": "^26.18.0",
     "playwright-core": "^1.65.1",
-    "socket.io-client": "^4.7.2",
-    "wait-on": "^9.5.1"
+    "socket.io-client": "^4.7.2"
   },
   "overrides": {
     "shell-quote": "^1.11.0"
@@ -114,7 +37,7 @@
     "pokemon",
     "pokemon-tcg",
     "tcg",
-    "electron",
+    "tauri",
     "socket.io"
   ],
   "author": "obs-tcg-overlay contributors",

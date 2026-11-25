@@ -50,15 +50,11 @@ Runtime:
 - [socket.io](https://github.com/socketio/socket.io)
 - [compression](https://github.com/expressjs/compression)
 - [helmet](https://github.com/helmetjs/helmet)
-- [electron-updater](https://github.com/electron-userland/electron-builder) (in-app updates, desktop build)
 - [sql.js](https://github.com/sql-js/sql.js), SQLite compiled to JavaScript
 - [winston](https://github.com/winstonjs/winston)
 
 Development and packaging:
 
-- [electron](https://github.com/electron/electron)
-- [electron-builder](https://github.com/electron-userland/electron-builder)
+- [Tauri](https://github.com/tauri-apps/tauri) and its plugins (the desktop app; the Rust crates are pinned in `src-tauri/Cargo.lock`), and the [Node.js](https://nodejs.org/) runtime it ships
 - [playwright-core](https://github.com/microsoft/playwright) (browser tests; no browser is bundled)
-- [concurrently](https://github.com/open-cli-tools/concurrently)
-- [wait-on](https://github.com/jeffbski/wait-on)
 - [socket.io-client](https://github.com/socketio/socket.io)
